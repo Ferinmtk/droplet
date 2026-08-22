@@ -3,6 +3,9 @@
 __pycache__/
 *.pyc
 
+# agent worktrees / local tooling scratch
+.claude/
+
 # Secrets — never commit
 .secret_key
 certs/
