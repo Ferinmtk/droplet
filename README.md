@@ -32,8 +32,56 @@ sudo firewall-cmd --permanent --add-port=8000/tcp && sudo firewall-cmd --reload
 docker compose up -d --build
 ```
 
-Files land in `./data/received` and `./data/shared`. Uses host networking so
-mDNS works (Linux only).
+Files land in `./data/received` and `./data/shared` on the host
+(`DROPLET_HOME=/data` inside the container). `docker-compose.yml` uses
+`network_mode: host` (Linux only) — this is required, not just nice-to-have,
+see mDNS notes below.
+
+**Verified against this repo's Dockerfile/docker-compose.yml** (Fedora 44,
+Docker 29, SELinux enforcing):
+
+- Image builds clean, container starts, `curl http://localhost:8000/` returns
+  `200`.
+- **Uploads persist across `docker compose restart`** — tested by uploading a
+  file, restarting the container, and confirming it's still in
+  `GET /api/files`.
+- **SELinux systems (Fedora/RHEL): the bind mount needs `:z`.** Without it,
+  the container can't write to `./data` — it hits a `PermissionError` on
+  `.secret_key` on first boot and immediately exits. `docker-compose.yml`
+  already has `./data:/data:z`. The flag is harmless (a no-op) on non-SELinux
+  hosts, so this doesn't need to be conditional.
+- Port mapping: with `network_mode: host` there's no `ports:` section to get
+  wrong — the container binds `DROPLET_PORT` (default `8000`) directly on the
+  host. Same firewall rule as the venv setup applies:
+  `sudo firewall-cmd --add-port=8000/tcp`.
+- `DROPLET_HOME=/data` — sensible: `received/`, `shared/`, `certs/`, and
+  `.secret_key` all live under the one mounted volume, nothing writes outside
+  it.
+
+### mDNS in Docker — what actually happens
+
+- **With `network_mode: host` (the shipped default): mDNS works.** Verified
+  with `avahi-browse` — the container's `_http._tcp` service showed up on the
+  host's real LAN interface, `droplet.local` resolved to the host's LAN IP,
+  and `curl http://droplet.local:8000/` succeeded.
+- **With default bridge networking: mDNS does not reach the LAN.** Docker's
+  bridge network NATs at L3; mDNS's multicast packets (`224.0.0.251:5353`)
+  don't cross that boundary to the physical interface. Confirmed by running
+  the same image in bridge mode (`-p 8001:8000`) — no new mDNS record ever
+  appeared on the LAN, and `droplet.local` kept resolving to a stale record
+  from an earlier host-mode run rather than anything from the bridge
+  container.
+- **Bridge mode is worse than "no mDNS," it's actively misleading:** the app
+  auto-detects its own IP for the startup banner and QR code, and in bridge
+  mode that's the container's internal Docker IP (e.g. `172.17.0.4`) — not
+  reachable from any other device on the LAN. If you must run in bridge mode,
+  set `DROPLET_LAN_IP` to the host's real address and use the host's mapped
+  port; don't trust the printed banner/QR.
+- **Practical takeaway:** on Linux, keep `network_mode: host`. It's the only
+  mode where the QR code, banner, and mDNS name are actually correct for
+  other devices on the LAN. Docker Desktop (Mac/Windows) doesn't support host
+  networking the same way — mDNS discovery won't work there regardless; use
+  the IP/QR fallback.
 
 ## Run as a service
 
@@ -96,6 +144,128 @@ pkg install python
 pip install -r requirements.txt
 python app.py
 ```
+
+## Posting files from a microcontroller / script
+
+`/upload` is a plain multipart POST — anything that can speak HTTP can drop
+files into `received/` with zero changes on the droplet side. Sensor logs,
+camera captures, cron jobs, whatever. The field name is `files` (see
+`request.files.getlist("files")` in `app.py`), and the response is JSON:
+`{"saved": ["<filename>", ...]}`.
+
+### curl
+
+Tested against a running container from this branch:
+
+```bash
+$ curl -F "files=@reading.csv" http://192.168.1.7:8000/upload
+{"saved":["reading.csv"]}
+```
+
+Filenames get sanitized (`secure_filename`) and de-duplicated
+(`reading.csv`, `reading-1.csv`, …) — you don't need to worry about
+collisions from repeated posts.
+
+### ESP8266 (Arduino, `ESP8266HTTPClient`)
+
+`ESP8266HTTPClient` has no built-in multipart helper, so the sketch below
+builds the multipart body by hand. The field name (`files`) and the response
+shape match `app.py` exactly — this isn't a guessed API.
+
+```cpp
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+
+const char* WIFI_SSID     = "your-ssid";
+const char* WIFI_PASSWORD = "your-password";
+
+// droplet's LAN IP. Don't rely on droplet.local from a microcontroller —
+// ESP8266 doesn't resolve mDNS by default, so use the printed IP.
+const char* DROPLET_HOST = "192.168.1.7";
+const uint16_t DROPLET_PORT = 8000;
+
+bool uploadFile(const String& filename, const uint8_t* data, size_t len) {
+  WiFiClient client;
+  HTTPClient http;
+
+  String url = "http://" + String(DROPLET_HOST) + ":" + String(DROPLET_PORT) + "/upload";
+  if (!http.begin(client, url)) {
+    Serial.println("HTTPClient begin failed");
+    return false;
+  }
+
+  // Field name must be "files" — matches request.files.getlist("files") in app.py.
+  String boundary = "dropletESP8266Boundary";
+  String head = "--" + boundary + "\r\n"
+                "Content-Disposition: form-data; name=\"files\"; filename=\"" + filename + "\"\r\n"
+                "Content-Type: application/octet-stream\r\n\r\n";
+  String tail = "\r\n--" + boundary + "--\r\n";
+
+  size_t contentLength = head.length() + len + tail.length();
+  uint8_t* body = (uint8_t*)malloc(contentLength);
+  if (!body) {
+    Serial.println("Out of memory building request body");
+    http.end();
+    return false;
+  }
+  memcpy(body, head.c_str(), head.length());
+  memcpy(body + head.length(), data, len);
+  memcpy(body + head.length() + len, tail.c_str(), tail.length());
+
+  http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
+  int status = http.POST(body, contentLength);
+  free(body);
+
+  if (status > 0) {
+    Serial.printf("POST /upload -> %d\n", status);
+    Serial.println(http.getString());  // e.g. {"saved":["reading.csv"]}
+  } else {
+    Serial.printf("POST /upload failed: %s\n", http.errorToString(status).c_str());
+  }
+
+  http.end();
+  return status == 200;
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected: " + WiFi.localIP().toString());
+
+  const char* reading = "temp_c,25.4\nhumidity_pct,61\n";
+  uploadFile("sensor-" + String(millis()) + ".csv", (const uint8_t*)reading, strlen(reading));
+}
+
+void loop() {
+  // e.g. delay(60000); read a sensor; uploadFile(...) again
+}
+```
+
+(ESP32's `HTTPClient` is API-compatible with the above — same approach works
+with `#include <HTTPClient.h>` and `WiFi.h` instead of the ESP8266 headers.)
+
+### `DROPLET_PIN` and devices
+
+If the droplet instance has `DROPLET_PIN` set, the PIN gate applies to
+**every** route, including `/upload` — verified: an unauthenticated POST to
+`/upload` gets a `302` redirect to `/login`, not the upload. Auth is a
+session cookie set by `POST /login` with a `pin` form field; there's no
+separate token/header auth for API-style clients.
+
+That's workable from a script with a cookie jar (`curl -c jar.txt -d
+"pin=1234" http://host:8000/login` once, then `curl -b jar.txt -F
+"files=@..." http://host:8000/upload`), but it's awkward for a microcontroller
+— `ESP8266HTTPClient` has no cookie jar, so you'd have to capture the
+`Set-Cookie` header from the login response yourself and re-add it as a
+`Cookie` header on every upload. **Simplest option: leave `DROPLET_PIN`
+unset on any droplet instance a device posts to.** If you need the PIN for
+browser access too, consider a second droplet instance/port dedicated to
+device ingestion with the PIN off.
 
 ## Notes
 

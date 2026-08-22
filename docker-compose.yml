@@ -10,5 +10,8 @@ services:
       # DROPLET_HTTPS: "1"       # uncomment for HTTPS (self-signed)
       # DROPLET_NAME: "droplet"  # mDNS name -> droplet.local
     volumes:
-      - ./data:/data
+      # :z relabels the bind mount for SELinux (Fedora/RHEL) — without it
+      # the container can't write to ./data and app.py crashes on startup
+      # trying to create .secret_key (PermissionError, SELinux denial)
+      - ./data:/data:z
     restart: unless-stopped
