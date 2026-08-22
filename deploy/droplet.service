@@ -1,0 +1,15 @@
+[Unit]
+Description=droplet — LAN file drop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/curiosity/projects/droplet
+EnvironmentFile=%h/.config/droplet/droplet.env
+ExecStart=%h/curiosity/projects/droplet/.venv/bin/python %h/curiosity/projects/droplet/app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
