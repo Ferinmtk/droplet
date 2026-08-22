@@ -12,3 +12,6 @@ received/*
 !received/.gitkeep
 shared/*
 !shared/.gitkeep
+
+# Docker Compose bind-mount target (DROPLET_HOME inside the container)
+data/
