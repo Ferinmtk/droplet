@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>droplet 💧</title>
 <style>
-  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --dim:#94a3b8; --accent:#38bdf8; }
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --dim:#94a3b8; --accent:#38bdf8; --danger:#f87171; }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f1f5f9; --card:#ffffff; --line:#cbd5e1; --text:#0f172a; --dim:#64748b; --accent:#0284c7; }
+    :root { --bg:#f1f5f9; --card:#ffffff; --line:#cbd5e1; --text:#0f172a; --dim:#64748b; --accent:#0284c7; --danger:#dc2626; }
   }
   * { box-sizing:border-box; margin:0; }
   body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; max-width:640px; margin:0 auto; padding:1.5rem 1rem 3rem; }
@@ -18,13 +18,43 @@
   #drop.hover { border-color:var(--accent); color:var(--accent); background:rgba(56,189,248,.08); }
   #bar-wrap { height:6px; background:var(--card); border-radius:3px; margin:.75rem 0 0; overflow:hidden; display:none; }
   #bar { height:100%; width:0; background:var(--accent); transition:width .1s; }
+  #bar-text { color:var(--dim); font-size:.78rem; margin-top:.35rem; min-height:1em; }
+
+  details { margin-top:1rem; border:1px solid var(--line); border-radius:10px; background:var(--card); }
+  summary { padding:.6rem .8rem; cursor:pointer; font-size:.85rem; color:var(--dim); }
+  .text-body { padding:0 .8rem .8rem; }
+  textarea { width:100%; min-height:5rem; resize:vertical; background:var(--bg); color:var(--text);
+             border:1px solid var(--line); border-radius:8px; padding:.5rem .6rem; font:inherit; font-size:.9rem; }
+
+  button { font:inherit; font-size:.85rem; cursor:pointer; border-radius:8px; border:1px solid var(--line);
+           background:var(--card); color:var(--text); padding:.45rem .8rem; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--bg); font-weight:600; }
+  button:disabled { opacity:.5; cursor:default; }
+
+  .toolbar { display:flex; gap:.5rem; margin-top:1.5rem; }
+  .toolbar input, .toolbar select { flex:1; font:inherit; font-size:.85rem; background:var(--card); color:var(--text);
+                                    border:1px solid var(--line); border-radius:8px; padding:.45rem .6rem; }
+  .toolbar select { flex:0 0 auto; }
+
+  #selbar { display:none; align-items:center; gap:.6rem; margin-top:.75rem; padding:.5rem .7rem;
+            background:var(--card); border:1px solid var(--accent); border-radius:8px; font-size:.85rem; }
+  #selcount { flex:1; color:var(--dim); }
+
   h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:1.75rem 0 .5rem; }
   ul { list-style:none; }
-  li { background:var(--card); border:1px solid var(--line); border-radius:8px; margin-bottom:.4rem; }
-  li a { display:flex; justify-content:space-between; gap:1rem; align-items:baseline;
-         padding:.6rem .8rem; color:var(--text); text-decoration:none; word-break:break-all; }
-  li .size { color:var(--dim); font-size:.8rem; white-space:nowrap; }
-  .empty { color:var(--dim); font-size:.85rem; padding:.4rem .2rem; }
+  li { background:var(--card); border:1px solid var(--line); border-radius:8px; margin-bottom:.4rem;
+       display:flex; align-items:center; gap:.15rem; padding-left:.6rem; }
+  li.empty { border:none; background:none; color:var(--dim); font-size:.85rem; padding:.4rem .2rem; display:block; }
+  li input[type=checkbox] { flex:0 0 auto; width:1.05rem; height:1.05rem; accent-color:var(--accent); }
+  li a { flex:1; min-width:0; display:flex; align-items:center; gap:.6rem;
+         padding:.6rem .5rem; color:var(--text); text-decoration:none; }
+  li a .name { flex:1; min-width:0; word-break:break-all; }
+  li a .size { color:var(--dim); font-size:.8rem; white-space:nowrap; }
+  li img.thumb { flex:0 0 auto; width:40px; height:40px; object-fit:cover; border-radius:5px;
+                 background:var(--bg); border:1px solid var(--line); }
+  li .del { flex:0 0 auto; border:none; background:none; color:var(--dim); font-size:1.1rem;
+            line-height:1; padding:.5rem .7rem; }
+  li .del:hover { color:var(--danger); }
 </style>
 </head>
 <body>
@@ -34,6 +64,31 @@
   <div id="drop">Drop files here or tap to choose</div>
   <input type="file" id="file" multiple hidden>
   <div id="bar-wrap"><div id="bar"></div></div>
+  <p id="bar-text"></p>
+
+  <details>
+    <summary>Share text</summary>
+    <div class="text-body">
+      <textarea id="text" placeholder="Paste a link, a note, a wifi password…"></textarea>
+      <p style="margin-top:.5rem"><button id="send-text" class="primary">Send text</button>
+      <span id="text-status" style="color:var(--dim);font-size:.8rem;margin-left:.5rem"></span></p>
+    </div>
+  </details>
+
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="Filter by name…" autocomplete="off">
+    <select id="sort">
+      <option value="date">Newest first</option>
+      <option value="name">Name</option>
+      <option value="size">Largest first</option>
+    </select>
+  </div>
+
+  <div id="selbar">
+    <span id="selcount"></span>
+    <button id="clearsel">Clear</button>
+    <button id="zip" class="primary">Download zip</button>
+  </div>
 
   <h2>Received</h2>
   <ul id="received"></ul>
@@ -45,6 +100,14 @@ const drop = document.getElementById("drop");
 const input = document.getElementById("file");
 const barWrap = document.getElementById("bar-wrap");
 const bar = document.getElementById("bar");
+const barText = document.getElementById("bar-text");
+const q = document.getElementById("q");
+const sortBy = document.getElementById("sort");
+const selbar = document.getElementById("selbar");
+const selcount = document.getElementById("selcount");
+
+const selected = new Set();   // "folder/name", kept across auto-refreshes
+let latest = { received: [], shared: [] };
 
 function fmtSize(b) {
   if (b < 1024) return b + " B";
@@ -54,28 +117,92 @@ function fmtSize(b) {
   return b.toFixed(b < 10 ? 1 : 0) + " " + units[i];
 }
 
-async function refresh() {
-  const res = await fetch("/api/files");
-  if (!res.ok) return;
-  const data = await res.json();
+function fmtEta(sec) {
+  if (!isFinite(sec) || sec < 0) return "";
+  if (sec < 60) return Math.ceil(sec) + "s left";
+  return Math.ceil(sec / 60) + "m left";
+}
+
+function arrange(files) {
+  const needle = q.value.trim().toLowerCase();
+  const out = needle ? files.filter(f => f.name.toLowerCase().includes(needle)) : files.slice();
+  const how = sortBy.value;
+  out.sort((a, b) =>
+    how === "name" ? a.name.localeCompare(b.name, undefined, { numeric: true })
+    : how === "size" ? b.size - a.size
+    : b.mtime - a.mtime);
+  return out;
+}
+
+function updateSelBar() {
+  selbar.style.display = selected.size ? "flex" : "none";
+  selcount.textContent = selected.size + (selected.size === 1 ? " file selected" : " files selected");
+}
+
+function row(folder, f) {
+  const key = `${folder}/${f.name}`;
+  const li = document.createElement("li");
+
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = selected.has(key);
+  box.onchange = () => { box.checked ? selected.add(key) : selected.delete(key); updateSelBar(); };
+
+  const a = document.createElement("a");
+  a.href = `/d/${folder}/${encodeURIComponent(f.name)}`;
+  if (f.image) {
+    const img = document.createElement("img");
+    img.className = "thumb";
+    img.loading = "lazy";
+    img.src = `/raw/${folder}/${encodeURIComponent(f.name)}`;
+    a.appendChild(img);
+  }
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = f.name;
+  const size = document.createElement("span");
+  size.className = "size";
+  size.textContent = fmtSize(f.size);
+  a.append(name, size);
+
+  const del = document.createElement("button");
+  del.className = "del";
+  del.title = "Delete";
+  del.textContent = "×";
+  del.onclick = async () => {
+    if (!confirm(`Delete ${f.name}?`)) return;
+    await fetch(`/delete/${folder}/${encodeURIComponent(f.name)}`, { method: "POST" });
+    selected.delete(key);
+    updateSelBar();
+    refresh();
+  };
+
+  li.append(box, a, del);
+  return li;
+}
+
+function render() {
   for (const folder of ["received", "shared"]) {
     const ul = document.getElementById(folder);
     ul.innerHTML = "";
-    if (!data[folder].length) {
-      ul.innerHTML = '<li class="empty" style="border:none;background:none">nothing yet</li>';
+    const files = arrange(latest[folder] || []);
+    if (!files.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = q.value.trim() ? "nothing matches" : "nothing yet";
+      ul.appendChild(li);
       continue;
     }
-    for (const f of data[folder]) {
-      const li = document.createElement("li");
-      const a = document.createElement("a");
-      a.href = `/d/${folder}/${encodeURIComponent(f.name)}`;
-      a.innerHTML = `<span></span><span class="size"></span>`;
-      a.children[0].textContent = f.name;
-      a.children[1].textContent = fmtSize(f.size);
-      li.appendChild(a);
-      ul.appendChild(li);
-    }
+    for (const f of files) ul.appendChild(row(folder, f));
   }
+  updateSelBar();
+}
+
+async function refresh() {
+  const res = await fetch("/api/files");
+  if (!res.ok) return;
+  latest = await res.json();
+  render();
 }
 
 function upload(files) {
@@ -85,14 +212,67 @@ function upload(files) {
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/upload");
   barWrap.style.display = "block";
-  xhr.upload.onprogress = e => { if (e.lengthComputable) bar.style.width = (e.loaded / e.total * 100) + "%"; };
+  const started = Date.now();
+  xhr.upload.onprogress = e => {
+    if (!e.lengthComputable) return;
+    const pct = e.loaded / e.total * 100;
+    bar.style.width = pct + "%";
+    const elapsed = (Date.now() - started) / 1000;
+    const eta = elapsed > 0.5 ? fmtEta((e.total - e.loaded) / (e.loaded / elapsed)) : "";
+    barText.textContent = `${Math.round(pct)}% · ${fmtSize(e.loaded)} of ${fmtSize(e.total)}${eta ? " · " + eta : ""}`;
+  };
   xhr.onload = xhr.onerror = () => {
     bar.style.width = "0";
     barWrap.style.display = "none";
+    barText.textContent = "";
     refresh();
   };
   xhr.send(form);
 }
+
+document.getElementById("send-text").onclick = async () => {
+  const box = document.getElementById("text");
+  const status = document.getElementById("text-status");
+  if (!box.value.trim()) return;
+  const body = new FormData();
+  body.append("text", box.value);
+  const res = await fetch("/text", { method: "POST", body });
+  if (res.ok) {
+    box.value = "";
+    status.textContent = "sent";
+    setTimeout(() => (status.textContent = ""), 2000);
+    refresh();
+  } else {
+    status.textContent = "failed";
+  }
+};
+
+document.getElementById("zip").onclick = async () => {
+  const btn = document.getElementById("zip");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/zip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files: [...selected] }),
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "droplet.zip";
+    a.click();
+    URL.revokeObjectURL(url);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+document.getElementById("clearsel").onclick = () => { selected.clear(); render(); };
+
+q.oninput = render;
+sortBy.onchange = render;
 
 drop.onclick = () => input.click();
 input.onchange = () => { upload(input.files); input.value = ""; };
