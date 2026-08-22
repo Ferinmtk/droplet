@@ -30,6 +30,7 @@ CERT_DIR = BASE_DIR / "certs"
 
 HOST = os.environ.get("DROPLET_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DROPLET_PORT", "8000"))
+ADVERTISED_IP = os.environ.get("DROPLET_LAN_IP", "")
 PIN = os.environ.get("DROPLET_PIN", "")
 USE_HTTPS = os.environ.get("DROPLET_HTTPS", "") not in ("", "0", "false")
 MDNS_NAME = os.environ.get("DROPLET_NAME", "droplet")
@@ -56,6 +57,8 @@ app.secret_key = _secret_key()
 # --- helpers -----------------------------------------------------------------
 
 def get_lan_ip() -> str:
+    if ADVERTISED_IP:  # multi-homed hosts: pick which network to advertise on
+        return ADVERTISED_IP
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))  # no traffic sent; just picks the LAN interface

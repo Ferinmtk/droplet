@@ -41,6 +41,7 @@ mDNS works (Linux only).
 |---|---|---|
 | `DROPLET_PORT` | `8000` | listen port |
 | `DROPLET_HOST` | `0.0.0.0` | bind address |
+| `DROPLET_LAN_IP` | *(auto)* | address to advertise in the QR code, banner, mDNS record and cert. Set this when the host is on more than one network and the autodetected address is the wrong one |
 | `DROPLET_PIN` | *(off)* | require this PIN before access |
 | `DROPLET_HTTPS` | *(off)* | `1` = HTTPS with a persistent self-signed cert (browser will warn once — accept it) |
 | `DROPLET_NAME` | `droplet` | mDNS hostname (`<name>.local`) |
