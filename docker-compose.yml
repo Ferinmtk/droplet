@@ -1,0 +1,14 @@
+services:
+  droplet:
+    build: .
+    container_name: droplet
+    # host networking so mDNS broadcasts reach the LAN (Linux only)
+    network_mode: host
+    environment:
+      DROPLET_PORT: "8000"
+      # DROPLET_PIN: "1234"      # uncomment to require a PIN
+      # DROPLET_HTTPS: "1"       # uncomment for HTTPS (self-signed)
+      # DROPLET_NAME: "droplet"  # mDNS name -> droplet.local
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

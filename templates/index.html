@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>droplet 💧</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --dim:#94a3b8; --accent:#38bdf8; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f1f5f9; --card:#ffffff; --line:#cbd5e1; --text:#0f172a; --dim:#64748b; --accent:#0284c7; }
+  }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; max-width:640px; margin:0 auto; padding:1.5rem 1rem 3rem; }
+  h1 { font-size:1.5rem; margin-bottom:.25rem; }
+  .sub { color:var(--dim); font-size:.85rem; margin-bottom:1.25rem; }
+  #drop { border:2px dashed var(--line); border-radius:12px; padding:2.5rem 1rem; text-align:center;
+          color:var(--dim); cursor:pointer; transition:border-color .15s, background .15s; }
+  #drop.hover { border-color:var(--accent); color:var(--accent); background:rgba(56,189,248,.08); }
+  #bar-wrap { height:6px; background:var(--card); border-radius:3px; margin:.75rem 0 0; overflow:hidden; display:none; }
+  #bar { height:100%; width:0; background:var(--accent); transition:width .1s; }
+  h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:1.75rem 0 .5rem; }
+  ul { list-style:none; }
+  li { background:var(--card); border:1px solid var(--line); border-radius:8px; margin-bottom:.4rem; }
+  li a { display:flex; justify-content:space-between; gap:1rem; align-items:baseline;
+         padding:.6rem .8rem; color:var(--text); text-decoration:none; word-break:break-all; }
+  li .size { color:var(--dim); font-size:.8rem; white-space:nowrap; }
+  .empty { color:var(--dim); font-size:.85rem; padding:.4rem .2rem; }
+</style>
+</head>
+<body>
+  <h1>💧 droplet</h1>
+  <p class="sub">hub: {{ host }} — drop a file below to send it here</p>
+
+  <div id="drop">Drop files here or tap to choose</div>
+  <input type="file" id="file" multiple hidden>
+  <div id="bar-wrap"><div id="bar"></div></div>
+
+  <h2>Received</h2>
+  <ul id="received"></ul>
+  <h2>Shared</h2>
+  <ul id="shared"></ul>
+
+<script>
+const drop = document.getElementById("drop");
+const input = document.getElementById("file");
+const barWrap = document.getElementById("bar-wrap");
+const bar = document.getElementById("bar");
+
+function fmtSize(b) {
+  if (b < 1024) return b + " B";
+  const units = ["KB", "MB", "GB"];
+  let i = -1;
+  do { b /= 1024; i++; } while (b >= 1024 && i < units.length - 1);
+  return b.toFixed(b < 10 ? 1 : 0) + " " + units[i];
+}
+
+async function refresh() {
+  const res = await fetch("/api/files");
+  if (!res.ok) return;
+  const data = await res.json();
+  for (const folder of ["received", "shared"]) {
+    const ul = document.getElementById(folder);
+    ul.innerHTML = "";
+    if (!data[folder].length) {
+      ul.innerHTML = '<li class="empty" style="border:none;background:none">nothing yet</li>';
+      continue;
+    }
+    for (const f of data[folder]) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = `/d/${folder}/${encodeURIComponent(f.name)}`;
+      a.innerHTML = `<span></span><span class="size"></span>`;
+      a.children[0].textContent = f.name;
+      a.children[1].textContent = fmtSize(f.size);
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+  }
+}
+
+function upload(files) {
+  if (!files.length) return;
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/upload");
+  barWrap.style.display = "block";
+  xhr.upload.onprogress = e => { if (e.lengthComputable) bar.style.width = (e.loaded / e.total * 100) + "%"; };
+  xhr.onload = xhr.onerror = () => {
+    bar.style.width = "0";
+    barWrap.style.display = "none";
+    refresh();
+  };
+  xhr.send(form);
+}
+
+drop.onclick = () => input.click();
+input.onchange = () => { upload(input.files); input.value = ""; };
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("hover"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hover"); }));
+drop.addEventListener("drop", e => upload(e.dataTransfer.files));
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets — never commit
+.secret_key
+certs/
+
+# Runtime file storage — keep the directories, ignore their contents
+received/*
+!received/.gitkeep
+shared/*
+!shared/.gitkeep

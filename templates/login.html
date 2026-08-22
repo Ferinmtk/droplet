@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>droplet 💧 — PIN</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --accent:#38bdf8; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f1f5f9; --card:#ffffff; --line:#cbd5e1; --text:#0f172a; --accent:#0284c7; }
+  }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif;
+         display:grid; place-items:center; min-height:100vh; padding:1rem; }
+  form { background:var(--card); border:1px solid var(--line); border-radius:12px;
+         padding:2rem; text-align:center; width:100%; max-width:320px; }
+  h1 { font-size:1.25rem; margin-bottom:1rem; }
+  input { width:100%; padding:.6rem; font-size:1.2rem; text-align:center; letter-spacing:.3em;
+          background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; }
+  button { width:100%; margin-top:.75rem; padding:.6rem; font-size:1rem; border:none;
+           border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
+  .err { color:#f87171; font-size:.85rem; margin-top:.6rem; }
+</style>
+</head>
+<body>
+  <form method="post">
+    <h1>💧 droplet</h1>
+    <input name="pin" type="password" inputmode="numeric" placeholder="PIN" autofocus autocomplete="off">
+    <button>Enter</button>
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  </form>
+</body>
+</html>

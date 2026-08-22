@@ -1,0 +1,4 @@
+flask>=3.0
+qrcode>=7.4
+zeroconf>=0.130
+cryptography>=42.0
