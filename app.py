@@ -6,6 +6,9 @@ import secrets
 import signal
 import socket
 import sys
+import tempfile
+import time
+import zipfile
 from pathlib import Path
 
 from flask import (
@@ -15,6 +18,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     send_from_directory,
     session,
     url_for,
@@ -37,6 +41,10 @@ MDNS_NAME = os.environ.get("DROPLET_NAME", "droplet")
 MAX_UPLOAD_MB = int(os.environ.get("DROPLET_MAX_MB", "1024"))
 
 FOLDERS = {"received": RECEIVED_DIR, "shared": SHARED_DIR}
+
+# shown as thumbnails in the listing rather than as a filename.
+# raster only — /raw serves inline, and an inline SVG can carry script.
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
@@ -84,9 +92,25 @@ def list_files(directory: Path) -> list[dict]:
     for p in directory.iterdir():
         if p.is_file() and not p.name.startswith("."):
             st = p.stat()
-            items.append({"name": p.name, "size": st.st_size, "mtime": int(st.st_mtime)})
+            items.append(
+                {
+                    "name": p.name,
+                    "size": st.st_size,
+                    "mtime": int(st.st_mtime),
+                    "image": p.suffix.lower() in IMAGE_SUFFIXES,
+                }
+            )
     items.sort(key=lambda f: f["mtime"], reverse=True)
     return items
+
+
+def resolve_in(directory: Path, name: str) -> Path:
+    # send_from_directory guards itself, but delete/zip/raw need the same
+    # check before touching the path at all
+    p = (directory / name).resolve()
+    if not p.is_file() or directory.resolve() not in p.parents:
+        abort(404)
+    return p
 
 
 # --- PIN gate ----------------------------------------------------------------
@@ -136,12 +160,65 @@ def upload():
     return jsonify({"saved": saved})
 
 
+@app.route("/text", methods=["POST"])
+def share_text():
+    text = (request.form.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "empty"}), 400
+    dest = unique_path(RECEIVED_DIR, f"text-{time.strftime('%Y%m%d-%H%M%S')}.txt")
+    dest.write_text(text, encoding="utf-8")
+    return jsonify({"saved": dest.name})
+
+
 @app.route("/d/<folder>/<path:name>")
 def download(folder, name):
     directory = FOLDERS.get(folder)
     if directory is None:
         abort(404)
     return send_from_directory(directory, name, as_attachment=True)
+
+
+@app.route("/raw/<folder>/<path:name>")
+def raw(folder, name):
+    # inline rather than attachment, so thumbnails can render
+    directory = FOLDERS.get(folder)
+    if directory is None:
+        abort(404)
+    resolve_in(directory, name)
+    return send_from_directory(directory, name)
+
+
+@app.route("/delete/<folder>/<path:name>", methods=["POST"])
+def delete(folder, name):
+    directory = FOLDERS.get(folder)
+    if directory is None:
+        abort(404)
+    resolve_in(directory, name).unlink()
+    return jsonify({"deleted": name})
+
+
+@app.route("/zip", methods=["POST"])
+def zip_selected():
+    wanted = (request.get_json(silent=True) or {}).get("files") or []
+    if not wanted:
+        abort(400)
+    # spills to disk past the threshold so a big selection can't exhaust RAM
+    spool = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024)
+    with zipfile.ZipFile(spool, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in wanted:
+            folder, _, name = str(item).partition("/")
+            directory = FOLDERS.get(folder)
+            if directory is None:
+                abort(404)
+            p = resolve_in(directory, name)
+            zf.write(p, arcname=f"{folder}/{p.name}")
+    spool.seek(0)
+    return send_file(
+        spool,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"droplet-{time.strftime('%Y%m%d-%H%M%S')}.zip",
+    )
 
 
 # --- HTTPS (persistent self-signed cert) -------------------------------------
