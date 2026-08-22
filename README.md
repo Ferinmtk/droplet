@@ -35,6 +35,41 @@ docker compose up -d --build
 Files land in `./data/received` and `./data/shared`. Uses host networking so
 mDNS works (Linux only).
 
+## Run as a service
+
+Runs droplet as a `systemd --user` service, so it starts automatically and
+restarts if it crashes, instead of you having to remember to launch it.
+
+```bash
+mkdir -p ~/.config/systemd/user ~/.config/droplet
+cp deploy/droplet.service ~/.config/systemd/user/droplet.service
+cp deploy/droplet.env.example ~/.config/droplet/droplet.env
+# edit ~/.config/droplet/droplet.env to taste (PIN, port, etc.)
+
+systemctl --user daemon-reload
+systemctl --user enable --now droplet.service
+```
+
+Check it's running and follow the logs:
+
+```bash
+systemctl --user status droplet.service
+journalctl --user -u droplet -f
+```
+
+The unit runs `python` from the project's `.venv`, so create the venv and
+install `requirements.txt` first (see [Run (venv)](#run-venv) above) —
+`deploy/droplet.service` assumes the repo lives at
+`~/curiosity/projects/droplet`; edit the paths in the unit file if yours is
+elsewhere.
+
+A **user service normally stops when you log out.** To have it survive logout
+and start at boot:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
 ## Config (env vars)
 
 | Var | Default | Meaning |
