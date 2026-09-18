@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/r_bg"
+    android:orientation="vertical"
+    android:paddingHorizontal="16dp"
+    android:paddingBottom="16dp">
+
+    <!-- header: back, title, connection dot -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="-12dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/remote_title"
+            android:textColor="@color/r_text"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <View
+            android:id="@+id/live_dot"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/r_dot" />
+
+        <TextView
+            android:id="@+id/live"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/r_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <!-- which computer the keys go to -->
+    <LinearLayout
+        android:id="@+id/target_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/r_card"
+        android:foreground="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:minHeight="64dp"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/remote_presenting_on"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:textColor="@color/r_dim"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/target"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/r_text"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_chevron" />
+    </LinearLayout>
+
+    <!-- elapsed time -->
+    <TextView
+        android:id="@+id/timer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:background="?attr/selectableItemBackground"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:text="00:00"
+        android:textColor="@color/r_text"
+        android:textSize="56sp"
+        android:textStyle="bold"
+        tools:ignore="HardcodedText" />
+
+    <TextView
+        android:id="@+id/timer_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="@string/remote_timer_hint"
+        android:textColor="@color/r_dim"
+        android:textSize="12sp" />
+
+    <!-- next: the big one -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/next"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="16dp"
+        android:layout_weight="1"
+        android:backgroundTint="@color/r_accent"
+        android:minHeight="140dp"
+        android:text="@string/remote_next"
+        android:textColor="@color/r_on_accent"
+        android:textSize="30sp"
+        android:textStyle="bold"
+        app:cornerRadius="28dp"
+        app:icon="@drawable/ic_arrow_right"
+        app:iconGravity="textEnd"
+        app:iconPadding="12dp"
+        app:iconSize="36dp"
+        app:iconTint="@color/r_on_accent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/prev"
+        android:layout_width="match_parent"
+        android:layout_height="96dp"
+        android:layout_marginTop="12dp"
+        android:backgroundTint="@color/r_card_2"
+        android:text="@string/remote_prev"
+        android:textColor="@color/r_text"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        app:cornerRadius="28dp"
+        app:icon="@drawable/ic_arrow_left"
+        app:iconGravity="textStart"
+        app:iconPadding="12dp"
+        app:iconSize="28dp"
+        app:iconTint="@color/r_text"
+        app:strokeColor="@color/r_line_2"
+        app:strokeWidth="1dp" />
+
+    <!-- start, black, end -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/start"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/r_card"
+            android:text="@string/remote_start"
+            android:textColor="@color/r_accent"
+            android:textSize="15sp"
+            app:cornerRadius="20dp"
+            app:icon="@drawable/ic_play"
+            app:iconGravity="textStart"
+            app:iconTint="@color/r_accent"
+            app:strokeColor="@color/r_line"
+            app:strokeWidth="1dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/black"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_marginHorizontal="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/r_card"
+            android:text="@string/remote_black"
+            android:textColor="@color/r_text"
+            android:textSize="15sp"
+            app:cornerRadius="20dp"
+            app:icon="@drawable/ic_blank"
+            app:iconGravity="textStart"
+            app:iconTint="@color/r_text"
+            app:strokeColor="@color/r_line"
+            app:strokeWidth="1dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/end"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/r_card"
+            android:text="@string/remote_end"
+            android:textColor="@color/r_coral"
+            android:textSize="15sp"
+            app:cornerRadius="20dp"
+            app:icon="@drawable/ic_square"
+            app:iconGravity="textStart"
+            app:iconTint="@color/r_coral"
+            app:strokeColor="@color/r_line"
+            app:strokeWidth="1dp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:minLines="2"
+        android:text="@string/remote_keys_hint"
+        android:textColor="@color/r_dim"
+        android:textSize="13sp" />
+</LinearLayout>

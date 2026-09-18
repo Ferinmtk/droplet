@@ -25,6 +25,8 @@ func runApp() {
 	exe, _ := os.Executable()
 	a := agent.New(store, exe)
 	a.OnStatus = func(s agent.Status) { fmt.Fprintln(os.Stderr, "[status]", s.Tooltip()) }
+	sess := newSession(a, a.RemoteParams, a.SetRemoteStatus)
+	a.OnRemoteChange = sess.Reload
 	srv, err := settings.Start(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "droplet:", err)
@@ -37,5 +39,8 @@ func runApp() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	liveDone := make(chan struct{})
+	go func() { sess.Run(ctx); close(liveDone) }()
 	a.Run(ctx)
+	<-liveDone
 }

@@ -92,3 +92,51 @@ func TestSettingsPageFlow(t *testing.T) {
 		t.Fatal("unpublished")
 	}
 }
+
+func TestSettingsLinkAndRemote(t *testing.T) {
+	h := hubtest.New()
+	defer h.Server.Close()
+	browser := h.AddDevice("maryanne") // the PC's browser
+	t.Setenv("DROPLET_CONFIG_DIR", t.TempDir())
+	store, _ := config.OpenPath(filepath.Join(t.TempDir(), "config.json"))
+	a := agent.New(store, "droplet.exe")
+	s, err := Start(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	post := func(path, body string) (int, map[string]any) {
+		r, err := http.Post(s.URL()+path, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		json.NewDecoder(r.Body).Decode(&out)
+		return r.StatusCode, out
+	}
+	code, out := post("api/link", `{"hub_url":"`+h.Server.URL+`","code":"999999"}`)
+	if code != 400 || out["field"] != "link_code" {
+		t.Fatalf("bad code: %d %v", code, out)
+	}
+	code, out = post("api/link", `{"hub_url":"`+h.Server.URL+`","code":"`+h.LinkCode(browser)+`"}`)
+	if code != 200 || out["link"].(map[string]any)["name"] != "maryanne" {
+		t.Fatalf("link: %d %v", code, out)
+	}
+	if cfg := store.Get(); cfg.DeviceID != browser.ID || !cfg.Registered() {
+		t.Fatalf("config %+v", cfg)
+	}
+	code, out = post("api/remote", `{"input":false,"media":true,"lock":true,"screenshot":false,"clipboard":true,"paused":false}`)
+	if code != 200 {
+		t.Fatalf("remote: %d %v", code, out)
+	}
+	cfg := store.Get()
+	if cfg.RemoteInput || !cfg.RemoteMedia || cfg.RemoteScreenshot || !cfg.ClipboardSync {
+		t.Fatalf("switches %+v", cfg)
+	}
+	r, _ := http.Get(s.URL() + "api/settings")
+	var st map[string]any
+	json.NewDecoder(r.Body).Decode(&st)
+	if st["remote"].(map[string]any)["clipboard"] != true || st["live"] == nil {
+		t.Fatalf("settings %v", st)
+	}
+}

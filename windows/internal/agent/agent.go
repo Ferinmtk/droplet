@@ -20,6 +20,7 @@ import (
 	"github.com/Ferinmtk/droplet/windows/internal/hub"
 	"github.com/Ferinmtk/droplet/windows/internal/platform"
 	"github.com/Ferinmtk/droplet/windows/internal/poll"
+	"github.com/Ferinmtk/droplet/windows/internal/remote"
 	"github.com/Ferinmtk/droplet/windows/internal/sound"
 )
 
@@ -47,6 +48,8 @@ type Status struct {
 	Ringing    bool
 	RingFrom   string
 	Paused     bool
+	// Remote is the live connection (remote control), when there is one.
+	Remote remote.Status
 }
 
 // Tooltip is the one-line state for the tray icon.
@@ -58,6 +61,8 @@ func (s Status) Tooltip() string {
 		return "droplet — " + s.RingFrom + " is ringing this PC"
 	case !s.Polled:
 		return "droplet — connecting to " + s.HubName + "…"
+	case s.Connected && s.Remote.Controller != "":
+		return "droplet — being controlled by " + s.Remote.Controller
 	case s.Connected && s.Paused:
 		return "droplet — connected to " + s.HubName + " (notifications paused)"
 	case s.Connected:
@@ -76,6 +81,10 @@ type Agent struct {
 
 	// OnStatus is called (from the poll goroutine) whenever Status changes.
 	OnStatus func(Status)
+	// OnRemoteChange is called when anything the live connection depends
+	// on changes (a new hub or token, a remote-control switch), so it can
+	// reconnect. Set it before Run.
+	OnRemoteChange func()
 
 	mu            sync.Mutex
 	status        Status
@@ -149,6 +158,13 @@ func (a *Agent) Reset() {
 	a.status.Polled, a.status.Connected = false, false
 	a.mu.Unlock()
 	a.Poke()
+	a.remoteChanged()
+}
+
+func (a *Agent) remoteChanged() {
+	if a.OnRemoteChange != nil {
+		a.OnRemoteChange()
+	}
 }
 
 // Run polls until ctx ends.

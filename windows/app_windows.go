@@ -67,6 +67,9 @@ func runApp() {
 	}
 
 	a := agent.New(store, exe)
+	// the live connection: remote control from other devices
+	sess := newSession(a, a.RemoteParams, a.SetRemoteStatus)
+	a.OnRemoteChange = sess.Reload
 	srv, err := settings.Start(a)
 	if err != nil {
 		fatal(fmt.Errorf("settings page: %w", err))
@@ -82,18 +85,21 @@ func runApp() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	liveDone := make(chan struct{})
 	tray.Run(tray.Options{
 		Agent:        a,
 		OpenSettings: openSettings,
 		OnReady: func() {
 			go func() { a.Run(ctx); close(done) }()
+			go func() { sess.Run(ctx); close(liveDone) }()
 			if !cfg.Registered() {
 				openSettings() // first run: straight to setup
 			}
 		},
 		OnQuit: func() {
 			cancel()
-			<-done // silences a ring in progress
+			<-done     // silences a ring in progress
+			<-liveDone // lets go of any held mouse button
 			srv.Close()
 			settings.Unpublish()
 			log.Printf("droplet stopped")

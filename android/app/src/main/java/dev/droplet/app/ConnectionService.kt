@@ -46,6 +46,8 @@ class ConnectionService : Service() {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var networkUp = true
     private var state = ""
+    private var pollText = ""
+    private var live = Live.Snapshot()
     private var lastInboxCheck = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -63,6 +65,17 @@ class ConnectionService : Service() {
         }
         running = true
         watchNetwork()
+        // the live connection (remote control) lives as long as this service
+        Live.hold(LIVE_TAG)
+        scope.launch {
+            Live.state.collect { s ->
+                val came = s.connected && !live.connected
+                live = s
+                showState()
+                // rings aren't on the socket; check at once after (re)connecting
+                if (came) kick()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -76,6 +89,7 @@ class ConnectionService : Service() {
 
     override fun onDestroy() {
         running = false
+        Live.release(LIVE_TAG)
         cancelAlarm(this)
         networkCallback?.let { runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         scope.cancel()
@@ -111,6 +125,8 @@ class ConnectionService : Service() {
             setState(getString(R.string.conn_unnamed))
             return
         }
+        // an exact alarm is what still fires in Doze; use it to retry a dropped socket too
+        Live.kick()
         try {
             val ring = Hub.ring()
             when {
@@ -201,13 +217,26 @@ class ConnectionService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(Notifs.openApp(this))
+            .addAction(R.drawable.ic_remote, getString(R.string.remote_action), Notifs.openRemote(this))
+            .apply {
+                if (Prefs.capClipboard) addAction(R.drawable.ic_clip, getString(R.string.clip_action), Notifs.sendClipboard(this@ConnectionService))
+            }
             .addAction(0, getString(R.string.settings), Notifs.openSettings(this))
             .build()
 
-    @SuppressLint("MissingPermission")
+    /** What the polls found; shown unless the live connection has something better to say. */
     private fun setState(text: String) {
-        if (text == state) return
-        state = text
+        pollText = text
+        showState()
+    }
+
+    @SuppressLint("MissingPermission")
+    @Synchronized
+    private fun showState() {
+        val text = if (live.connected) live.describe(this) else pollText.ifEmpty { getString(R.string.conn_connecting) }
+        val key = text + Prefs.capClipboard
+        if (key == state) return
+        state = key
         if (Notifs.allowed(this)) NotificationManagerCompat.from(this).notify(Notifs.ID_CONNECTION, notification(text))
     }
 
@@ -247,6 +276,7 @@ class ConnectionService : Service() {
     companion object {
         private const val POLL_MS = 15_000L
         private const val ACTION_POLL = "dev.droplet.app.POLL"
+        private const val LIVE_TAG = "service"
 
         @Volatile
         var running = false

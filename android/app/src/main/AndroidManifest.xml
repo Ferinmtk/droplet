@@ -21,6 +21,17 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- downloads on Android 8/9 only; later versions need no permission -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- remote control, each asked for only from Settings: SMS read and send
+         (contacts for names), and browsing shared folders. Android 11+ uses
+         "All files access"; Android 8-10 the old read permission. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <!-- SMS is optional: tablets without a SIM still install it -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <!-- the "apps not to mirror" list shows installed apps with a launcher icon -->
     <queries>
@@ -36,6 +47,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Droplet"
@@ -89,6 +101,35 @@
         </activity>
 
         <activity
+            android:name=".RemoteActivity"
+            android:exported="false"
+            android:label="@string/remote_title"
+            android:theme="@style/Theme.Droplet.Remote" />
+
+        <!-- invisible: exists only to be the focused app while reading the clipboard -->
+        <activity
+            android:name=".ClipSendActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity="dev.droplet.app.clip"
+            android:theme="@style/Theme.Droplet.Transparent" />
+
+        <service
+            android:name=".ClipTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_clip"
+            android:label="@string/clip_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="false" />
+        </service>
+
+        <activity
             android:name=".RingActivity"
             android:excludeFromRecents="true"
             android:exported="false"
@@ -108,7 +149,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keeps a connection to the user's own droplet hub so other devices can ring this phone (find my phone) and send it files." />
+                android:value="Keeps a connection to the user's own droplet hub so their other devices can ring this phone (find my phone), send it files, and control its media, SMS, files and clipboard." />
         </service>
 
         <service

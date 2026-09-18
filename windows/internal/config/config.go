@@ -34,6 +34,16 @@ type Config struct {
 	Autostart      bool   `json:"autostart"`
 	Paused         bool   `json:"paused"`
 
+	// Remote control (docs/remote.md): what other devices may do to this
+	// PC over the live connection. RemotePaused switches all of it off at
+	// once from the tray.
+	RemoteInput      bool `json:"remote_input"`
+	RemoteMedia      bool `json:"remote_media"`
+	RemoteLock       bool `json:"remote_lock"`
+	RemoteScreenshot bool `json:"remote_screenshot"`
+	ClipboardSync    bool `json:"clipboard_sync"`
+	RemotePaused     bool `json:"remote_paused"`
+
 	// newest chat message timestamp already shown, per sender device id
 	ChatSeen map[string]float64 `json:"chat_seen,omitempty"`
 	// inbox items already announced ("name|mtime"), so a restart doesn't repeat them
@@ -55,8 +65,16 @@ func Defaults() *Config {
 		NotifyFiles:    true,
 		NotifyMessages: true,
 		RingSound:      true,
-		ChatSeen:       map[string]float64{},
-		ActionKey:      randomKey(),
+		// remote control is what the live connection is for, and the tray
+		// shows when it's in use; clipboard sync is off until asked for,
+		// because it sends everything copied (passwords too) to every device
+		RemoteInput:      true,
+		RemoteMedia:      true,
+		RemoteLock:       true,
+		RemoteScreenshot: true,
+		ClipboardSync:    false,
+		ChatSeen:         map[string]float64{},
+		ActionKey:        randomKey(),
 	}
 }
 

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "droplet-agent"
+dynamic = ["version"]
+description = "Lets your other devices control this Linux computer through droplet"
+readme = "README.md"
+requires-python = ">=3.9"
+# both pure Python, so pip never needs a compiler
+dependencies = [
+    "websockets>=15.0",
+    "jeepney>=0.8",
+]
+
+[project.scripts]
+droplet-agent = "droplet_agent.cli:main"
+
+[tool.setuptools]
+packages = ["droplet_agent", "droplet_agent.inject"]
+
+[tool.setuptools.dynamic]
+version = { attr = "droplet_agent.__version__" }

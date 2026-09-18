@@ -3,7 +3,8 @@
 //	go run ./tools/mkicon            (from windows/)
 //
 // It writes assets/droplet.ico (exe and tray), assets/droplet-dim.ico (tray
-// while the hub is unreachable) and assets/droplet.png (notification icon).
+// while the hub is unreachable), assets/droplet-live.ico (tray for a few
+// seconds after remote input) and assets/droplet.png (notification icon).
 // The outputs are committed, so building doesn't need this step.
 package main
 
@@ -27,6 +28,7 @@ func main() {
 	must(os.MkdirAll("assets", 0o755))
 	must(os.WriteFile(filepath.Join("assets", "droplet.ico"), ico(src), 0o644))
 	must(os.WriteFile(filepath.Join("assets", "droplet-dim.ico"), ico(dim(src)), 0o644))
+	must(os.WriteFile(filepath.Join("assets", "droplet-live.ico"), ico(live(src)), 0o644))
 	var b bytes.Buffer
 	must(png.Encode(&b, resize(src, 128)))
 	must(os.WriteFile(filepath.Join("assets", "droplet.png"), b.Bytes(), 0o644))
@@ -60,6 +62,43 @@ func dim(src image.Image) image.Image {
 				l = 60 + (l-60)*2/5
 			}
 			out.SetNRGBA(x, y, color.NRGBA{l, l, l, c.A})
+		}
+	}
+	return out
+}
+
+// live turns the drop amber, for "someone is controlling this PC right now".
+// Each pixel keeps its place between the dark tile and the drop (so edges
+// stay smooth), and the highlight stays lighter than the drop.
+func live(src image.Image) image.Image {
+	const tileL, dropL = 23, 156 // luminance of the tile and of the blue drop
+	tile := [3]int{0x0f, 0x17, 0x2a}
+	amber := [3]int{0xfb, 0xbf, 0x24}
+	lerp := func(a, b [3]int, t float64) [3]int {
+		var o [3]int
+		for i := range o {
+			o[i] = a[i] + int(float64(b[i]-a[i])*t+0.5)
+		}
+		return o
+	}
+	b := src.Bounds()
+	out := image.NewNRGBA(b)
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
+			l := (299*int(c.R) + 587*int(c.G) + 114*int(c.B)) / 1000
+			if l <= tileL+6 {
+				out.SetNRGBA(x, y, c) // the tile, as it is
+				continue
+			}
+			t := float64(l-tileL) / float64(dropL-tileL)
+			var o [3]int
+			if t <= 1 {
+				o = lerp(tile, amber, t)
+			} else {
+				o = lerp(amber, [3]int{255, 255, 255}, min(1, (t-1)*1.8))
+			}
+			out.SetNRGBA(x, y, color.NRGBA{uint8(o[0]), uint8(o[1]), uint8(o[2]), c.A})
 		}
 	}
 	return out

@@ -83,6 +83,8 @@ DEVICE_COOKIE = "droplet_device"
 devices = DeviceStore(BASE_DIR)
 pusher = Pusher(BASE_DIR, devices, USE_PUSH)
 chats = Chats(BASE_DIR)
+# features that know more about devices (e.g. live connections) add to the listing
+PRESENCE_HOOKS: list = []
 URL_ONLY = re.compile(r"^https?://\S+$")
 
 
@@ -167,7 +169,11 @@ def via_tailnet() -> bool:
 
 def current_device() -> dict | None:
     if "device" not in g:
-        g.device = devices.by_token(request.cookies.get(DEVICE_COOKIE))
+        # browsers send the cookie; native helpers may use a bearer token instead
+        # (a cross-site page can't set Authorization without a CORS preflight)
+        auth = request.headers.get("Authorization", "")
+        token = auth[7:].strip() if auth.startswith("Bearer ") else request.cookies.get(DEVICE_COOKIE)
+        g.device = devices.by_token(token)
         if g.device:
             devices.touch(g.device["id"])
             if not g.device.get("node"):
@@ -388,6 +394,10 @@ def api_files():
     out["inbox"] = list_files(devices.inbox(me["id"])) if me else []
     out["unread"] = chats.unread(me["id"], me.get("read") or {}) if me else {}
     out["devices"] = devices.listing(me["id"] if me else None)
+    for hook in PRESENCE_HOOKS:
+        extra = hook()
+        for d in out["devices"]:
+            d.update(extra.get(d["id"]) or {"caps": [], "apps": []})
     # tailnet machines that haven't opened droplet yet, so people know what's missing
     known = devices.nodes()
     out["tailnet"] = [p for p in tailnet_peers() if p["node"] and p["node"] not in known]
@@ -418,6 +428,30 @@ def api_device():
         return jsonify({"id": me["id"], "name": name})
     dev, token = devices.create(name, node=tailnet_node())
     resp = jsonify({"id": dev["id"], "name": name})
+    secure = request.is_secure or (via_tailnet() and request.headers.get("X-Forwarded-Proto") == "https")
+    resp.set_cookie(DEVICE_COOKIE, token, max_age=5 * 365 * 24 * 3600,
+                    httponly=True, samesite="Lax", secure=secure)
+    return resp
+
+
+@app.route("/api/device/link-code", methods=["POST"])
+def api_link_code():
+    """A one-time code for linking a native helper (agent, app) to this device."""
+    me = current_device()
+    if me is None:
+        abort(400)
+    return jsonify({"code": devices.link_code(me["id"]), "expires_in": devices.LINK_TTL,
+                    "device": {"id": me["id"], "name": me["name"]}})
+
+
+@app.route("/api/device/link", methods=["POST"])
+def api_link():
+    body = request.get_json(silent=True) or {}
+    got = devices.redeem(body.get("code", ""), str(body.get("client") or "app"))
+    if got is None:
+        return jsonify({"error": "That code is wrong or has expired. Make a new one."}), 403
+    dev, token = got
+    resp = jsonify({"id": dev["id"], "name": dev["name"], "token": token})
     secure = request.is_secure or (via_tailnet() and request.headers.get("X-Forwarded-Proto") == "https")
     resp.set_cookie(DEVICE_COOKIE, token, max_age=5 * 365 * 24 * 3600,
                     httponly=True, samesite="Lax", secure=secure)
@@ -744,13 +778,18 @@ def banner(url: str, tailnet_url: str | None = None):
 
 from types import SimpleNamespace  # noqa: E402
 
+import agent_dist  # noqa: E402
 import clipboard  # noqa: E402
 import commands  # noqa: E402
 import media  # noqa: E402
 import phone  # noqa: E402
+import remote  # noqa: E402
 import ring  # noqa: E402
+import tv  # noqa: E402
 
-FEATURES: list = [clipboard, commands, media, phone, ring]
+FEATURES: list = [agent_dist, clipboard, commands, media, phone, remote, ring, tv]
+
+
 
 
 
@@ -762,6 +801,7 @@ feature_ctx = SimpleNamespace(
     chats=chats,
     current_device=current_device,
     sender_name=sender_name,
+    presence_hooks=PRESENCE_HOOKS,
 )
 for _feature in FEATURES:
     _feature.register(feature_ctx)
