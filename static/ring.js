@@ -5,48 +5,53 @@
   const POLL_MS = 3000;
 
   document.head.append(el("style", { textContent: `
-    #ring-card { margin-top:1rem; }
-    #ring-card .ring-head { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between;
-                            gap:.25rem .75rem; margin-bottom:.6rem; }
-    #ring-card .ring-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(10rem, 1fr)); gap:.5rem; }
-    .ring-btn { display:flex; align-items:center; gap:.6rem; min-height:3rem; padding:.5rem .7rem; text-align:left; }
-    .ring-btn .ico { flex:0 0 auto; font-size:1.15rem; line-height:1; }
+    #ring-card .ring-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(10.5rem, 1fr)); gap:var(--s2); }
+    .ring-btn { justify-content:flex-start; gap:12px; min-height:60px; padding:8px 14px 8px 10px; text-align:left;
+                background:var(--card-2); border-color:transparent; border-radius:16px; font-weight:500; }
+    .ring-btn:hover { border-color:color-mix(in srgb, var(--accent) 45%, transparent); }
     .ring-btn .lbl { flex:1; min-width:0; }
-    .ring-btn .lbl b { display:block; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ring-btn .lbl small { display:block; color:var(--dim); font-size:.72rem; margin-top:.1rem; }
-    .ring-btn .dot { margin-right:0; }
-    .ring-btn.ringing { border-color:var(--danger); color:var(--danger); animation:ring-glow 1.2s ease-out infinite; }
+    .ring-btn .lbl b { display:block; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ring-btn .lbl small { display:block; color:var(--dim); font-size:12px; margin-top:1px; }
+    .ring-btn .bell { width:32px; height:32px; border-radius:50%; flex:0 0 auto; display:grid; place-items:center;
+                      background:var(--coral); color:#fff; }
+    .ring-btn .bell .ico { width:17px; height:17px; }
+    /* ringing: coral, the bell shakes and a ring pulses out of the button */
+    .ring-btn.ringing { background:var(--coral-soft); border-color:var(--coral); color:var(--coral);
+                        animation:ring-glow 1.4s var(--ease) infinite; }
     .ring-btn.ringing .lbl small { color:inherit; opacity:.85; }
-    .ring-btn.ringing .ico { animation:ring-shake .6s ease-in-out infinite; }
-    @keyframes ring-glow { from { box-shadow:0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent); }
-                           to   { box-shadow:0 0 0 .6rem transparent; } }
-    @keyframes ring-shake { 0%,100% { transform:rotate(0); } 25% { transform:rotate(-14deg); } 75% { transform:rotate(14deg); } }
+    .ring-btn.ringing .bell .ico { animation:ring-shake .6s ease-in-out infinite; }
+    @keyframes ring-glow { from { box-shadow:0 0 0 0 color-mix(in srgb, var(--coral) 45%, transparent); }
+                           to   { box-shadow:0 0 0 10px transparent; } }
+    @keyframes ring-shake { 0%,100% { transform:rotate(0); } 25% { transform:rotate(-16deg); } 75% { transform:rotate(16deg); } }
 
+    /* being rung: the whole screen, deep water lit up in coral */
     #ring-overlay { position:fixed; inset:0; z-index:1000; display:flex; flex-direction:column; align-items:center;
-                    justify-content:center; gap:1rem; padding:max(1.5rem, env(safe-area-inset-top)) 1rem
-                    max(1.5rem, env(safe-area-inset-bottom)); text-align:center; color:var(--text);
-                    background:radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--danger) 30%, var(--bg)) 0,
-                                               var(--bg) 70%); }
-    #ring-overlay .ring-waves { position:relative; width:9rem; height:9rem; display:grid; place-items:center; margin-bottom:.5rem; }
-    #ring-overlay .ring-waves i { position:absolute; inset:0; border-radius:50%; border:3px solid var(--danger);
-                                  opacity:0; animation:ring-wave 1.8s ease-out infinite; }
-    #ring-overlay .ring-waves i:nth-child(2) { animation-delay:.6s; }
-    #ring-overlay .ring-waves i:nth-child(3) { animation-delay:1.2s; }
-    #ring-overlay .ring-waves span { font-size:4rem; line-height:1; animation:ring-shake .5s ease-in-out infinite; }
-    @keyframes ring-wave { from { transform:scale(.45); opacity:.9; } to { transform:scale(1.25); opacity:0; } }
-    #ring-overlay h2 { font-size:clamp(1.4rem, 6vw, 2rem); font-weight:700; text-transform:none; letter-spacing:0;
-                       color:var(--text); margin:0; max-width:24rem; line-height:1.25; overflow-wrap:anywhere; }
-    #ring-overlay .ring-sub { color:var(--dim); font-size:.95rem; margin:0; }
-    #ring-stop { margin-top:1rem; width:min(20rem, 100%); min-height:4.5rem; border-radius:999px; border:none;
-                 background:var(--danger); color:var(--bg); font-size:1.5rem; font-weight:700; letter-spacing:.02em;
-                 box-shadow:0 .5rem 1.5rem color-mix(in srgb, var(--danger) 45%, transparent); }
+                    justify-content:center; gap:14px; padding:max(24px, env(safe-area-inset-top)) 20px
+                    max(24px, env(safe-area-inset-bottom)); text-align:center; color:var(--text);
+                    background:radial-gradient(90% 60% at 50% 36%, color-mix(in srgb, var(--coral) 26%, var(--bg)) 0, var(--bg) 72%); }
+    #ring-overlay .ring-waves { position:relative; width:168px; height:168px; display:grid; place-items:center; margin-bottom:10px; }
+    #ring-overlay .ring-waves i { position:absolute; inset:0; border-radius:50%; border:2px solid var(--coral);
+                                  opacity:0; animation:ring-wave 2.1s var(--ease) infinite; }
+    #ring-overlay .ring-waves i:nth-child(2) { animation-delay:.7s; }
+    #ring-overlay .ring-waves i:nth-child(3) { animation-delay:1.4s; }
+    #ring-overlay .ring-waves span { width:92px; height:92px; border-radius:50%; display:grid; place-items:center;
+                                     background:var(--coral); color:#fff; box-shadow:0 18px 40px -12px var(--coral); }
+    #ring-overlay .ring-waves span .ico { width:44px; height:44px; stroke-width:1.7; animation:ring-shake .5s ease-in-out infinite; }
+    @keyframes ring-wave { from { transform:scale(.5); opacity:.85; } to { transform:scale(1.35); opacity:0; } }
+    #ring-overlay h2 { font-family:var(--font-display); font-size:clamp(26px, 7vw, 36px); font-weight:800; letter-spacing:-.035em;
+                       color:var(--text); margin:0; max-width:22ch; line-height:1.15; overflow-wrap:anywhere; }
+    #ring-overlay .ring-sub { color:var(--dim); font-size:15px; margin:0; font-variant-numeric:tabular-nums; }
+    #ring-stop { margin-top:18px; width:min(20rem, 100%); min-height:72px; border-radius:999px; border:none;
+                 background:var(--coral); color:#fff; font-family:var(--font-display); font-size:24px; font-weight:800;
+                 letter-spacing:-.01em; box-shadow:0 14px 34px -12px var(--coral); }
     #ring-stop:focus-visible { outline:3px solid var(--text); outline-offset:4px; }
     #ring-stop:active { transform:scale(.97); }
-    #ring-overlay .ring-hint { background:var(--card); border:1px solid var(--line); border-radius:999px;
-                               padding:.45rem .9rem; font-size:.9rem; margin:0; }
+    #ring-overlay .ring-hint { display:inline-flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--line);
+                               border-radius:999px; padding:8px 14px; font-size:14px; margin:0; }
+    #ring-overlay .ring-hint .ico { width:16px; height:16px; color:var(--coral); }
     @media (prefers-reduced-motion: reduce) {
-      .ring-btn.ringing, .ring-btn.ringing .ico, #ring-overlay .ring-waves span { animation:none; }
-      #ring-overlay .ring-waves i { animation-duration:4s; }
+      .ring-btn.ringing, .ring-btn.ringing .bell .ico, #ring-overlay .ring-waves span .ico { animation:none; }
+      #ring-overlay .ring-waves i { animation:ring-wave 4s linear infinite !important; }
     }
   ` }));
 
@@ -67,7 +72,7 @@
   function ringButton(key, icon, name, sub) {
     const on = outgoing.has(key);
     const b = el("button", { className: "ring-btn" + (on ? " ringing" : "") },
-      typeof icon === "string" ? el("span", { className: "ico", textContent: on ? "📣" : icon, ariaHidden: "true" }) : icon,
+      on ? el("span", { className: "bell" }, window.icon("ring")) : icon,
       el("span", { className: "lbl" },
         el("b", { textContent: on ? `Stop ringing ${name}` : `Ring ${name}` }),
         el("small", { textContent: on ? "ringing… tap to stop" : sub })));
@@ -84,16 +89,13 @@
     if (sig === drawn) return;
     drawn = sig;
     const focused = document.activeElement?.closest?.("#ring-card .ring-btn")?.dataset.key;
-    const buttons = devs.map(d => {
-      const icon = outgoing.has(d.id) ? "📣" : el("span", { className: "ico" }, el("span", { className: "dot" + (d.online ? " online" : "") }));
-      return Object.assign(ringButton(d.id, icon, d.name, state(d)), { title: d.online ? "online" : "offline" });
-    });
-    buttons.push(ringButton("hub", "🔊", "the hub", "plays a sound on the hub"));
+    const buttons = devs.map(d =>
+      Object.assign(ringButton(d.id, avatar(d.name, { online: d.online }), d.name, state(d)), { title: d.online ? "online" : "offline" }));
+    buttons.push(ringButton("hub", avatar(null, { hub: true }), "the hub", `plays a sound on ${HUB_NAME}`));
     const keys = [...devs.map(d => d.id), "hub"];
     buttons.forEach((b, i) => { b.dataset.key = keys[i]; });
     card.replaceChildren(
-      el("div", { className: "ring-head" }, el("b", { textContent: "📣 Find a device" }),
-        el("span", { className: "dim", textContent: "Rings for up to a minute" })),
+      cardHead("ring", "Find a device", "Rings loudly for up to a minute"),
       el("div", { className: "ring-grid" }, ...buttons));
     if (focused) card.querySelector(`[data-key="${focused}"]`)?.focus();
   }
@@ -185,10 +187,10 @@
   function startRinging(r) {
     if (active) stopRinging(false);
     const stopBtn = el("button", { id: "ring-stop", type: "button", textContent: "Stop" });
-    const hint = el("p", { className: "ring-hint", textContent: "🔇 Tap anywhere to hear it", hidden: true });
+    const hint = el("p", { className: "ring-hint", hidden: true }, window.icon("speaker"), "Tap anywhere to hear it");
     const left = el("p", { className: "ring-sub" });
     const overlay = el("div", { id: "ring-overlay", role: "alertdialog" },
-      el("div", { className: "ring-waves", ariaHidden: "true" }, el("i"), el("i"), el("i"), el("span", { textContent: "📣" })),
+      el("div", { className: "ring-waves", ariaHidden: "true" }, el("i"), el("i"), el("i"), el("span", {}, window.icon("ring"))),
       el("h2", { id: "ring-title", textContent: `${r.from} is ringing this device` }),
       left, stopBtn, hint);
     overlay.setAttribute("aria-modal", "true");

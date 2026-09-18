@@ -21,70 +21,78 @@
 
   document.head.append(el("style", { textContent: `
     #hubmedia [hidden], #hubmedia[hidden] { display:none !important; }
-    #hubmedia { position:relative; overflow:hidden; padding:.8rem .85rem .75rem; }
-    #hubmedia button { background:none; border:none; color:var(--text); padding:0; border-radius:999px;
-                       display:inline-grid; place-items:center; -webkit-tap-highlight-color:transparent; }
+    #hubmedia { position:relative; overflow:hidden; isolation:isolate; }
+    #hubmedia > * + * { margin-top:14px; }
+    #hubmedia button { background:none; border:none; color:var(--text); padding:0; border-radius:999px; min-height:0;
+                       display:inline-grid; place-items:center; }
     #hubmedia button:disabled { opacity:.35; }
-    #hubmedia .hm-glow { position:absolute; inset:-40%; background-size:cover; background-position:center;
-                         filter:blur(40px) saturate(1.4); opacity:.18; pointer-events:none; transition:opacity .4s; }
-    #hubmedia > :not(.hm-glow) { position:relative; }
-    .hm-head { display:flex; align-items:center; gap:.5rem; font-size:.72rem; text-transform:uppercase;
-               letter-spacing:.08em; color:var(--dim); margin-bottom:.6rem; }
-    .hm-head .hm-live { width:.45rem; height:.45rem; border-radius:50%; background:var(--line); flex:0 0 auto; }
-    .hm-head .hm-live.on { background:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
-    .hm-main { display:flex; gap:.8rem; align-items:center; min-width:0; }
-    .hm-art { flex:0 0 auto; width:64px; height:64px; border-radius:10px; overflow:hidden; background:var(--bg);
-              border:1px solid var(--line); display:grid; place-items:center; color:var(--dim); }
+    #hubmedia button:not(:disabled):hover { background:color-mix(in srgb, var(--text) 8%, transparent); }
+    /* the album art bleeds into the card as a soft wash of colour */
+    #hubmedia .hm-glow { position:absolute; inset:-40%; z-index:-1; margin:0; background-size:cover; background-position:center;
+                         filter:blur(44px) saturate(1.5); opacity:.2; pointer-events:none; transition:opacity .4s; }
+    /* an equaliser in the header while something plays */
+    .hm-live { display:none; align-items:flex-end; gap:2px; height:16px; margin-right:4px; }
+    .hm-live.on { display:inline-flex; }
+    .hm-live i { width:3px; border-radius:2px; background:var(--accent); animation:hm-eq 1s ease-in-out infinite; }
+    .hm-live i:nth-child(1) { height:60%; } .hm-live i:nth-child(2) { height:100%; animation-delay:-.4s; }
+    .hm-live i:nth-child(3) { height:45%; animation-delay:-.7s; }
+    @keyframes hm-eq { 50% { transform:scaleY(.35); } }
+    .hm-live i { transform-origin:50% 100%; }
+    .hm-main { display:flex; gap:14px; align-items:center; min-width:0; }
+    .hm-art { flex:0 0 auto; width:72px; height:72px; border-radius:16px; overflow:hidden; background:var(--card-2);
+              display:grid; place-items:center; color:var(--dim); box-shadow:0 10px 24px -14px rgba(0,0,0,.6); }
     .hm-art img { width:100%; height:100%; object-fit:cover; display:block; }
     .hm-meta { flex:1; min-width:0; }
-    .hm-title { font-size:1rem; font-weight:600; line-height:1.25; overflow:hidden; text-overflow:ellipsis;
-                display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; word-break:break-word; }
-    .hm-title.idle { font-weight:500; color:var(--dim); }
-    .hm-sub { color:var(--dim); font-size:.82rem; margin-top:.15rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .hm-src { color:var(--dim); font-size:.72rem; margin-top:.2rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .hm-prog { display:flex; align-items:center; gap:.55rem; margin-top:.7rem; font-size:.7rem; color:var(--dim);
-               font-variant-numeric:tabular-nums; }
-    .hm-track { flex:1; height:16px; display:flex; align-items:center; cursor:default; touch-action:manipulation; }
+    .hm-title { font-family:var(--font-display); font-size:17px; font-weight:750; letter-spacing:-.015em; line-height:1.25;
+                overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+                word-break:break-word; transition:opacity .3s; }
+    .hm-title.idle { font-weight:600; color:var(--dim); }
+    .hm-sub { color:var(--dim); font-size:13.5px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hm-src { color:var(--dim); font-size:12px; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:.85; }
+    .hm-prog { display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--dim); font-variant-numeric:tabular-nums; }
+    .hm-track { flex:1; height:20px; display:flex; align-items:center; cursor:default; touch-action:manipulation; }
     .hm-track.seekable { cursor:pointer; }
-    .hm-track > div { flex:1; height:4px; border-radius:2px; background:var(--line); overflow:hidden; }
-    .hm-track > div > div { height:100%; width:0; background:var(--accent); border-radius:2px; }
-    .hm-bottom { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem .9rem; margin-top:.55rem; }
-    .hm-ctrls { display:flex; align-items:center; gap:.35rem; margin:0 auto; }
-    .hm-ctrls button { width:40px; height:40px; }
-    .hm-ctrls button.skip { width:34px; height:34px; color:var(--dim); }
-    .hm-ctrls button.big { width:46px; height:46px; background:var(--accent) !important; color:var(--bg) !important; }
-    #hubmedia button:not(:disabled):hover { background:color-mix(in srgb, var(--text) 8%, transparent); }
-    .hm-vol { display:flex; align-items:center; gap:.45rem; flex:1 1 200px; min-width:0; }
-    .hm-vol > button { width:34px; height:34px; flex:0 0 auto; }
-    .hm-vol > button.on { color:var(--danger); }
-    .hm-pct { font-size:.72rem; color:var(--dim); width:2.4em; text-align:right; font-variant-numeric:tabular-nums; }
-    .hm-vol input[type=range] { flex:1; min-width:0; height:28px; margin:0; background:none; -webkit-appearance:none; appearance:none; cursor:pointer; }
-    .hm-vol input[type=range]::-webkit-slider-runnable-track { height:4px; border-radius:2px;
-        background:linear-gradient(to right, var(--accent) var(--p, 0%), var(--line) var(--p, 0%)); }
-    .hm-vol input[type=range]::-moz-range-track { height:4px; border-radius:2px; background:var(--line); }
-    .hm-vol input[type=range]::-moz-range-progress { height:4px; border-radius:2px; background:var(--accent); }
-    .hm-vol input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; margin-top:-6px;
-        border-radius:50%; background:var(--text); border:none; }
-    .hm-vol input[type=range]::-moz-range-thumb { width:16px; height:16px; border-radius:50%; background:var(--text); border:none; }
+    .hm-track > div { flex:1; height:5px; border-radius:999px; background:var(--card-2); overflow:hidden; }
+    .hm-track > div > div { height:100%; width:0; background:var(--tide); border-radius:inherit; }
+    .hm-bottom { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 16px; }
+    .hm-ctrls { display:flex; align-items:center; gap:6px; margin:0 auto; }
+    .hm-ctrls button { width:44px; height:44px; }
+    .hm-ctrls button.skip { width:40px; height:40px; color:var(--dim); }
+    #hubmedia .hm-ctrls button.big { width:56px; height:56px; background:var(--tide); color:var(--on-accent);
+                                     box-shadow:0 8px 20px -10px var(--accent-2); }
+    #hubmedia .hm-ctrls button.big:hover { background:var(--tide); filter:brightness(1.06); }
+    .hm-vol { display:flex; align-items:center; gap:8px; flex:1 1 220px; min-width:0; }
+    .hm-vol > button { width:40px; height:40px; flex:0 0 auto; color:var(--dim); }
+    .hm-vol > button.on { color:var(--coral); }
+    .hm-pct { font-size:12px; color:var(--dim); width:2.6em; text-align:right; font-variant-numeric:tabular-nums; }
+    .hm-vol input[type=range] { flex:1; min-width:0; height:32px; min-height:0; margin:0; padding:0; border:none; box-shadow:none;
+                                background:none; -webkit-appearance:none; appearance:none; cursor:pointer; }
+    .hm-vol input[type=range]::-webkit-slider-runnable-track { height:6px; border-radius:999px;
+        background:linear-gradient(to right, var(--accent) var(--p, 0%), var(--card-2) var(--p, 0%)); }
+    .hm-vol input[type=range]::-moz-range-track { height:6px; border-radius:999px; background:var(--card-2); }
+    .hm-vol input[type=range]::-moz-range-progress { height:6px; border-radius:999px; background:var(--accent); }
+    .hm-vol input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; margin-top:-7px;
+        border-radius:50%; background:#fff; border:none; box-shadow:0 1px 4px rgba(0,0,0,.35), 0 0 0 4px var(--accent-soft); }
+    .hm-vol input[type=range]::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:#fff; border:none;
+        box-shadow:0 1px 4px rgba(0,0,0,.35), 0 0 0 4px var(--accent-soft); }
     .hm-vol.muted input[type=range] { opacity:.45; }
-    #hubmedia button.hm-outbtn { width:auto; height:30px; padding:0 .45rem 0 .5rem; gap:.25rem; display:inline-flex;
-        align-items:center; color:var(--dim); font-size:.75rem; max-width:45%; border:1px solid var(--line); }
+    #hubmedia button.hm-outbtn { width:auto; height:34px; padding:0 10px 0 11px; gap:5px; display:inline-flex; align-items:center;
+        color:var(--dim); font-size:12.5px; font-weight:600; max-width:45%; background:var(--card-2); }
     .hm-outbtn span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .hm-outbtn svg:last-child { transition:transform .2s; flex:0 0 auto; }
     .hm-outbtn.open svg:last-child { transform:rotate(180deg); }
-    .hm-list { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.6rem; }
-    #hubmedia .hm-list button.chip { border:1px solid var(--line); padding:.3rem .7rem; font-size:.8rem;
-        display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    #hubmedia .hm-list button.chip.on { border-color:var(--accent); color:var(--accent);
-        background:color-mix(in srgb, var(--accent) 12%, transparent); }
-    .hm-players { margin:0 0 .6rem; }
+    .hm-list { display:flex; flex-wrap:wrap; gap:var(--s2); }
+    #hubmedia .hm-list button.chip { display:inline-flex; padding:0 14px; min-height:36px; font-size:13px; font-weight:600;
+        border:1px solid var(--line); background:var(--card); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #hubmedia .hm-list button.chip.on { border-color:var(--accent); background:var(--accent-soft); box-shadow:0 0 0 1px var(--accent) inset; }
+    @media (prefers-reduced-motion: reduce) { .hm-live i { animation:none; } }
   ` }));
 
   // --- build the card once; render() only updates it ---
   const card = el("section", { className: "card", id: "hubmedia", hidden: true });
   const glow = el("div", { className: "hm-glow" });
-  const live = el("span", { className: "hm-live" });
-  const heading = el("span", { textContent: "Now playing" });
+  const live = el("span", { className: "hm-live", title: "Playing" }, el("i"), el("i"), el("i"));
+  const heading = el("span", { className: "dim small", textContent: `on ${HUB_NAME}` });
   const players = el("div", { className: "hm-list hm-players", hidden: true });
   const art = el("div", { className: "hm-art" });
   const title = el("div", { className: "hm-title" });
@@ -116,7 +124,8 @@
   const vol = el("div", { className: "hm-vol" }, mute, slider, pct, outBtn);
   const bottom = el("div", { className: "hm-bottom" }, ctrls, vol);
   card.append(glow,
-    el("div", { className: "hm-head" }, live, heading),
+    el("div", { className: "card-head" }, el("span", { className: "ico-tile" }, icon("music")),
+       el("div", { className: "grow" }, el("h3", { textContent: "Now playing" }), heading), live),
     players,
     el("div", { className: "hm-main" }, art, el("div", { className: "hm-meta" }, title, sub, src)),
     prog, bottom, outList);
@@ -202,7 +211,7 @@
     if (card.hidden) return;
     const p = current();
     if (p && p.id !== lastActive) { base = null; lastActive = p.id; }
-    heading.textContent = `Now playing on ${data.hub || "the hub"}`;
+    heading.textContent = `on ${data.hub || HUB_NAME}`;
 
     // picker only when there's a choice to make
     players.hidden = !data.players || data.players.length < 2;

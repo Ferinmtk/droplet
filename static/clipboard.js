@@ -1,5 +1,5 @@
 // Shared clipboard: a 📋 button in the chat that sends this device's
-// clipboard as a message, and a "Hub clipboard" card (while Hub is picked)
+// clipboard as a message, and a "Hub clipboard" card in the Hub panel
 // for moving text between this device and the hub's own clipboard.
 (() => {
   // the async clipboard API only exists in a secure context (the tailnet's
@@ -11,16 +11,18 @@
   const PREVIEW = 400;   // characters shown before "…"
 
   document.head.append(el("style", { textContent: `
-    #clip-card { margin-top:1rem; }
-    #clip-card .clip-head { justify-content:space-between; margin-bottom:.5rem; }
-    #clip-card .clip-text { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:.5rem .6rem;
-      margin-bottom:.6rem; font-family:ui-monospace,monospace; font-size:.8rem; line-height:1.4;
-      white-space:pre-wrap; word-break:break-word; max-height:7.5rem; overflow:auto; }
-    #clip-card .clip-text.dim { font-family:inherit; font-style:italic; }
+    #clip-card .clip-text { background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:12px 14px;
+      font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap; word-break:break-word;
+      max-height:8.5rem; overflow:auto; }
+    #clip-card .clip-text.dim { font-family:var(--font); font-size:14px; }
     #clip-card .clip-text.full { max-height:14rem; user-select:all; -webkit-user-select:all; }
-    #clip-card textarea { margin-bottom:.5rem; }
-    #clip-card .clip-extra:not(:empty) { margin-top:.6rem; }
-    #chat-paste { flex:0 0 auto; }
+    #clip-card .clip-extra:empty { display:none; }
+    #clip-card .clip-extra > * + * { margin-top:var(--s2); }
+    #clip-card .row > button { flex:1 1 auto; }
+    #chat-paste { flex:0 0 auto; width:46px; min-width:46px; height:46px; padding:0; border-radius:50%;
+                  background:var(--card-2); color:var(--dim); }
+    #chat-paste:hover { color:var(--accent); }
+    #chat-paste .ico { width:20px; height:20px; }
   ` }));
 
   async function readLocal() {
@@ -41,8 +43,9 @@
 
   const chatSend = document.getElementById("chat-send");
   if (chatSend && canRead) {
-    const paste = el("button", { id: "chat-paste", type: "button", textContent: "📋",
-                                 title: "Send what's on this device's clipboard" });
+    const paste = el("button", { id: "chat-paste", type: "button",
+                                 title: "Send what's on this device's clipboard" }, icon("clipboard"));
+    paste.setAttribute("aria-label", "Send this device's clipboard");
     paste.onclick = async () => {
       const to = chatWith;   // the chat could change while the clipboard prompt is up
       if (!to) return;
@@ -63,10 +66,11 @@
 
   // --- Hub clipboard card ---
 
-  const refreshBtn = el("button", { type: "button", textContent: "↻", title: "Check the hub's clipboard again" });
+  const refreshBtn = el("button", { type: "button", className: "ghost icon-btn", title: "Check the hub's clipboard again" }, icon("refresh"));
+  refreshBtn.setAttribute("aria-label", "Check the hub's clipboard again");
   const preview = el("div", { className: "clip-text dim", textContent: "Checking…" });
-  const sendBtn = el("button", { type: "button", className: "primary", textContent: "Send my clipboard to the hub" });
-  const copyBtn = el("button", { type: "button", textContent: "Copy hub clipboard here" });
+  const sendBtn = el("button", { type: "button", className: "primary" }, icon("upload"), "Send mine to the hub");
+  const copyBtn = el("button", { type: "button", className: "soft" }, icon("download"), "Copy the hub's here");
   // without clipboard access, a box to paste into stands in for sendBtn
   const pasteBox = el("textarea", { placeholder: "Paste text here to put it on the hub's clipboard" });
   const pasteSend = el("button", { type: "button", className: "primary", textContent: "Send to the hub's clipboard" });
@@ -74,7 +78,7 @@
   const actions = el("div", { className: "row" }, ...(canRead ? [sendBtn, copyBtn] : [copyBtn]));
   const full = el("div", { className: "clip-extra" });   // hub text to select by hand
   const card = el("section", { className: "card", id: "clip-card", hidden: true },
-    el("div", { className: "row clip-head" }, el("b", { textContent: "Hub clipboard" }), refreshBtn),
+    cardHead("clipboard", "Hub clipboard", `What's copied on ${HUB_NAME}`, refreshBtn),
     preview, actions, pasteForm, full);
   (document.getElementById("features") || document.body).append(card);
 
@@ -163,18 +167,10 @@
   };
   refreshBtn.onclick = load;
 
-  // the card belongs to "Send to: Hub"; check the pick cheaply rather than
-  // hooking the page's own render functions
-  function sync() {
-    if (off) return;
-    const want = target === "hub";
-    if (want === shown) return;
-    shown = want;
-    card.hidden = !want;
-    if (want) load();
-  }
-  setInterval(sync, 400);
+  // the card lives in the Hub panel and is always shown (unless the hub has the feature off)
+  shown = true;
+  card.hidden = false;
+  load();
   // coming back to the app is the usual moment the hub's clipboard changed
   document.addEventListener("visibilitychange", () => { if (!document.hidden && shown && !off) load(); });
-  sync();
 })();
