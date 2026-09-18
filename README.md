@@ -171,6 +171,47 @@ systemd user service), tested from another tailnet machine:
 tailnet devices too, because droplet didn't set serve up and doesn't trust
 the header.
 
+## Install it as an app + "Share → droplet" (Android)
+
+Over HTTPS (the [tailnet URL](#tailnet-real-https-from-anywhere)) droplet is
+an installable web app. Browsers only allow installing from a secure origin,
+so this doesn't work on the plain `http://` LAN address.
+
+1. Open the `https://…ts.net` URL in **Chrome** on the phone.
+2. Tap **Install app** next to the title (or ⋮ → **Install app**).
+3. Open it from the home screen. It runs full-screen, without an address bar.
+   If you see an address bar, it's a shortcut, not an install: remove it and
+   install again.
+
+After installing, **droplet shows up in Android's share sheet.** Share
+photos, files, text or links to it from any app (Gallery, Files, Chrome,
+YouTube…). Files land in `received/`. Text and links are saved as a
+`text-*.txt` file, and the link many apps repeat inside the text is only
+written once.
+
+How it works: `static/sw.js` (the service worker) catches the share, parks
+the items in a cache and opens the page, which uploads them with the normal
+progress bar. So:
+
+- **PIN on and logged out?** The shared items wait through the login and
+  send afterwards. Logins last 30 days, because an installed app forgets
+  normal session cookies whenever it's closed.
+- **Hub unreachable** (Tailscale off, hub asleep)? You get a "Can't reach the
+  hub" page instead of Chrome's error, and the shared items stay parked until
+  the next time droplet opens with the hub reachable.
+- If the service worker isn't running yet, Android posts straight to
+  `POST /share` on the server, which saves the items directly.
+
+**Verified** on a Redmi Note 11E Pro (Chrome, installed from the tailnet URL):
+Gallery → Share → droplet uploads the photo. Tested on a desktop browser:
+a PIN login in between, text+URL de-duplication, and the offline page.
+Note that some gallery apps (Xiaomi's included) hand over a numeric name like
+`1789694404320.jpg` instead of the original filename. droplet saves whatever
+name the app gives it.
+
+The share sheet is Android-only. iOS Safari can add droplet to the home
+screen, but it doesn't offer web apps as share targets.
+
 ## Config (env vars)
 
 | Var | Default | Meaning |
