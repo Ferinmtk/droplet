@@ -34,7 +34,10 @@ work away from home. See [How it finds and trusts the hub](#how-it-finds-and-tru
    `%LOCALAPPDATA%\Programs\droplet\droplet.exe`. Start-with-Windows and the
    Send to entries point at this location.
 2. Run it. The exe isn't code-signed, so SmartScreen warns you the first
-   time: click **More info → Run anyway**.
+   time: click **More info → Run anyway**. If Windows Defender or another
+   antivirus flags it, don't turn your protection off: see
+   [DEFENDER.md](DEFENDER.md) for why it happens, how to check your copy,
+   and how to allow just this file and report the false positive.
 3. The settings page opens in your browser. Under **Hubs on this network**
    it lists the droplet hubs it finds on your Wi-Fi. Then either:
    - **Join (at home, no Tailscale needed).** Check the PC's name, and
@@ -310,4 +313,6 @@ is useful for testing against a local hub, for example with
   keep the web app's unread badges.
 - **Send files to** picks the destination first and then opens the file
   picker.
-- It is unsigned, so SmartScreen warns on first run (see Install).
+- It is unsigned, so SmartScreen warns on first run (see Install), and
+  antivirus heuristics may flag it. [DEFENDER.md](DEFENDER.md) covers what to
+  do, and the code-signing options.
