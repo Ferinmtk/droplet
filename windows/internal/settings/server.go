@@ -75,14 +75,68 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET "+p+"/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		cfg := s.Agent.Store.Get()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"settings":    s.Agent.CurrentSettings(),
-			"registered":  cfg.Registered(),
-			"first_run":   !s.Agent.Store.Exists(),
-			"status":      s.Agent.Status().Tooltip(),
-			"default_hub": config.DefaultHub,
-			"remote":      s.Agent.CurrentRemote(),
-			"live":        liveText(s.Agent.Status()),
+			"settings":       s.Agent.CurrentSettings(),
+			"registered":     cfg.Registered(),
+			"first_run":      !s.Agent.Store.Exists(),
+			"status":         s.Agent.Status().Tooltip(),
+			"default_hub":    config.DefaultHub,
+			"remote":         s.Agent.CurrentRemote(),
+			"live":           liveText(s.Agent.Status()),
+			"hub":            hubState(s.Agent),
+			"suggested_name": suggestedName(),
 		})
+	})
+	mux.HandleFunc("GET "+p+"/api/discover", func(w http.ResponseWriter, r *http.Request) {
+		found, err := s.Agent.Discover(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"hubs": []agent.Found{}, "error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"hubs": found})
+	})
+	mux.HandleFunc("POST "+p+"/api/join", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			HubID  string `json:"hub_id"`
+			Name   string `json:"name"`
+			PIN    string `json:"pin"`
+			Repair bool   `json:"repair"` // accept the paired hub's new certificate
+		}
+		if !readJSON(w, r, &in) {
+			return
+		}
+		res, err := s.Agent.Join(r.Context(), in.HubID, in.Name, in.PIN, in.Repair)
+		if !writeErr(w, err) {
+			return
+		}
+		if s.OnSaved != nil {
+			s.OnSaved()
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "join": res, "hub_url": s.Agent.Store.Get().HubURL})
+	})
+	mux.HandleFunc("POST "+p+"/api/pairing/pin", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			PIN string `json:"pin"`
+		}
+		if !readJSON(w, r, &in) {
+			return
+		}
+		if !writeErr(w, s.Agent.SignInWithPIN(r.Context(), in.PIN)) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("POST "+p+"/api/pairing/cancel", func(w http.ResponseWriter, r *http.Request) {
+		if !writeErr(w, s.Agent.CancelJoin()) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("POST "+p+"/api/repair", func(w http.ResponseWriter, r *http.Request) {
+		res, err := s.Agent.Repair(r.Context())
+		if !writeErr(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "repair": res})
 	})
 	mux.HandleFunc("POST "+p+"/api/remote", func(w http.ResponseWriter, r *http.Request) {
 		var in agent.RemoteSettings
@@ -98,20 +152,21 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST "+p+"/api/link", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			HubURL string `json:"hub_url"`
+			HubID  string `json:"hub_id"` // a hub found on the LAN
 			Code   string `json:"code"`
 			PIN    string `json:"pin"`
 		}
 		if !readJSON(w, r, &in) {
 			return
 		}
-		res, err := s.Agent.Link(r.Context(), in.HubURL, in.Code, in.PIN)
-		var fe *agent.FieldError
-		switch {
-		case errors.As(err, &fe):
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fe.Msg, "field": fe.Field})
-			return
-		case err != nil:
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		var res *agent.LinkResult
+		var err error
+		if in.HubID != "" {
+			res, err = s.Agent.LinkLAN(r.Context(), in.HubID, in.Code, in.PIN)
+		} else {
+			res, err = s.Agent.Link(r.Context(), in.HubURL, in.Code, in.PIN)
+		}
+		if !writeErr(w, err) {
 			return
 		}
 		if s.OnSaved != nil {
@@ -147,21 +202,15 @@ func (s *Server) routes() http.Handler {
 		if !readJSON(w, r, &in) {
 			return
 		}
-		err := s.Agent.Configure(r.Context(), in)
-		var fe *agent.FieldError
-		switch {
-		case errors.As(err, &fe):
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fe.Msg, "field": fe.Field})
-			return
-		case err != nil:
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if !writeErr(w, s.Agent.Configure(r.Context(), in)) {
 			return
 		}
 		if s.OnSaved != nil {
 			s.OnSaved()
 		}
 		cfg := s.Agent.Store.Get()
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": cfg.DeviceName, "hub_url": cfg.HubURL})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": cfg.DeviceName, "hub_url": cfg.HubURL,
+			"pending": cfg.Pending(), "code": cfg.PairCode})
 	})
 	mux.HandleFunc("POST "+p+"/api/reload", func(w http.ResponseWriter, r *http.Request) {
 		// another droplet.exe (droplet link) changed config.json
@@ -177,6 +226,86 @@ func (s *Server) routes() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 	return guard(s.ln.Addr().String(), mux)
+}
+
+// writeErr answers with err (a field error points at its field) and
+// reports whether there was none.
+func writeErr(w http.ResponseWriter, err error) bool {
+	var fe *agent.FieldError
+	switch {
+	case err == nil:
+		return true
+	case errors.As(err, &fe):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fe.Msg, "field": fe.Field})
+	default:
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return false
+}
+
+// suggestedName is this PC's own name, for a first run.
+func suggestedName() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(h)
+}
+
+// hubState is the paired hub, how it's reached, and whatever needs the
+// person: a join request waiting, or the hub's identity having changed.
+func hubState(a *agent.Agent) map[string]any {
+	cfg := a.Store.Get()
+	st := a.Status()
+	r, ok := a.Routes.Current()
+	name := agent.HubName(cfg)
+	out := map[string]any{
+		"name":        name,
+		"paired":      cfg.Hub != nil,
+		"route":       r.Label(),
+		"route_kind":  string(r.Kind),
+		"connected":   ok && st.Connected,
+		"pending":     cfg.Pending(),
+		"code":        cfg.PairCode,
+		"device":      cfg.DeviceName,
+		"not_allowed": st.NotAllowed,
+		"remote_url":  cfg.RemoteURL(),
+	}
+	if cfg.Hub != nil {
+		out["id"] = cfg.Hub.ID
+		out["pin_source"] = cfg.Hub.PinSource
+		out["lan"] = cfg.Hub.LAN
+	}
+	text := ""
+	switch {
+	case cfg.Pending():
+		text = "Waiting for one of your devices to let \"" + cfg.DeviceName + "\" in."
+	case st.NotAllowed:
+		text = name + " doesn't let this PC in any more (removed, or the request was declined). Join again below."
+	case !cfg.Registered():
+		text = "Not set up yet. Pick your hub below and choose Join, or enter its Tailscale address."
+	case ok && st.Connected:
+		text = "Connected to " + name + " " + r.Label() + "."
+	case !st.Polled:
+		text = "Connecting to " + name + "…"
+	case st.Problem != "":
+		text = "Not connected: " + st.Problem + "."
+	default:
+		text = "Can't reach " + name + " right now."
+	}
+	out["text"] = text
+	if ch := a.Routes.Changed(); ch != nil {
+		out["changed"] = map[string]any{"verified": ch.Verified, "addr": ch.Addr,
+			"got": short(ch.Got), "want": short(ch.Want)}
+	}
+	return out
+}
+
+func short(fp string) string {
+	if len(fp) > 16 {
+		return fp[:16]
+	}
+	return fp
 }
 
 // liveText describes the live connection for the settings page.

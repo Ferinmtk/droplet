@@ -36,11 +36,13 @@ func runApp() {
 	srv.Publish()
 	defer settings.Unpublish()
 	fmt.Fprintln(os.Stderr, "settings:", srv.URL())
+	a.OnNeedPairing = func() { fmt.Fprintln(os.Stderr, "[open settings]", srv.URL()) }
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	liveDone := make(chan struct{})
 	go func() { sess.Run(ctx); close(liveDone) }()
+	go a.Routes.Run(ctx) // network changes, and finding the LAN again
 	a.Run(ctx)
 	<-liveDone
 }

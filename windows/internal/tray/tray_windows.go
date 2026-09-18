@@ -187,8 +187,8 @@ func ready(o Options) {
 		for {
 			select {
 			case <-openHub.ClickedCh:
-				cfg := a.Store.Get()
-				if err := platform.OpenURL(cfg.HubURL); err != nil {
+				// the tailnet URL, or the hub's plain-HTTP address on the LAN
+				if err := platform.OpenURL(a.WebURL("/")); err != nil {
 					log.Printf("open hub: %v", err)
 				}
 			case <-stopRing.ClickedCh:

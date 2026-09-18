@@ -15,16 +15,50 @@ import (
 // DefaultHub is the hub this companion was written for.
 const DefaultHub = "https://t15.tail7375fe.ts.net"
 
+// Hub is the paired hub's identity (docs/local-first.md): what lets the app
+// find it on the LAN whatever its IP is today, and check it's really it.
+type Hub struct {
+	ID   string `json:"id"`             // permanent, 16 hex characters
+	Name string `json:"name,omitempty"` // the hub machine's name, e.g. "t15"
+	// Fingerprint pins the hub's self-signed LAN certificate (SHA-256 of
+	// its DER encoding, lowercase hex). Empty: no LAN route, tailnet only.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// PinSource is where the fingerprint came from: "tailnet" (read over
+	// verified TLS) or "lan" (trusted on first use, confirmed by pairing).
+	PinSource string `json:"pin_source,omitempty"`
+	// LAN is where the hub last answered on the LAN ("ip:port", newest
+	// first). Only a hint: DHCP moves it, and discovery finds it again.
+	LAN      []string `json:"lan,omitempty"`
+	HTTPPort int      `json:"http_port,omitempty"` // its plain-HTTP port, for browsers
+	Tailnet  string   `json:"tailnet,omitempty"`   // its tailnet URL, if it has one
+}
+
+// Pin sources.
+const (
+	PinFromTailnet = "tailnet"
+	PinFromLAN     = "lan"
+)
+
 // Config is everything persisted between runs. The device token is the
 // device's identity on the hub (the droplet_device cookie), so the file is
 // written owner-only.
 type Config struct {
-	HubURL      string `json:"hub_url"`
+	// HubURL is the hub's tailnet URL (or any address typed in Settings):
+	// the fallback route away from home, with normal TLS checks. It may be
+	// empty for a hub paired on the LAN that has no tailnet.
+	HubURL string `json:"hub_url"`
+	// Hub is the paired hub's identity; nil until known (older configs are
+	// migrated on start, see internal/route).
+	Hub         *Hub   `json:"hub,omitempty"`
 	DeviceID    string `json:"device_id,omitempty"`
 	DeviceName  string `json:"device_name,omitempty"`
 	DeviceToken string `json:"device_token,omitempty"`
 	// session cookie from a PIN login, when the hub asks for one
 	Session string `json:"session,omitempty"`
+	// PairPending: the device asked to join over the LAN and is waiting to
+	// be let in; PairCode is the four digits to compare meanwhile.
+	PairPending bool   `json:"pair_pending,omitempty"`
+	PairCode    string `json:"pair_code,omitempty"`
 
 	DownloadDir    string `json:"download_dir"`
 	AutoDownload   bool   `json:"auto_download"`
@@ -53,8 +87,24 @@ type Config struct {
 	ActionKey string `json:"action_key,omitempty"`
 }
 
-// Registered reports whether this install has named itself on the hub.
-func (c Config) Registered() bool { return c.DeviceToken != "" }
+// Registered reports whether this install has named itself on the hub and
+// been let in.
+func (c Config) Registered() bool { return c.DeviceToken != "" && !c.PairPending }
+
+// Pending reports whether it's waiting to be let in.
+func (c Config) Pending() bool { return c.DeviceToken != "" && c.PairPending }
+
+// RemoteURL is the fallback route: the configured URL, else the tailnet
+// URL the hub told us about.
+func (c Config) RemoteURL() string {
+	if c.HubURL != "" {
+		return c.HubURL
+	}
+	if c.Hub != nil {
+		return c.Hub.Tailnet
+	}
+	return ""
+}
 
 // Defaults returns a fresh config for a first run.
 func Defaults() *Config {
@@ -147,7 +197,9 @@ func load(path string) (*Config, error) {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
-	if cfg.HubURL == "" {
+	if cfg.HubURL == "" && cfg.Hub == nil {
+		// a hub paired on the LAN may have no tailnet URL at all; only a
+		// config that knows no hub gets the default
 		cfg.HubURL = DefaultHub
 	}
 	if cfg.DownloadDir == "" {
@@ -207,6 +259,11 @@ func (c Config) clone() Config {
 		out.ChatSeen[k] = v
 	}
 	out.InboxSeen = append([]string(nil), c.InboxSeen...)
+	if c.Hub != nil {
+		h := *c.Hub
+		h.LAN = append([]string(nil), c.Hub.LAN...)
+		out.Hub = &h
+	}
 	return out
 }
 
