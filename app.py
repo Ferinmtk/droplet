@@ -716,6 +716,27 @@ def banner(url: str, tailnet_url: str | None = None):
     print()
 
 
+# --- feature modules ---------------------------------------------------------
+# Each module exposes register(ctx) and adds its own routes and page script,
+# so features stay out of this file. The PIN gate above covers their routes too.
+
+from types import SimpleNamespace  # noqa: E402
+
+FEATURES: list = []
+
+feature_ctx = SimpleNamespace(
+    app=app,
+    base_dir=BASE_DIR,
+    devices=devices,
+    pusher=pusher,
+    chats=chats,
+    current_device=current_device,
+    sender_name=sender_name,
+)
+for _feature in FEATURES:
+    _feature.register(feature_ctx)
+
+
 if __name__ == "__main__":
     # make pkill/SIGTERM exit cleanly so the mDNS goodbye packet goes out
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

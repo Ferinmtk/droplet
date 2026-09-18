@@ -126,6 +126,9 @@
     </div>
   </section>
 
+  <!-- feature modules mount their cards here (see static/*.js) -->
+  <div id="features"></div>
+
   <div class="toolbar">
     <input id="q" type="search" placeholder="Filter by name…" autocomplete="off">
     <select id="sort">
@@ -719,5 +722,6 @@ loadMe().then(refresh).then(() => { openFromHash(); drainInbox(); });
 setInterval(refresh, 5000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 </script>
+<!-- feature scripts: plain scripts that use the helpers above (el, flash, me, latest, others…) -->
 </body>
 </html>
