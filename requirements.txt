@@ -3,3 +3,4 @@ qrcode>=7.4
 zeroconf>=0.130
 cryptography>=42.0
 pywebpush>=2.0
+flask-sock>=0.7
