@@ -223,4 +223,78 @@ class ScreensTest {
         scroll.scrollTo(0, y - 400)
         shoot(a, "settings-bt")
     }
+
+    // --- the mesh -------------------------------------------------------------------------
+
+    /** A running mesh with two trusted devices, one on the Wi-Fi not paired, and a request waiting. */
+    private fun fakeMesh(): dev.droplet.app.mesh.MeshNode {
+        dev.droplet.app.mesh.MeshIdentity.keystoreAllowed = false
+        val tmp = java.nio.file.Files.createTempDirectory("mesh-shots").toFile()
+        val laptop = dev.droplet.app.mesh.MeshIdentity.loadOrCreate(File(tmp, "laptop"))
+        val tv = dev.droplet.app.mesh.MeshIdentity.loadOrCreate(File(tmp, "tv"))
+        val stranger = dev.droplet.app.mesh.MeshIdentity.loadOrCreate(File(tmp, "stranger"))
+        Mesh.dirOverride = File(tmp, "phone")
+        Mesh.portOverride = 0
+        Mesh.directoryFactory = {
+            object : dev.droplet.app.mesh.PeerDirectory {
+                override fun start(port: Int, txt: Map<String, String>, onSeen: (dev.droplet.app.mesh.Seen) -> Unit) = Unit
+                override fun update(txt: Map<String, String>) = Unit
+                override fun close() = Unit
+                override fun peers() = listOf(dev.droplet.app.mesh.Seen(stranger.fp, "0a1b2c3d4e5f6071", "office-pc", "windows",
+                    listOf("input"), "", 1739, listOf("192.168.100.31")))
+            }
+        }
+        Prefs.meshDeviceName = "Redmi Note 11E Pro"
+        Mesh.hold("shots")
+        val end = System.currentTimeMillis() + 20_000
+        while (Mesh.node == null && System.currentTimeMillis() < end) Thread.sleep(50)
+        val n = Mesh.node!!
+        n.trust.addPaired(dev.droplet.app.mesh.TrustList.makeEntry(peerId = "1234567890abcdef", name = "slim",
+            certPem = laptop.pem, source = "paired", os = "linux", caps = listOf("input", "media")))
+        n.trust.syncRoster(listOf(dev.droplet.app.mesh.TrustList.makeEntry(peerId = "9b16173d305c", name = "T15",
+            certPem = tv.pem, source = "roster", os = "linux", caps = listOf("input"), hub = "9b16173d305cd15a")), "9b16173d305cd15a")
+        return n
+    }
+
+    private fun releaseMesh() {
+        Mesh.release("shots")
+        Mesh.dirOverride = null
+        Mesh.portOverride = null
+        Mesh.directoryFactory = { NsdPeerDirectory(it) }
+    }
+
+    @Test
+    fun peers() {
+        assumeTrue(out.isNotEmpty())
+        val n = fakeMesh()
+        try {
+            val a = Robolectric.buildActivity(PeersActivity::class.java).setup().get()
+            idleFor(300)
+            shoot(a, "mesh-peers")
+            // the pairing code, as after tapping office-pc
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(a)
+                .setTitle(a.getString(R.string.mesh_pair_check_title, "office-pc"))
+                .setMessage(a.getString(R.string.mesh_pair_check, "office-pc", "4096"))
+                .setPositiveButton(R.string.mesh_pair_matches, null).setNegativeButton(R.string.cancel, null).show()
+            idleFor(300)
+            shoot(a, "mesh-pair-code")
+            val fp = n.trust.all().first { it.name == "slim" }.fp
+            n.chat.add(org.json.JSONObject().put("id", "a1").put("dir", "in").put("fp", fp).put("body", "Slides are up, start when you like")
+                .put("ts", System.currentTimeMillis() / 1000.0 - 300))
+            n.chat.add(org.json.JSONObject().put("id", "a2").put("dir", "out").put("fp", fp).put("body", "Thanks, starting now")
+                .put("ts", System.currentTimeMillis() / 1000.0 - 60).put("route", "lan"))
+            val c = Robolectric.buildActivity(ChatActivity::class.java, ChatActivity.intent(ApplicationProvider.getApplicationContext(), fp)).setup().get()
+            idleFor(300)
+            shoot(c, "mesh-chat")
+            val st = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+            val scroll = st.findViewById<android.widget.ScrollView>(R.id.scroll)
+            var y = 0
+            var v: android.view.View? = st.findViewById(R.id.mesh_switch)
+            while (v != null && v !== scroll) { y += v.top; v = v.parent as? android.view.View }
+            scroll.scrollTo(0, y - 200)
+            shoot(st, "settings-mesh")
+        } finally {
+            releaseMesh()
+        }
+    }
 }
