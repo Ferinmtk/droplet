@@ -543,13 +543,17 @@ class MeshNode:
         hub_id = self.host.hub_id()
         return bool(hub_id and entry.get("hub") == hub_id and self.host.hub_connected())
 
+    def _hub_has_it_live(self, entry: dict) -> bool:
+        """The hub knows the peer and the peer is connected to it now: live messages can go that way."""
+        return self._hub_knows(entry) and self.host.hub_online(entry["id"])
+
     def send_live(self, fp: str, msg: dict) -> str:
         """input, media, cmd: direct, else through the hub. Returns the route; raises NoRoute."""
         entry = self._entry(fp)
         link = self.direct(fp)
         if link is not None and link.send(msg):
             return link.kind
-        if self._hub_knows(entry) and self.host.hub_send({**msg, "to": entry["id"]}):
+        if self._hub_has_it_live(entry) and self.host.hub_send({**msg, "to": entry["id"]}):
             return "hub"
         raise NoRoute(f"{entry['name']} isn't reachable directly, and not through the hub either")
 
@@ -571,7 +575,7 @@ class MeshNode:
         if link is not None and link.send({"t": "clip", "text": text}):
             return link.kind
         # the hub has no addressed clipboard message: it goes to all your devices' clipboards
-        if self._hub_knows(entry) and self.host.hub_send({"t": "clip", "text": text}):
+        if self._hub_has_it_live(entry) and self.host.hub_send({"t": "clip", "text": text}):
             return "hub"
         raise NoRoute(f"{entry['name']} isn't reachable directly, and not through the hub either")
 
@@ -687,7 +691,7 @@ class MeshNode:
                 self._finish(job, FAILED, error=got[len("refused:"):].strip() or "the peer refused it")
                 return "done"
             # the peer is there but it didn't finish: try again soon, directly
-            self.outbox.update(job["id"], state=QUEUED, error=got)
+            self.outbox.update(job["id"], state=QUEUED, error=got, retry=True)
             threading.Timer(3, self._kick.set).start()
             return "wait"
         if self._hub_knows(entry):
@@ -704,7 +708,7 @@ class MeshNode:
                 err = f"the hub: {e}"
         else:
             err = "not reachable directly, and no hub knows it right now"
-        self.outbox.update(job["id"], state=QUEUED, error=err)
+        self.outbox.update(job["id"], state=QUEUED, error=err, retry=False)
         return "wait"
 
     def _direct_text(self, link: Link, job: dict) -> str:
@@ -729,8 +733,10 @@ class MeshNode:
             while not offer.done.wait(1):
                 if self.stop.is_set():
                     return "stopping"
-                if time.monotonic() - offer.last_activity > STALL:
-                    return f"stalled at {offer.sent} bytes"
+                idle = time.monotonic() - offer.last_activity
+                if idle > STALL or (link.closed and idle > 5):
+                    # gone quiet, or the peer went away: offer it again later, and it resumes
+                    return f"stopped at {offer.sent} bytes sent"
                 if self.trust.get(link.fp) is None:
                     return "refused: not trusted any more"
             ok, error = offer.result or (False, "")
@@ -939,9 +945,16 @@ class MeshNode:
             return {"error": str(e)}
 
     def _job_answer(self, jid: str, wait: float) -> dict:
-        """The job, once it's delivered, failed, or tried every route once (or `wait` seconds passed)."""
+        """The job, once it's delivered, failed, or found no route (or `wait` seconds passed).
+
+        A transfer that stopped part-way and is being retried isn't an answer yet.
+        """
         job = self.outbox.wait(jid, lambda j: j["state"] in (DONE, FAILED)
-                               or (j["state"] == QUEUED and j["attempts"] > 0), min(wait, 3600))
+                               or (j["state"] == QUEUED and j["attempts"] > 0 and not j.get("retry")),
+                               min(wait, 3600))
         if job is None:
             return {"error": "no such job"}
-        return {k: job.get(k) for k in ("id", "kind", "peer", "state", "route", "error", "attempts", "name")}
+        # "error" in an answer means the command failed, so the job's own problem is "why"
+        out = {k: job.get(k) for k in ("id", "kind", "peer", "state", "route", "attempts", "name")}
+        out["why"] = job.get("error")
+        return out

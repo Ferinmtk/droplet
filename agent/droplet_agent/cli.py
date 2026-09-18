@@ -463,9 +463,9 @@ def _report_job(job: dict, what: str) -> int:
         print(f"{what} {ROUTE_TEXT.get(job['route'], job['route'])}.")
         return 0
     if job["state"] == "failed":
-        print(f"{what} failed: {job['error']}", file=sys.stderr)
+        print(f"{what} failed: {job.get('why')}", file=sys.stderr)
         return 1
-    print(f"{job['peer']} can't be reached right now ({job.get('error') or 'no route'}). "
+    print(f"{job['peer']} can't be reached right now ({job.get('why') or 'no route'}). "
           "It's kept in the outbox and sent as soon as it or the hub can be reached.")
     return 0
 

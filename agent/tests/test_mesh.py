@@ -414,7 +414,10 @@ def test_routing_order_direct_hub_mailbox_outbox(nodes, tmp_path):
     j = a.send_text(fp, "three")
     assert a.outbox.wait(j["id"], lambda j: j["state"] == DONE, 8)["route"] == "hub-mailbox"
     assert [c[2] for c in a.host.hub_calls if c[0] == "text"] == ["two", "three"]
-    # live messages never queue: through the hub while it's up, else an error
+    # live messages never queue: through the hub while the peer is connected to it, else an error
+    with pytest.raises(NoRoute):
+        a.send_live(fp, {"t": "input", "ev": []})
+    a.host.online = {b.peer_id}
     assert a.send_live(fp, {"t": "input", "ev": []}) == "hub"
     assert a.host.hub_calls[-1] == ("ws", {"t": "input", "ev": [], "to": b.peer_id})
     # 5: nothing works: kept in the outbox, in order
