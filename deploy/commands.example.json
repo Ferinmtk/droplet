@@ -1,0 +1,7 @@
+[
+  { "name": "Uptime", "icon": "⏱️", "run": ["uptime"] },
+  { "name": "Disk space", "icon": "💽", "run": ["df", "-h", "-x", "tmpfs", "-x", "devtmpfs", "-x", "efivarfs"] },
+  { "name": "Battery", "icon": "🔋", "run": ["bash", "-lc", "upower -i \"$(upower -e | grep -m1 BAT)\""] },
+  { "name": "What's using the CPU", "icon": "🔥", "run": ["bash", "-lc", "top -bn1 | head -15"] },
+  { "name": "Lock screen", "icon": "🔒", "run": ["loginctl", "lock-session"], "confirm": true, "timeout": 10 }
+]

@@ -8,6 +8,9 @@ __pycache__/
 
 # Secrets — never commit
 .secret_key
+.vapid_private.pem
+devices.json
+devices.tmp
 certs/
 
 # Runtime file storage — keep the directories, ignore their contents
@@ -15,6 +18,11 @@ received/*
 !received/.gitkeep
 shared/*
 !shared/.gitkeep
+inbox/
+chats/
 
 # Docker Compose bind-mount target (DROPLET_HOME inside the container)
 data/
+
+# phone notifications mirrored by the Android app (holds message text)
+phone.json

@@ -171,6 +171,292 @@ systemd user service), tested from another tailnet machine:
 tailnet devices too, because droplet didn't set serve up and doesn't trust
 the header.
 
+## Install it as an app + "Share → droplet" (Android)
+
+Over HTTPS (the [tailnet URL](#tailnet-real-https-from-anywhere)) droplet is
+an installable web app. Browsers only allow installing from a secure origin,
+so this doesn't work on the plain `http://` LAN address.
+
+1. Open the `https://…ts.net` URL in **Chrome** on the phone.
+2. Tap **Install app** next to the title (or ⋮ → **Install app**).
+3. Open it from the home screen. It runs full-screen, without an address bar.
+   If you see an address bar, it's a shortcut, not an install: remove it and
+   install again.
+
+After installing, **droplet shows up in Android's share sheet.** Share
+photos, files, text or links to it from any app (Gallery, Files, Chrome,
+YouTube…). Files land in `received/`. Text and links are saved as a
+`text-*.txt` file, and the link many apps repeat inside the text is only
+written once.
+
+How it works: `static/sw.js` (the service worker) catches the share, parks
+the items in a cache and opens the page, which uploads them with the normal
+progress bar. So:
+
+- **PIN on and logged out?** The shared items wait through the login and
+  send afterwards. Logins last 30 days, because an installed app forgets
+  normal session cookies whenever it's closed.
+- **Hub unreachable** (Tailscale off, hub asleep)? You get a "Can't reach the
+  hub" page instead of Chrome's error, and the shared items stay parked until
+  the next time droplet opens with the hub reachable.
+- If the service worker isn't running yet, Android posts straight to
+  `POST /share` on the server, which saves the items directly.
+
+**Verified** on a Redmi Note 11E Pro (Chrome, installed from the tailnet URL):
+Gallery → Share → droplet uploads the photo. Tested on a desktop browser:
+a PIN login in between, text+URL de-duplication, and the offline page.
+Note that some gallery apps (Xiaomi's included) hand over a numeric name like
+`1789694404320.jpg` instead of the original filename. droplet saves whatever
+name the app gives it.
+
+The share sheet is Android-only. iOS Safari can add droplet to the home
+screen, but it doesn't offer web apps as share targets.
+
+## Devices: send to one, chat, get notified
+
+Every browser can **name itself as a device** in the box at the top of the
+page. Over the tailnet the name is filled in from the machine's Tailscale name
+(for example `redmi-note-11e-pro`). Names are unique, so there's never two
+"slim"s to choose between.
+
+Once two or more devices are named:
+
+- **Send to** picks where drops go: the **Hub** (`received/`, as before) or
+  a device. Items sent to a device wait in its **For this device** list,
+  labelled with who sent them. If the device is off they stay on the hub
+  until it comes back, which KDE Connect can't do.
+- **Chat.** With a device picked, the text box becomes a chat with it:
+  bubbles, clickable links, tap a message to copy it. Unread counts show on
+  the device buttons. Links shared from Android's share sheet to a device
+  land in the chat. Text sent to the Hub is still saved as a file. Chatting
+  needs a named device on both ends, so replies have somewhere to go.
+- **Notifications.** Tap **Turn on notifications** on a device and it gets
+  one for every file or message sent to it, even with droplet closed on a
+  phone. Tapping opens the chat or the inbox. A message that's only a link
+  opens the link directly. **Test** sends one to yourself.
+- **Devices** (at the bottom) lists every device with an online dot, and
+  lets you remove old ones. Removing a device deletes what was waiting for
+  it and its chats. Over the tailnet it also lists **Tailscale machines that
+  haven't opened droplet yet**, so you know what's missing.
+
+**How notifications travel:** a web app can only wake a closed phone app
+through the browser's push service (Google's for Chrome, Mozilla's for
+Firefox). droplet encrypts each notification to the browser before handing it
+over, so the push service sees only that *a* message arrived, never the
+filename or text. Files and chats never leave your hub. The hub needs
+internet access for this. `DROPLET_PUSH=0` turns push off for a fully local
+hub: new items then show up while droplet is open.
+
+Good to know:
+
+- A device is a browser + address pair. The same phone on the LAN URL and on
+  the tailnet URL counts as two devices (different cookies), so stick to one
+  URL per device, ideally the tailnet one.
+- On desktop, notifications arrive while that browser is running (it can be
+  in the background). On Android they arrive with the app closed.
+- A device's identity is a random token in a long-lived cookie. Only its
+  hash is stored on the hub (`devices.json`, owner-only permissions).
+  Clearing site data in the browser makes it a new device; remove the old
+  one under Devices.
+
+**Verified** with the T15 hub, a Redmi Note 11E Pro (installed app, Chrome)
+and slim: files both ways land in the right inbox with the sender's name, a
+push notification rang the phone with the app closed, and the chat works
+both ways. Tested in two desktop browsers: unread counts, opening a chat
+from a notification link, duplicate names refused, an unnamed browser can't
+chat, and one device can't read another's inbox.
+
+## The Hub tab: control the hub from any device
+
+The app has four tabs on a phone (**Send · Files · Hub · Devices**). On a
+desktop they sit side by side. The **Hub** tab is a remote for the hub
+machine, with four cards.
+
+### Now playing
+
+Shows what's playing on the hub: album art, title and artist, a progress bar
+(tap it to jump), previous / play-pause / next, ±10 s skips when the player
+can seek, and the hub's volume with a mute button. With more than one player
+open there's a picker. **Speaker ▾** switches the hub's audio output (speaker,
+HDMI, an AirPlay sink…).
+
+It uses `playerctl` (any MPRIS player: browsers, VLC, Spotify, and phones
+relayed by KDE Connect, shown as e.g. "Chrome on fedora") and `wpctl`
+(PipeWire). Both talk over the session bus, so run droplet as the
+[`systemd --user` service](#run-as-a-service). Without either tool the card
+doesn't appear.
+
+- Devices never send commands, only choices: players and outputs must be
+  ones the hub lists itself, and volume is capped at 100%.
+- Album art from local players is served only if it's a real image file (the
+  file's bytes are checked, not its name) under your home or `/tmp`, at most
+  5 MB. Web art loads straight from its URL.
+- The card only polls while it's on screen and the page is visible.
+
+### Shared clipboard
+
+Copy on one device, paste on another.
+
+- **In a chat**, the clipboard button next to **Send** sends whatever is on
+  this device's clipboard as a message. The other device taps the bubble to
+  copy it.
+- The **Hub clipboard** card shows what's on the hub's own clipboard. **Send
+  mine to the hub** puts this device's clipboard there, ready to paste on the
+  hub. **Copy the hub's here** does the reverse. The preview refreshes when
+  the card appears, when you switch back to droplet, or with ↻. It isn't
+  polled.
+
+The hub side uses `wl-paste`/`wl-copy` (wl-clipboard), so the hub needs a
+Wayland session (tested on KDE Plasma and niri). Text only, up to 1 MB.
+Browsers only allow clipboard access over HTTPS, so use the tailnet URL. On
+the plain `http://` LAN address you get a box to paste into and a block of
+text to select instead.
+
+Clipboards often hold passwords, so the hub clipboard is stricter than files:
+it works over the tailnet, or on the LAN after entering `DROPLET_PIN`, and
+refuses LAN guests on a hub without a PIN. What you send stays on the hub's
+clipboard until something replaces it, or until the droplet service restarts
+(systemd stops wl-copy's background process along with the service).
+`DROPLET_CLIPBOARD=0` turns it off.
+
+### Hub commands
+
+Like KDE Connect's **Run command**: the hub's owner lists commands in a file,
+and each gets a button. Tap one to see its output and exit code. Devices only
+say *which* command to run. What runs comes from the file on the hub, so a
+phone can't run anything that isn't listed.
+
+```bash
+cp deploy/commands.example.json ~/.config/droplet/commands.json
+# edit it; droplet picks up changes on its own, no restart
+```
+
+The file is a JSON list. Each entry:
+
+| Key | | Meaning |
+|---|---|---|
+| `name` | required | button label (also its id, so keep names unique) |
+| `run` | required | the program and its arguments, as a list: `["df", "-h"]` |
+| `icon` | optional | an emoji for the button |
+| `confirm` | optional | `true` = ask "are you sure?" first |
+| `timeout` | optional | seconds before it's killed (default 30, max 300) |
+
+- `run` is **not** a shell line. Pipes, `~` and `$VARS` need a shell, so ask
+  for one explicitly: `["bash", "-lc", "..."]`.
+- Commands run as droplet's user, in their home folder, with no input and
+  without droplet's own `DROPLET_*` settings (so the PIN isn't passed on).
+  The output shown is the last 8 KB of stdout and stderr together. On
+  timeout, everything the command started is killed.
+- One run of each command at a time.
+- A broken entry is skipped and the rest still work. The reason goes to the
+  log (`journalctl --user -u droplet`) and to `GET /api/hub/commands` under
+  `errors`. No file means no card.
+- From a script:
+  `curl -X POST -H 'X-Droplet-Run: 1' https://<hub>/api/hub/commands/uptime/run`.
+  The header is required.
+
+**Locking the screen.** The example uses `loginctl lock-session`, which only
+works if something listens for it (Plasma and GNOME do). On niri or sway,
+start the locker yourself, in its own session so the command's timeout can't
+kill it:
+`["bash", "-lc", "setsid -f gtklock -d >/dev/null 2>&1 </dev/null"]`.
+
+Anyone who can open droplet can press these, so only list commands you'd let
+any of your devices run. The example deliberately has no suspend or
+power-off: the hub is meant to stay awake.
+
+### Find a device
+
+A button for every other device, plus **Ring the hub**.
+
+- **Ringing a device** makes it loud for up to a minute:
+  - **droplet open on it:** a full-screen alert with a big **Stop**, a ringing
+    tone and vibration. If the browser blocks sound until the page is
+    touched, it says "Tap anywhere to hear it".
+  - **droplet closed** (with notifications on): a notification that stays up
+    and vibrates. Tapping it, its **Stop ringing** button, or swiping it away
+    stops the ring.
+
+  The sender's button pulses until the other side answers. Either side can
+  stop it, and it stops by itself after 60 s.
+- **Ringing the hub** plays the freedesktop "incoming call" sound on the hub
+  four times, using the first of `pw-play`, `paplay` or `canberra-gtk-play`
+  it finds, at the hub's current volume.
+
+**Limits:** a closed web app can't play its own sound, so on a phone with
+droplet closed the ring is the notification's sound and vibration, which
+silent mode and Do Not Disturb mute. The [Android app](#android-app) rings
+through the alarm channel instead, which isn't muted by silent mode. Rings
+live in memory, so restarting the hub forgets them.
+
+### Cross-site protection
+
+Tailnet devices are trusted by network, not by cookie. Without a guard, any
+website you visit could make your browser post to droplet (delete files, run
+a command). So droplet refuses any write whose `Origin` isn't droplet itself.
+Browsers always send `Origin` on cross-site posts. curl and the native apps
+don't send it and aren't affected.
+
+**Verified** on the T15 hub (niri): commands ran from slim over the tailnet,
+the media card read the KDE Connect player, the volume and all five outputs,
+and the clipboard read works under niri. Also tested in desktop browsers
+against real `playerctl`/`wl-clipboard`, with no sound played and nothing
+changed on the hub. Not yet tried: ringing a real phone, and the hub's ring
+sound.
+
+## Android app
+
+A native companion in `android/` (see [android/README.md](android/README.md)).
+It adds what a web app can't do on a phone:
+
+- **Share → droplet** from any app, with a device picker and the original
+  file names (Xiaomi Gallery otherwise hands over bare numbers).
+- **A loud "find my phone" ring.** It plays on the alarm channel at full
+  volume, so silent mode doesn't mute it, then puts the volume back.
+- **Notification mirroring:** the phone's notifications appear on a **Phone**
+  card in the Hub tab on your other devices, with its battery level.
+- **Notifications for files and messages** sent to the phone, even with the
+  app closed.
+
+Everything else is the normal web app inside it.
+
+**Install:** open droplet on the phone, tap **droplet.apk** under Shared, and
+allow installs from your browser when Android asks. Open the droplet app,
+keep the default hub address (Tailscale must be on), and name the phone in
+the page. Then open ⚙ (top right) for settings:
+
+- **Stay connected** lets other devices ring the phone and notifies you about
+  files and messages. It shows a quiet "droplet connected" notification.
+- **Notification access** turns on mirroring. Leave apps out under **Apps not
+  to mirror**.
+
+Permissions: notifications, notification access (you grant it), a
+foreground service, exact alarms, and run at startup. No Google services,
+nothing outside your tailnet.
+
+**Xiaomi / Redmi (MIUI, HyperOS):** MIUI kills background apps. For rings to
+arrive, turn on **Autostart** for droplet, set its battery saver to **No
+restrictions**, and lock it in Recents. The app's settings have buttons for
+the first two.
+
+**Build:** `cd android && ./gradlew assembleRelease` (JDK 17+, Android SDK).
+Release builds are signed with `~/.android/droplet-release.jks` when
+`~/.android/droplet-release.properties` exists, otherwise with the debug key.
+Keep that keystore backed up: updates must be signed with the same key.
+
+Hub side (`phone.py`): `POST /api/phone/notifications` (`posted` / `removed`
+/ `sync`), `GET /api/phone/notifications`, `POST /api/phone/status`
+(battery), `POST /api/phone/<id>/clear`. The latest 50 per phone are kept in
+`phone.json` (owner-only permissions, git-ignored).
+
+**Verified** on an Android 16 emulator against a local hub: setup, the
+WebView, downloads and zip, the file chooser, a share from the Files app
+with the original name kept, sharing text into a chat, a ring picked up by
+Stay connected (alarm volume raised and restored, Stop from the notification
+and the full-screen screen, auto-stop, waking a locked screen), and
+mirroring a posted and removed notification to the Phone card. Not yet
+tried on the Redmi itself (MIUI autostart and battery rules, real Doze).
+
 ## Config (env vars)
 
 | Var | Default | Meaning |
@@ -185,6 +471,9 @@ the header.
 | `DROPLET_MAX_MB` | `1024` | max upload size |
 | `DROPLET_TAILSCALE` | *(off)* | `1` = also serve at `https://<machine>.<tailnet>.ts.net` with a real certificate, via `tailscale serve` (see [Tailnet](#tailnet-real-https-from-anywhere)) |
 | `DROPLET_TAILNET_TRUST` | `1` | with `DROPLET_PIN` set, tailnet devices skip the PIN. `0` = they enter it like everyone else |
+| `DROPLET_PUSH` | `1` | `0` = no push notifications (nothing goes through Google/Mozilla); devices see new items while droplet is open. See [Devices](#devices-send-to-one-chat-get-notified) |
+| `DROPLET_COMMANDS` | `~/.config/droplet/commands.json` | preset commands for the Hub tab (see [Hub commands](#hub-commands)) |
+| `DROPLET_CLIPBOARD` | `1` | `0` = no shared hub clipboard (see [Shared clipboard](#shared-clipboard)) |
 
 ## How files flow
 

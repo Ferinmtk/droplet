@@ -1,0 +1,22 @@
+# Gradle / Android Studio
+.gradle/
+build/
+/app/build/
+.idea/
+*.iml
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# machine-specific
+local.properties
+
+# signing material never lives in the repo (see README)
+*.jks
+*.keystore
+signing.properties
+
+# build products
+*.apk
+*.aab

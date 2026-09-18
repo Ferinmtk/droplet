@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">droplet</string>
+    <string name="settings">Settings</string>
+    <string name="open_droplet">Open droplet</string>
+    <string name="retry">Try again</string>
+
+    <!-- setup -->
+    <string name="setup_title">Connect to your hub</string>
+    <string name="setup_body">droplet talks to the hub machine that runs the droplet server. Paste its address below.</string>
+    <string name="setup_hint">Hub address</string>
+    <string name="setup_tailscale">Tailscale must be switched on in the Tailscale app, or the hub can\'t be reached from this phone.</string>
+    <string name="setup_connect">Connect</string>
+    <string name="setup_checking">Checking…</string>
+    <string name="setup_anyway">Use it anyway</string>
+    <string name="setup_bad_url">That doesn\'t look like a web address.</string>
+    <string name="setup_unreachable">Couldn\'t reach %1$s: %2$s\n\nIs Tailscale on, and is the hub awake?</string>
+    <string name="setup_not_droplet">%1$s answered, but it doesn\'t look like a droplet hub.</string>
+
+    <!-- main -->
+    <string name="offline_title">Can\'t reach the hub</string>
+    <string name="offline_body">Is Tailscale switched on, and is the hub machine awake? droplet will try again when the network comes back.</string>
+    <string name="download_started">Downloading %1$s</string>
+    <string name="download_saved">Saved %1$s to Downloads</string>
+    <string name="download_failed">Couldn\'t save %1$s</string>
+    <string name="no_file_picker">No app here can pick files</string>
+    <string name="no_app_for_link">No app can open that link</string>
+
+    <!-- share -->
+    <string name="share_to">Send to</string>
+    <string name="share_hub">Hub</string>
+    <string name="share_hub_sub">Saved in Received on the hub</string>
+    <string name="share_online">online</string>
+    <string name="share_offline">offline: it gets it when it\'s back</string>
+    <string name="share_unreachable">Can\'t reach the hub. Is Tailscale on?</string>
+    <string name="share_unnamed">To send to other devices, open droplet and give this phone a name.</string>
+    <string name="share_nothing">There\'s nothing droplet can send in that share.</string>
+    <string name="share_more">%1$s and %2$d more</string>
+    <string name="share_last">last used</string>
+    <string name="share_unreadable">The app you shared from didn\'t let droplet read that.</string>
+    <string name="share_no_hub">Set up droplet first.</string>
+
+    <!-- notifications -->
+    <string name="ch_connection">Stay connected</string>
+    <string name="ch_connection_desc">The quiet notification that keeps droplet listening for rings.</string>
+    <string name="ch_transfers">Transfers</string>
+    <string name="ch_transfers_desc">Progress of files you send.</string>
+    <string name="ch_ring">Find my phone</string>
+    <string name="ch_ring_desc">Shown while another device is ringing this phone.</string>
+    <string name="ch_inbox">Files and messages</string>
+    <string name="ch_inbox_desc">Files and chat messages sent to this phone.</string>
+    <string name="stop">Stop</string>
+    <string name="cancel">Cancel</string>
+    <string name="ring_title">Ringing from %1$s</string>
+    <string name="ring_body">Tap Stop to silence it.</string>
+    <string name="ring_heading">Found me!</string>
+
+    <!-- uploads -->
+    <string name="up_preparing">Getting ready…</string>
+    <string name="up_the_hub">the hub</string>
+    <string name="up_sending">Sending to %1$s</string>
+    <string name="up_progress">%1$d%% · %2$s of %3$s</string>
+    <string name="up_text">Sending text…</string>
+    <string name="up_done">Sent to %1$s</string>
+    <string name="up_what_text">Text</string>
+    <string name="up_failed">Couldn\'t send to %1$s</string>
+    <string name="up_cancelled">Sending cancelled</string>
+    <plurals name="up_files">
+        <item quantity="one">%d file</item>
+        <item quantity="other">%d files</item>
+    </plurals>
+
+    <!-- stay connected -->
+    <string name="conn_title">droplet connected</string>
+    <string name="conn_connecting">Connecting…</string>
+    <string name="conn_ok">Listening for rings via %1$s</string>
+    <string name="conn_no_network">Waiting for the network</string>
+    <string name="conn_unreachable">Can\'t reach the hub, retrying</string>
+    <string name="conn_unnamed">Open droplet and name this phone to receive rings</string>
+    <string name="inbox_message">New message from %1$s</string>
+    <plurals name="inbox_files">
+        <item quantity="one">%1$s sent a file</item>
+        <item quantity="other">%1$s sent %2$d files</item>
+    </plurals>
+    <plurals name="inbox_unread">
+        <item quantity="one">%d unread message</item>
+        <item quantity="other">%d unread messages</item>
+    </plurals>
+
+    <!-- settings -->
+    <string name="s_hub">Hub</string>
+    <string name="s_hub_address">Hub address</string>
+    <string name="s_change">Change</string>
+    <string name="s_this_phone">This phone</string>
+    <string name="s_unnamed">Not named yet. Open droplet and give this phone a name, so other devices can send to it and ring it.</string>
+    <string name="s_named">Named %1$s on the hub.</string>
+    <string name="s_checking">Checking the hub…</string>
+    <string name="s_hub_unreachable">Can\'t reach the hub right now.</string>
+    <string name="s_connected">Stay connected</string>
+    <string name="s_connected_desc">Keeps a small notification up and checks the hub every 15 seconds, so another device can ring this phone (loud, even on silent), and you hear about files and messages sent here.</string>
+    <string name="s_inbox">Notify me about files and messages</string>
+    <string name="s_inbox_desc">Needs Stay connected. Shows a notification when something arrives for this phone.</string>
+    <string name="s_notif_perm_off">Notifications are off for droplet, so rings and transfers can\'t show.</string>
+    <string name="s_allow">Allow</string>
+    <string name="s_mirror">Notification mirroring</string>
+    <string name="s_mirror_desc">Show this phone\'s notifications on your other devices, in droplet\'s Phone card. Ongoing ones (music, navigation) are skipped.</string>
+    <string name="s_mirror_on">Notification access: allowed</string>
+    <string name="s_mirror_off">Notification access: not allowed</string>
+    <string name="s_mirror_button">Notification access</string>
+    <string name="s_excluded">Apps not to mirror</string>
+    <string name="s_excluded_none">None excluded</string>
+    <string name="s_excluded_some">%1$d excluded</string>
+    <string name="s_battery">Keep it running</string>
+    <string name="s_battery_desc">Android and MIUI stop apps in the background to save battery, which stops rings getting through.</string>
+    <string name="s_battery_miui">On Xiaomi / Redmi (MIUI, HyperOS):\n1. Autostart: turn it on for droplet.\n2. Battery saver: set droplet to No restrictions.\n3. Open Recents, long-press droplet and tap the lock, so clearing Recents leaves it alone.</string>
+    <string name="s_battery_other">Set droplet\'s battery usage to Unrestricted, so the system doesn\'t stop it.</string>
+    <string name="s_battery_button">Battery settings</string>
+    <string name="s_autostart_button">Autostart</string>
+    <string name="s_battery_ok">Battery optimisation is off for droplet.</string>
+    <string name="s_battery_on">Battery optimisation is on for droplet.</string>
+    <string name="s_about">droplet %1$s · your own hub, no cloud</string>
+    <string name="excluded_title">Apps not to mirror</string>
+    <string name="excluded_body">Ticked apps\' notifications stay on this phone.</string>
+</resources>
