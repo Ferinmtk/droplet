@@ -42,7 +42,7 @@ class DeviceStore:
     def _hash(token: str) -> str:
         return hashlib.sha256(token.encode()).hexdigest()
 
-    def create(self, name: str) -> tuple[dict, str]:
+    def create(self, name: str, node: str | None = None) -> tuple[dict, str]:
         token = secrets.token_urlsafe(32)
         dev = {
             "id": secrets.token_hex(6),
@@ -50,6 +50,7 @@ class DeviceStore:
             "token": self._hash(token),
             "created": int(time.time()),
             "push": None,
+            "node": node,  # tailnet machine name, when it registered over the tailnet
         }
         with self._lock:
             self._devices[dev["id"]] = dev
@@ -91,6 +92,10 @@ class DeviceStore:
         with self._lock:
             return any(d["name"].casefold() == name.casefold() and d["id"] != except_id
                        for d in self._devices.values())
+
+    def nodes(self) -> set[str]:
+        with self._lock:
+            return {d["node"] for d in self._devices.values() if d.get("node")}
 
     def touch(self, device_id: str):
         self._seen[device_id] = time.time()

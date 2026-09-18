@@ -169,6 +169,12 @@ def current_device() -> dict | None:
         g.device = devices.by_token(request.cookies.get(DEVICE_COOKIE))
         if g.device:
             devices.touch(g.device["id"])
+            if not g.device.get("node"):
+                # devices named before this was recorded, or first seen over the LAN
+                node = tailnet_node()
+                if node:
+                    devices.update(g.device["id"], node=node)
+                    g.device["node"] = node
     return g.device
 
 
@@ -182,18 +188,56 @@ def sender_name() -> str:
 _whois_cache: dict[str, str] = {}
 
 
+def tailnet_node() -> str | None:
+    """The visitor's tailnet machine name (e.g. "redmi-note-11e-pro").
+
+    `tailscale serve` passes the visitor's tailnet IP in X-Forwarded-For;
+    only trusted on requests that came through serve (see via_tailnet).
+    """
+    if not via_tailnet():
+        return None
+    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if ip and ip not in _whois_cache:
+        r = _tailscale("whois", "--json", ip)
+        try:
+            _whois_cache[ip] = json.loads(r.stdout)["Node"]["ComputedName"] if r else ""
+        except (ValueError, KeyError, TypeError):
+            _whois_cache[ip] = ""
+    return _whois_cache.get(ip) or None
+
+
+_peers: tuple[float, list[dict]] = (0.0, [])
+
+
+def tailnet_peers() -> list[dict]:
+    """Machines on the tailnet, refreshed at most every 15 s (the page polls every 5)."""
+    global _peers
+    if not TAILNET_URL:
+        return []
+    if time.time() - _peers[0] > 15:
+        found = _peers[1]
+        r = _tailscale("status", "--json")
+        try:
+            found = [
+                {
+                    "node": (p.get("DNSName") or "").split(".")[0] or p.get("HostName", ""),
+                    "os": p.get("OS", ""),
+                    "online": bool(p.get("Online")),
+                }
+                for p in (json.loads(r.stdout).get("Peer") or {}).values()
+                if not p.get("Tags")  # tagged nodes are servers, not someone's device
+            ]
+        except (AttributeError, ValueError, TypeError):
+            pass
+        _peers = (time.time(), found)
+    return _peers[1]
+
+
 def suggest_name() -> str:
     """A starting name for a new device: its tailnet machine name if we can see it."""
-    if via_tailnet():
-        ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-        if ip and ip not in _whois_cache:
-            r = _tailscale("whois", "--json", ip)
-            try:
-                _whois_cache[ip] = json.loads(r.stdout)["Node"]["ComputedName"] if r else ""
-            except (ValueError, KeyError, TypeError):
-                _whois_cache[ip] = ""
-        if _whois_cache.get(ip):
-            return _whois_cache[ip]
+    node = tailnet_node()
+    if node:
+        return node
     ua = request.user_agent.string
     for needle, name in (("Android", "Android phone"), ("iPhone", "iPhone"), ("iPad", "iPad"),
                          ("Windows", "Windows PC"), ("Macintosh", "Mac"), ("Linux", "Linux PC")):
@@ -318,6 +362,9 @@ def api_files():
     out = {name: list_files(d) for name, d in FOLDERS.items()}
     out["inbox"] = list_files(devices.inbox(me["id"])) if me else []
     out["devices"] = devices.listing(me["id"] if me else None)
+    # tailnet machines that haven't opened droplet yet, so people know what's missing
+    known = devices.nodes()
+    out["tailnet"] = [p for p in tailnet_peers() if p["node"] and p["node"] not in known]
     return jsonify(out)
 
 
@@ -328,6 +375,7 @@ def api_me():
         "device": {"id": me["id"], "name": me["name"], "push": bool(me.get("push"))} if me else None,
         "suggested": None if me else suggest_name(),
         "push_key": pusher.public_key if pusher.enabled else None,
+        "hub_url": TAILNET_URL,
     })
 
 
@@ -342,7 +390,7 @@ def api_device():
     if me:
         devices.update(me["id"], name=name)
         return jsonify({"id": me["id"], "name": name})
-    dev, token = devices.create(name)
+    dev, token = devices.create(name, node=tailnet_node())
     resp = jsonify({"id": dev["id"], "name": name})
     secure = request.is_secure or (via_tailnet() and request.headers.get("X-Forwarded-Proto") == "https")
     resp.set_cookie(DEVICE_COOKIE, token, max_age=5 * 365 * 24 * 3600,

@@ -77,6 +77,8 @@
   .dot.online { background:#4ade80; }
   #devices li { padding:.5rem .3rem .5rem .7rem; }
   #devices .dname { flex:1; }
+  #devices li.pending { border-style:dashed; color:var(--dim); }
+  #devices .from { display:block; font-size:.75rem; margin-top:.1rem; word-break:break-all; }
 </style>
 </head>
 <body>
@@ -124,7 +126,7 @@
   <ul id="shared"></ul>
 
   <details id="devices-box" hidden>
-    <summary>Devices</summary>
+    <summary id="devices-sum">Devices</summary>
     <ul id="devices" class="text-body"></ul>
   </details>
 
@@ -143,6 +145,7 @@ const selected = new Set();   // "folder/name", kept across auto-refreshes
 let latest = { received: [], shared: [], inbox: [], devices: [] };
 let me = null;                // this browser's device record, once named
 let pushKey = null;           // hub's VAPID public key; null = push is off on the hub
+let hubUrl = null;            // the hub's tailnet URL, when it has one
 
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -280,6 +283,7 @@ async function loadMe() {
   const d = await res.json();
   me = d.device;
   pushKey = d.push_key;
+  hubUrl = d.hub_url;
   renderMe(d.suggested);
   if (me) syncPush();
 }
@@ -394,19 +398,23 @@ function renderTargets() {
   const box = document.getElementById("targets");
   const list = others();
   if (target !== "hub" && !list.some(d => d.id === target)) target = "hub";
-  box.hidden = !list.length;
+  box.hidden = false;
   box.innerHTML = "";
   if (list.length) {
     box.append(el("span", { className: "dim", textContent: "Send to" }),
                ...chips(target, id => { target = id; LS.set("droplet-target", id); renderTargets(); }));
+  } else {
+    box.append(el("span", { className: "dim", textContent: "Other devices show up here once droplet is opened on them and given a name." }));
   }
   drop.textContent = list.length ? `Drop files here or tap to choose (to ${targetName()})` : "Drop files here or tap to choose";
 }
 
 function renderDevices() {
   const list = latest.devices || [];
+  const pending = latest.tailnet || [];
   const ul = document.getElementById("devices");
-  document.getElementById("devices-box").hidden = !list.length;
+  document.getElementById("devices-box").hidden = !list.length && !pending.length;
+  document.getElementById("devices-sum").textContent = "Devices" + (pending.length ? ` · ${pending.length} not set up` : "");
   ul.innerHTML = "";
   for (const d of list) {
     const del = el("button", { className: "del", title: "Remove device", textContent: "×" });
@@ -419,6 +427,13 @@ function renderDevices() {
       el("span", { className: "dname" }, el("span", { className: "dot" + (d.online ? " online" : "") }),
          d.name + (d.self ? " (this device)" : "") + (d.push ? " 🔔" : "")),
       del));
+  }
+  const osName = { windows: "Windows", android: "Android", linux: "Linux", macOS: "Mac", iOS: "iPhone/iPad" };
+  for (const p of pending) {
+    ul.append(el("li", { className: "pending" },
+      el("span", { className: "dname" }, el("span", { className: "dot" + (p.online ? " online" : "") }),
+         p.node, el("span", { className: "from",
+           textContent: `${osName[p.os] || p.os}${p.online ? "" : " · offline"} · not set up: open ${hubUrl || "this page"} on it` }))));
   }
 }
 
