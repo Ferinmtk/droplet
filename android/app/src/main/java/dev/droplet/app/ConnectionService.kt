@@ -64,6 +64,8 @@ class ConnectionService : Service() {
             return
         }
         running = true
+        // keep the route fresh: move between the Wi-Fi and the tailnet as the phone does
+        Router.hold(ROUTER_TAG)
         watchNetwork()
         // the live connection (remote control) lives as long as this service
         Live.hold(LIVE_TAG)
@@ -79,7 +81,7 @@ class ConnectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!Prefs.stayConnected || Prefs.hubUrl == null) {
+        if (!Prefs.stayConnected || !Prefs.hasHub) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -90,6 +92,7 @@ class ConnectionService : Service() {
     override fun onDestroy() {
         running = false
         Live.release(LIVE_TAG)
+        Router.release(ROUTER_TAG)
         cancelAlarm(this)
         networkCallback?.let { runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         scope.cancel()
@@ -139,7 +142,11 @@ class ConnectionService : Service() {
                 checkInbox(Hub.files())
             }
             StatusReporter.maybeSend(this)
-            setState(getString(R.string.conn_ok, Hub.hostLabel()))
+            setState(getString(R.string.conn_ok, Router.shortLabel(this) ?: ""))
+        } catch (e: PairingRequired) {
+            setState(getString(R.string.conn_not_let_in, Router.hubLabel()))
+        } catch (e: HubUnreachable) {
+            setState(Router.describe(this))
         } catch (e: IOException) {
             setState(getString(R.string.conn_unreachable))
         } catch (e: Exception) {
@@ -233,7 +240,9 @@ class ConnectionService : Service() {
     @SuppressLint("MissingPermission")
     @Synchronized
     private fun showState() {
-        val text = if (live.connected) live.describe(this) else pollText.ifEmpty { getString(R.string.conn_connecting) }
+        val text = if (live.connected) {
+            live.describe(this) + (Router.shortLabel(this)?.let { " · $it" } ?: "")
+        } else pollText.ifEmpty { getString(R.string.conn_connecting) }
         val key = text + Prefs.capClipboard
         if (key == state) return
         state = key
@@ -277,6 +286,7 @@ class ConnectionService : Service() {
         private const val POLL_MS = 15_000L
         private const val ACTION_POLL = "dev.droplet.app.POLL"
         private const val LIVE_TAG = "service"
+        private const val ROUTER_TAG = "service"
 
         @Volatile
         var running = false

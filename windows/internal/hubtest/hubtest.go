@@ -4,20 +4,35 @@ package hubtest
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Ferinmtk/droplet/windows/internal/pin"
 )
 
 // Device is a registered device.
 type Device struct {
 	ID, Name, Token string
 	Links           []string // tokens of apps linked to this device
+	// Pending: asked to join over the LAN and not let in yet (LANGate)
+	Pending bool
+}
+
+// Code is the four digits shown while d waits to be let in.
+func (d *Device) Code() string {
+	sum := sha256.Sum256([]byte(d.Token + ":pair"))
+	return fmt.Sprintf("%04d", binary.BigEndian.Uint32(sum[:4])%10000)
 }
 
 // Hub is the fake hub's state. Lock Mu to inspect or change it from a test.
@@ -36,6 +51,60 @@ type Hub struct {
 	Rang     []string                      // targets rung
 	Codes    map[string]string             // link code -> device id
 	Removed  []string                      // device ids removed
+
+	// LANGate makes it behave like a hub reached over the LAN: a new device
+	// waits to be let in, and until then everything but the public
+	// endpoints answers 403 {"pair": true}. A PIN then works as the real
+	// hub's does (a way in), not as a gate on everything.
+	LANGate bool
+	// ID is the hub's id for /api/hub/info (which is served when set);
+	// FP is its certificate's fingerprint (set by NewTLS).
+	ID, FP string
+}
+
+// NewTLS starts a fake hub over HTTPS with a self-signed certificate, the
+// way the real hub's LAN listener is, with an id and /api/hub/info.
+func NewTLS() *Hub {
+	h := newHub()
+	h.Server = httptest.NewTLSServer(h)
+	h.ID = "a1b2c3d4e5f60718"
+	h.FP = pin.Fingerprint(h.Server.Certificate().Raw)
+	return h
+}
+
+// Addr is the server's "ip:port".
+func (h *Hub) Addr() string { return strings.TrimPrefix(strings.TrimPrefix(h.Server.URL, "https://"), "http://") }
+
+// Approve lets a waiting device in, as the owner would from another device.
+func (h *Hub) Approve(d *Device) {
+	h.Mu.Lock()
+	defer h.Mu.Unlock()
+	d.Pending = false
+}
+
+// Remove deletes a device (a denied request, or "remove" in Devices).
+func (h *Hub) Remove(d *Device) {
+	h.Mu.Lock()
+	defer h.Mu.Unlock()
+	for i, x := range h.Devices {
+		if x == d {
+			h.Devices = append(h.Devices[:i], h.Devices[i+1:]...)
+			h.Removed = append(h.Removed, d.ID)
+			return
+		}
+	}
+}
+
+// Find returns the device called name.
+func (h *Hub) Find(name string) *Device {
+	h.Mu.Lock()
+	defer h.Mu.Unlock()
+	for _, d := range h.Devices {
+		if d.Name == name {
+			return d
+		}
+	}
+	return nil
 }
 
 // LinkCode makes a one-time code for linking an app to d.
@@ -78,15 +147,19 @@ type Ring struct {
 
 // New starts a fake hub; close it with h.Server.Close().
 func New() *Hub {
-	h := &Hub{
+	h := newHub()
+	h.Server = httptest.NewServer(h)
+	return h
+}
+
+func newHub() *Hub {
+	return &Hub{
 		Inbox:    map[string]map[string]InboxFile{},
 		Received: map[string][]byte{},
 		Read:     map[string]map[string]float64{},
 		ActiveRg: map[string]*Ring{},
 		Codes:    map[string]string{},
 	}
-	h.Server = httptest.NewServer(h)
-	return h
 }
 
 func rid() string {
@@ -163,28 +236,56 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Mu.Lock()
 	defer h.Mu.Unlock()
 	p := r.URL.Path
+	me := h.byToken(r)
+	authed := false
+	if c, err := r.Cookie("session"); err == nil && c.Value == "authed" {
+		authed = true
+	}
 	if p == "/login" {
-		if r.Method == http.MethodPost && r.FormValue("pin") == h.PIN {
+		if r.Method == http.MethodPost && h.PIN != "" && r.FormValue("pin") == h.PIN {
 			http.SetCookie(w, &http.Cookie{Name: "session", Value: "authed", Path: "/"})
+			if me != nil {
+				me.Pending = false // the PIN is as good as being let in
+			}
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
 		w.Write([]byte("<form>wrong</form>"))
 		return
 	}
-	if h.PIN != "" {
-		if c, err := r.Cookie("session"); err != nil || c.Value != "authed" {
-			http.Redirect(w, r, "/login", http.StatusFound)
+	if p == "/api/hub/info" && h.ID != "" {
+		host, port, _ := net.SplitHostPort(h.Addr())
+		portN, _ := strconv.Atoi(port)
+		var fp, httpsPort any
+		if h.FP != "" {
+			fp, httpsPort = h.FP, portN
+		}
+		writeJSON(w, 200, map[string]any{"id": h.ID, "name": "hubtest", "fingerprint": fp,
+			"lan": map[string]any{"addresses": []string{host}, "http_port": 8000, "https_port": httpsPort},
+			"tailnet": nil, "pin": h.PIN != ""})
+		return
+	}
+	public := p == "/api/me" || p == "/api/device" || p == "/api/device/link"
+	switch {
+	case h.LANGate:
+		if !public && !authed && (me == nil || me.Pending) {
+			writeJSON(w, 403, map[string]any{"error": "This device hasn't been allowed in yet.", "pair": true})
 			return
 		}
+	case h.PIN != "" && !authed:
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
 	}
-	me := h.byToken(r)
 	switch {
 	case p == "/api/me":
 		var dev any
 		var suggested any = "maryanne"
 		if me != nil {
-			dev = map[string]any{"id": me.ID, "name": me.Name, "push": false}
+			d := map[string]any{"id": me.ID, "name": me.Name, "push": false}
+			if me.Pending {
+				d["pending"], d["code"] = true, me.Code()
+			}
+			dev = d
 			suggested = nil
 		}
 		writeJSON(w, 200, map[string]any{"device": dev, "suggested": suggested, "push_key": nil, "hub_url": nil})
@@ -202,10 +303,14 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, map[string]string{"id": me.ID, "name": me.Name})
 			return
 		}
-		d := &Device{ID: rid(), Name: in.Name, Token: rid()}
+		d := &Device{ID: rid(), Name: in.Name, Token: rid(), Pending: h.LANGate && !authed}
 		h.Devices = append(h.Devices, d)
 		http.SetCookie(w, &http.Cookie{Name: "droplet_device", Value: d.Token, MaxAge: 5 * 365 * 24 * 3600, HttpOnly: true})
-		writeJSON(w, 200, map[string]string{"id": d.ID, "name": d.Name})
+		body := map[string]any{"id": d.ID, "name": d.Name}
+		if d.Pending {
+			body["pending"], body["code"] = true, d.Code()
+		}
+		writeJSON(w, 200, body)
 	case p == "/api/device/link" && r.Method == http.MethodPost:
 		var in struct{ Code, Client string }
 		json.NewDecoder(r.Body).Decode(&in)

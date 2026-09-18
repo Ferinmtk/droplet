@@ -25,4 +25,6 @@
     <color name="r_accent">#4DE8D4</color>
     <color name="r_on_accent">#032824</color>
     <color name="r_coral">#FF8468</color>
+    <color name="r_coral_soft">#24FF8468</color>
+    <color name="r_accent_soft">#1F4DE8D4</color>
 </resources>

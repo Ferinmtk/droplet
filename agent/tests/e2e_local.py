@@ -34,7 +34,7 @@ os.environ["XDG_DATA_HOME"] = str(TMP / "data")
 
 import simple_websocket  # noqa: E402
 
-from droplet_agent import config, mediastate  # noqa: E402
+from droplet_agent import config, mediastate, routes  # noqa: E402
 from droplet_agent.agent import Agent  # noqa: E402
 from droplet_agent.connection import Connection  # noqa: E402
 
@@ -137,7 +137,7 @@ def main():
         media_calls.append(list(argv))
         return subprocess.CompletedProcess(argv, 0, "", "")
     agent.media.runner = media_runner
-    conn = Connection(agent, cfg["hub"], cfg["token"])
+    conn = Connection(agent, routes.Router(cfg), cfg["token"])
     agent.start()
     threading.Thread(target=conn.run, args=(agent.stop,), daemon=True).start()
 

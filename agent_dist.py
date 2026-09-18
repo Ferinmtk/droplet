@@ -15,6 +15,7 @@ when a file there changes.
 import base64
 import hashlib
 import io
+import os
 import re
 import tarfile
 import threading
@@ -142,7 +143,16 @@ def hub_url() -> str:
     scheme = request.scheme
     if request.remote_addr in ("127.0.0.1", "::1") and request.headers.get("X-Forwarded-Proto") in ("http", "https"):
         scheme = request.headers["X-Forwarded-Proto"]
-    return f"{scheme}://{request.host}"
+    host = request.host
+    lan_tls = os.environ.get("DROPLET_LAN_TLS_PORT", "8443")
+    if scheme == "https" and host.rsplit(":", 1)[-1] == lan_tls:
+        # fetched over the LAN HTTPS port: its certificate is self-signed, so
+        # curl couldn't verify it. Point the script at the plain-HTTP port; the
+        # agent reads the fingerprint there and moves to pinned HTTPS itself
+        # before it sends anything that matters.
+        host = f"{host.rsplit(':', 1)[0]}:{os.environ.get('DROPLET_PORT', '8000')}"
+        scheme = "http"
+    return f"{scheme}://{host}"
 
 
 def render_install_script() -> str:

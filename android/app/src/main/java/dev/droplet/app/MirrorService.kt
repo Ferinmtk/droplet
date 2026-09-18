@@ -130,7 +130,7 @@ class MirrorService : NotificationListenerService() {
     }
 
     private suspend fun flush() {
-        if (Prefs.hubUrl == null || !Hub.hasDevice()) {
+        if (!Prefs.hasHub || !Hub.hasDevice()) {
             // no named device to file them under; nothing to do until there is
             return
         }

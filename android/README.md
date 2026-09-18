@@ -21,9 +21,13 @@ app can't do as a browser tab or PWA:
   change slides. See [Remote control](#remote-control).
 
 Everything else is the droplet web app, full screen in a WebView. It uses the
-same cookies as the page, so the app is the same device the page named. The
-app talks only to your hub: no Firebase, no Google Play Services, no
+same device token as the page, so the app is the same device the page named.
+The app talks only to your hub: no Firebase, no Google Play Services, no
 analytics.
+
+It's **local-first**, like KDE Connect: at home it talks to the hub straight
+over the Wi-Fi, and Tailscale is only the way in when you're away. See
+[Local-first: home Wi-Fi first, Tailscale away](#local-first-home-wi-fi-first-tailscale-away).
 
 ## Build
 
@@ -72,10 +76,19 @@ keytool -genkeypair -keystore ~/.android/droplet-release.jks -storetype PKCS12 \
 1. Put the APK where the phone can reach it, e.g. the hub's `shared/` folder,
    then download it in droplet or the browser.
 2. Open it. Android asks to allow installs from that app once.
-3. Open droplet. It asks for the hub address; the default is the T15's
-   tailnet URL. **Tailscale must be on.**
-4. Name the phone in the page, as in the browser.
+3. Open droplet on the same Wi-Fi as the hub. It shows "Looking for droplet
+   on your Wi-Fi…" and lists the hubs it finds. Tap yours. (Or enter its IP,
+   or use its Tailscale address.)
+4. Name the phone (it suggests the phone's own name) and tap **Ask to join**.
+   A four-digit code shows. On one of your devices that's already in, droplet
+   shows "<name> wants to join" with the same code: check it matches and
+   allow it. The hub's PIN, if it has one, or a link code also let it in.
+   Over Tailscale, naming the phone lets it in straight away.
 5. Open Settings (⚙ at the top right) and turn on what you want.
+
+Updating from 1.1 (which knew only the tailnet URL) needs nothing: the first
+time it reaches the hub, the app learns what it needs for the Wi-Fi. See
+[Upgrading from 1.1](#upgrading-from-11).
 
 ## Permissions, and why
 
@@ -233,22 +246,91 @@ When MIUI blocks sending, the app returns a clear error saying so instead of
 pretending it worked. A send counts as done only once the radio reports it
 sent.
 
+## Local-first: home Wi-Fi first, Tailscale away
+
+The app follows [docs/local-first.md](../docs/local-first.md).
+
+**Finding the hub.** The hub announces itself on the Wi-Fi as
+`_droplet._tcp` (mDNS), with its permanent id and the fingerprint of its LAN
+certificate. The app browses with Android's NsdManager. It remembers the hub's
+id, not its IP: DHCP moves the IP, and the last address that worked is only a
+hint to try first.
+
+**Trusting it.** On the Wi-Fi the app uses HTTPS on the hub's LAN port (8443)
+and accepts the connection only if the certificate's SHA-256 equals the one
+it paired with (the pin). Nothing else counts: no CA, no hostname. Tailscale
+keeps ordinary, fully verified HTTPS. The pin comes from the hub's answer over
+Tailscale when possible (verified); a phone that has never used Tailscale
+trusts the hub's certificate the first time, and approving the join code on
+one of your devices confirms it's your hub. Plain http is never used, except
+for the emulator's `10.0.2.2` test address.
+
+**Choosing the route.** The app tries the Wi-Fi first (the hub found by its
+id, then its last address, 1.5 s at most), and then Tailscale. It looks again
+whenever the network changes (Wi-Fi joined or left, Tailscale switched on or
+off), and every few minutes while it's on Tailscale, and moves back to the
+Wi-Fi when the hub is there. The page, uploads, rings, mirroring and the live
+connection all follow the route; the page reloads on the new address and
+keeps its place. Settings shows the route ("On Wi-Fi · t15 · 192.168.100.20"
+or "Via Tailscale"), the hub's id and certificate, **Find hub again** and
+**Forget this hub**.
+
+**When it can't be reached**, the app says why: "Not on the same Wi-Fi as
+t15, and Tailscale is off", with Try again, Open Tailscale and Settings. It
+tries again by itself when the network changes.
+
+**If the hub's certificate changes** (its `certs/` folder was deleted, or
+something else is pretending to be it), the app never switches silently. It
+stops using the Wi-Fi route and says "The hub's identity changed", with
+**Pair again**. Tailscale keeps working meanwhile.
+
+**Not let in (any more).** If the hub answers `403 {"pair": true}` (a join
+not yet allowed, or the device was removed), the app goes back to the pairing
+screen instead of showing an error.
+
+### Upgrading from 1.1
+
+1.1 knew the hub only by its tailnet URL, and kept its device token as the
+WebView's cookie. On first start, 1.2:
+
+- asks the hub over Tailscale (verified) for its id and certificate, and from
+  then on uses the Wi-Fi at home;
+- if Tailscale is off, looks on the Wi-Fi for the one hub announcing that
+  same tailnet URL, trusts its certificate on first use, and checks it over
+  Tailscale the next time Tailscale is on;
+- copies the device token out of the cookie, so the phone stays the same
+  device on every route.
+
+### What needs the real phone
+
+The JVM tests (below) cover the pinning, the route manager, pairing and the
+live connection against real hubs, but not Android's own networking: mDNS
+discovery through NsdManager (Robolectric can't run it), the WebView's
+SSL-error path and cookies, and network callbacks from real Wi-Fi and VPN
+changes. On MIUI/HyperOS check that discovery finds the hub; some routers and
+guest networks block mDNS, and then entering the hub's IP works instead.
+
 ## Hub endpoints it uses
 
 | Endpoint | Used by |
 |---|---|
-| `GET /api/me`, `GET /api/files` | Setup check, share sheet, file and message notifications |
+| `GET /api/hub/info` | Finding and checking the hub, the route manager, upgrading from 1.1 |
+| `POST /api/device` `{name}`, `GET /api/me` | Asking to join and waiting for approval; where the phone stands |
+| `POST /login` (form `pin`) | The hub's PIN during pairing |
+| `GET /api/files` | Share sheet, file and message notifications |
 | `POST /upload?to=`, `POST /text` | Share target |
 | `GET /api/ring`, `POST /api/ring/stop` | Stay connected, Stop |
 | `POST /api/phone/notifications` `{posted, removed, sync}` | Mirroring (`phone.py`) |
 | `POST /api/phone/status` `{battery, charging}` | Battery (`phone.py`) |
 | `GET /ws` (WebSocket) | Remote control (`remote.py`, [docs/remote.md](../docs/remote.md)); battery also goes out as `state` "battery" |
-| `POST /api/device/link` | Link with code |
+| `POST /api/device/link` | Link with code (Settings, and during pairing) |
+| `POST /api/device/<id>/remove` | Withdrawing a join request after linking with a code instead |
 
 ## Testing against a local hub
 
 The emulator reaches the host as `10.0.2.2`. The network security config
-allows plain http **only** for that address; everything else must be HTTPS.
+allows plain http **only** for that address; everything else must be HTTPS
+(the LAN too, with the pinned certificate).
 
 ```bash
 DROPLET_PORT=8806 DROPLET_HOME=$(mktemp -d) python app.py
@@ -269,11 +351,30 @@ adb shell cmd notification post -t 'Title' tag 'Some text'
   `files.*` including refused paths and a real upload, `sms.threads` and
   `sms.thread`, clipboard both ways without echo, re-announcing when a
   switch changes, and the presentation remote's volume keys and buttons.
-- **`ScreensTest`** renders the remote and Settings screens to PNGs for
-  review.
+- **`LocalFirstUnitTest`** (always runs): mDNS TXT and `/api/hub/info`
+  parsing, choosing among hubs, and the pin checks (trust manager, hostname
+  verifier, the WebView's decision, including before Android 10).
+- **`LocalFirstHubTest`** (needs hubs): the app connects to this machine's LAN
+  address, where it's a stranger, while the test plays the owner from
+  127.0.0.1 (which the hub trusts as itself). It checks the pinned client
+  accepts the hub and refuses an openssl server with another certificate;
+  the route manager going Wi-Fi → Tailscale → Wi-Fi (on a network callback
+  and on its periodic look); a hub that kept its id but changed certificate;
+  pairing through setup's screens with approval, denial, the PIN and a link
+  code; the WebSocket over the pinned connection, following the route; and
+  upgrading from a tailnet-only install, with and without Tailscale. mDNS is
+  stubbed with the hub's own announcement.
+- **`ScreensTest`** renders the remote, Settings, setup, the pairing code and
+  the offline screen to PNGs for review.
 
 ```bash
-DROPLET_PORT=8814 DROPLET_PUSH=0 DROPLET_HOME=$(mktemp -d) python app.py &
+# the hub, a second one with a PIN, and a "clone" with the first one's id but its own certificate
+A=$(mktemp -d); P=$(mktemp -d); C=$(mktemp -d)
+DROPLET_HOME=$A DROPLET_PORT=8831 DROPLET_LAN_TLS_PORT=8832 DROPLET_PUSH=0 python app.py &
+DROPLET_HOME=$P DROPLET_PORT=8981 DROPLET_LAN_TLS_PORT=8982 DROPLET_PUSH=0 DROPLET_PIN=2468 python app.py &
+sleep 2; cp $A/.hub_id $C/
+DROPLET_HOME=$C DROPLET_PORT=8985 DROPLET_LAN_TLS_PORT=8986 DROPLET_PUSH=0 python app.py &
 cd android
-DROPLET_TEST_HUB=http://127.0.0.1:8814 DROPLET_SHOTS=/tmp/shots ./gradlew testReleaseUnitTest
+DROPLET_TEST_HUB=http://127.0.0.1:8831 DROPLET_TEST_PIN_HUB=http://127.0.0.1:8981 DROPLET_TEST_PIN=2468 \
+  DROPLET_TEST_CLONE_HUB=http://127.0.0.1:8985 DROPLET_SHOTS=/tmp/shots ./gradlew testReleaseUnitTest
 ```

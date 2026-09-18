@@ -9,17 +9,18 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.net.ConnectivityManager
-import android.net.Network
 import android.net.Uri
+import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Base64
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.SslErrorHandler
 import android.webkit.ServiceWorkerClient
 import android.webkit.ServiceWorkerController
 import android.webkit.ValueCallback
@@ -35,24 +36,40 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import dev.droplet.app.databinding.ActivityMainBinding
-import org.json.JSONArray
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URLDecoder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-/** The droplet web app, full screen, plus the native bits a browser tab can't do. */
+/**
+ * The droplet web app, full screen, plus the native bits a browser tab can't do.
+ *
+ * The page loads on whatever route [Router] picked: the hub's LAN address
+ * (HTTPS with the pinned certificate) at home, its tailnet URL away. When the
+ * route changes the page moves with it, keeping where it was.
+ */
 class MainActivity : AppCompatActivity() {
     private lateinit var b: ActivityMainBinding
     private val web get() = b.web
-    private lateinit var hub: String
+
+    /** The origin the page is on now ("https://192.168.100.20:8443"), null before the first load. */
+    private var origin: String? = null
+    /** Where to go once there's a route (a notification's deep link, or the page before a restart). */
+    private var pendingPath: String? = null
+    private var clearHistoryOnLoad = false
+    private var resumed = false
 
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var loadFailed = false
-    private var failedUrl: String? = null
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
     /** The device token the page was loaded with; Link with code swaps it. */
     private var loadedToken: String? = null
 
@@ -72,7 +89,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         edgeToEdge()
         super.onCreate(savedInstanceState)
-        hub = Prefs.hubUrl ?: run {
+        if (!Prefs.hasHub) {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
@@ -84,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         setUpWebView()
         b.retry.setOnClickListener { retry() }
         b.offlineSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        b.openTailscale.setOnClickListener { openTailscale() }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -92,8 +110,23 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
-            web.loadUrl(hub + (intent.getStringExtra(EXTRA_PATH) ?: "/"))
+        // after a restart, go back to the same place in the page (on whichever origin is right now)
+        pendingPath = intent.getStringExtra(EXTRA_PATH) ?: savedInstanceState?.getString(STATE_PATH)
+        b.progress.isIndeterminate = true
+        b.progress.visibility = View.VISIBLE
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { Router.state.collect { routeState(it) } }
+                launch {
+                    Router.pairing.collect { needed ->
+                        if (!needed) return@collect
+                        // the hub doesn't know this phone (any more): pair natively, once per refusal
+                        Router.pairingNeeded(false)
+                        startActivity(Intent(this@MainActivity, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_PAIR, true))
+                    }
+                }
+            }
         }
 
         if (Build.VERSION.SDK_INT >= 33 && !Prefs.askedNotifications &&
@@ -105,33 +138,42 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.getStringExtra(EXTRA_PATH)?.let { web.loadUrl(hub + it) }
+        val path = intent.getStringExtra(EXTRA_PATH) ?: return
+        val o = origin
+        if (o != null && Router.current()?.base == o) web.loadUrl(o + path) else pendingPath = path
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        if (::b.isInitialized) web.saveState(outState)
+        if (::b.isInitialized) pagePath()?.let { outState.putString(STATE_PATH, it) }
     }
 
     override fun onResume() {
         super.onResume()
         if (!::b.isInitialized) return
+        if (!Prefs.hasHub) {
+            // forgotten in Settings
+            startActivity(Intent(this, SetupActivity::class.java))
+            finish()
+            return
+        }
         visible = true
+        resumed = true
         web.onResume()
+        // keeps the route fresh while the app is on screen; looks again if it's been a while
+        Router.hold(ROUTER_TAG)
         // MIUI and force-stop kill the service; opening the app brings it back
         if (Prefs.stayConnected && !ConnectionService.running) runCatching { ConnectionService.start(this) }
         // the page may have just named this phone (a new device token)
         Live.refresh()
-        watchNetwork(true)
-        // the hub address may have changed in settings
-        if (Prefs.hubUrl != null && Prefs.hubUrl != hub) {
-            hub = Prefs.hubUrl!!
-            web.clearHistory()
-            web.loadUrl("$hub/")
-        }
+        // a route change while paused: move now
+        routeState(Router.state.value)
         // linked to another device in Settings: show the page as that device
         val token = Hub.deviceToken()
-        if (loadedToken != null && token != null && token != loadedToken) web.reload()
+        if (loadedToken != null && token != null && token != loadedToken && origin != null) {
+            Hub.installCookie(origin!!)
+            web.reload()
+        }
         loadedToken = token
     }
 
@@ -145,8 +187,9 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         if (!::b.isInitialized) return
         visible = false
+        resumed = false
         web.onPause()
-        watchNetwork(false)
+        Router.release(ROUTER_TAG)
         // the services read the device cookie from disk-backed storage
         CookieManager.getInstance().flush()
     }
@@ -157,6 +200,47 @@ class MainActivity : AppCompatActivity() {
             web.destroy()
         }
         super.onDestroy()
+    }
+
+    // --- following the route ---------------------------------------------------
+
+    private fun routeState(s: Router.State) {
+        if (!::b.isInitialized || isFinishing) return
+        val r = s.route
+        when {
+            // not looked yet, or looking: keep what's on screen
+            r == null && !s.unreachable -> if (origin == null && b.offline.visibility != View.VISIBLE) showLooking()
+            r == null -> showOffline(if (s.identityChanged != null) Offline.IDENTITY else Offline.UNREACHABLE, null, s.identityChanged)
+            // moves only while on screen: a reload behind the user's back loses nothing, but can wait
+            r.base != origin -> if (resumed || origin == null) switchTo(r)
+            // back after being out of reach (at most every few seconds, so a page that keeps failing can't loop)
+            b.offline.visibility == View.VISIBLE && !s.searching && offlineKind != Offline.IDENTITY &&
+                SystemClock.elapsedRealtime() - lastAutoRetry > AUTO_RETRY_MS -> {
+                lastAutoRetry = SystemClock.elapsedRealtime()
+                retry()
+            }
+        }
+    }
+
+    /** Loads the page on [r], keeping the path and #hash it was on. */
+    private fun switchTo(r: Router.Route) {
+        val path = pendingPath ?: pagePath() ?: "/"
+        pendingPath = null
+        // cookies are per origin: the LAN origin needs the device cookie before the page asks who it is
+        Hub.installCookie(r.base)
+        clearHistoryOnLoad = origin != null
+        origin = r.base
+        loadedToken = Hub.deviceToken()
+        showWeb()
+        web.loadUrl(r.base + path)
+    }
+
+    /** The page's path, query and #hash, if it's on one of the hub's origins. */
+    private fun pagePath(): String? {
+        val url = web.url?.let { Uri.parse(it) } ?: return null
+        if (url.scheme !in listOf("http", "https") || !Hub.isHubUrl(url)) return null
+        return (url.encodedPath?.ifEmpty { "/" } ?: "/") +
+            (url.encodedQuery?.let { "?$it" } ?: "") + (url.encodedFragment?.let { "#$it" } ?: "")
     }
 
     // --- WebView --------------------------------------------------------------
@@ -175,7 +259,9 @@ class MainActivity : AppCompatActivity() {
             userAgentString = "$userAgentString ${Hub.userAgent}"
         }
         // the page registers a service worker (offline page, share parking);
-        // WebView only runs service workers once a client is set
+        // WebView only runs service workers once a client is set. (Chromium
+        // won't register one on the LAN origin, whose certificate is pinned
+        // rather than publicly trusted; the page works without it.)
         runCatching {
             ServiceWorkerController.getInstance().setServiceWorkerClient(object : ServiceWorkerClient() {
                 override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse? = null
@@ -193,30 +279,61 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String?) {
                 b.progress.visibility = View.GONE
+                if (clearHistoryOnLoad) {
+                    // the old origin's pages are gone: Back mustn't lead there
+                    clearHistoryOnLoad = false
+                    view.clearHistory()
+                }
                 if (loadFailed) return
                 // the service worker's own offline page: show ours instead
-                if (view.title?.contains("offline") == true && url?.startsWith(hub) == true) {
-                    showOffline(url, null)
+                if (view.title?.contains("offline") == true && url?.let { Hub.isHubUrl(Uri.parse(it)) } == true) {
+                    showOffline(Offline.LOAD_FAILED, null)
                     return
                 }
                 showWeb()
+                adoptPageToken()
                 view.evaluateJavascript(PAGE_SCRIPT) { matchPageColour(it) }
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) showOffline(request.url.toString(), error.description?.toString())
+                if (!request.isForMainFrame) return
+                showOffline(Offline.LOAD_FAILED, error.description?.toString())
+                // the route may have gone (left the Wi-Fi, Tailscale off): look again
+                Router.refresh()
             }
 
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                 // 502/503/504: tailscale serve is up but droplet isn't
                 if (request.isForMainFrame && response.statusCode in 502..504) {
-                    showOffline(request.url.toString(), "The hub machine answered, but droplet isn't running on it (${response.statusCode}).")
+                    showOffline(Offline.LOAD_FAILED, getString(R.string.offline_not_running, response.statusCode))
+                }
+            }
+
+            /**
+             * The LAN origin's certificate is self-signed: go on only if it's
+             * exactly the pinned one (docs/local-first.md §5). Anything else,
+             * including a publicly valid certificate with some other problem,
+             * is refused.
+             */
+            @SuppressLint("WebViewClientOnReceivedSslError")
+            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                if (Pinning.webViewMayProceed(error.certificate, Prefs.hubFingerprint)) {
+                    handler.proceed()
+                } else {
+                    handler.cancel()
+                    if (error.url?.let { Hub.isHubUrl(Uri.parse(it)) } == true) {
+                        // our hub's address, but not our hub's certificate
+                        showOffline(Offline.LOAD_FAILED, getString(R.string.live_err_identity))
+                        Router.refresh()
+                    }
                 }
             }
         }
 
         web.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
+                if (origin == null) return  // still looking for the hub: the bar keeps spinning
+                b.progress.isIndeterminate = false
                 b.progress.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
                 b.progress.setProgressCompat(newProgress, true)
             }
@@ -245,10 +362,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * The page named or re-linked this phone on the current origin: that
+     * token is now the phone's identity, on every origin and for the
+     * native parts.
+     */
+    private fun adoptPageToken() {
+        val o = origin ?: return
+        val fromPage = Hub.cookieToken(o) ?: return
+        if (fromPage == Prefs.deviceToken) return
+        Hub.setToken(fromPage)
+        loadedToken = fromPage
+        Live.refresh()
+    }
+
     /** Hub pages stay in the app; everything else opens in its own app or the browser. */
     private fun openElsewhere(url: Uri): Boolean {
-        val hubUri = Uri.parse(hub)
-        if (url.scheme == hubUri.scheme && url.encodedAuthority == hubUri.encodedAuthority) return false
+        if ((url.scheme == "http" || url.scheme == "https") && Hub.isHubUrl(url)) return false
         if (url.scheme == "blob" || url.scheme == "data" || url.scheme == "about") return false
         try {
             val intent = if (url.scheme == "intent") Intent.parseUri(url.toString(), Intent.URI_INTENT_SCHEME)
@@ -263,47 +393,83 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    private fun showOffline(url: String?, detail: String?) {
+    // --- out of reach ------------------------------------------------------------
+
+    private enum class Offline { UNREACHABLE, LOAD_FAILED, IDENTITY }
+
+    private var offlineKind: Offline? = null
+    private var lastAutoRetry = 0L
+
+    private fun showLooking() {
+        b.offline.visibility = View.GONE
+        b.progress.isIndeterminate = true
+        b.progress.visibility = View.VISIBLE
+    }
+
+    private fun showOffline(kind: Offline, detail: String?, identity: Router.IdentityChange? = Router.state.value.identityChanged) {
         loadFailed = true
-        failedUrl = url
-        b.offlineDetail.text = detail?.let { friendlyError(it) } ?: ""
+        offlineKind = kind
+        val hub = Router.hubLabel()
+        val tailscale = Prefs.hubUrl?.let { Uri.parse(it).host?.endsWith(".ts.net") } == true
+        when (kind) {
+            Offline.IDENTITY -> {
+                b.offlineTitle.text = getString(R.string.offline_identity_title)
+                b.offlineBody.text = getString(R.string.offline_identity_body, identity?.address ?: hub, hub)
+                b.retry.setText(R.string.offline_repair)
+            }
+            else -> {
+                b.offlineTitle.text = getString(R.string.offline_title, hub)
+                b.offlineBody.text = getString(if (Prefs.hubUrl != null) R.string.offline_body else R.string.offline_body_lan, hub)
+                b.retry.setText(R.string.retry)
+            }
+        }
+        b.offlineDetail.text = detail?.let { friendlyError(it) } ?: getString(R.string.offline_body_retry)
+        b.openTailscale.visibility = if (kind != Offline.IDENTITY && tailscale && tailscaleIntent() != null) View.VISIBLE else View.GONE
         b.offline.visibility = View.VISIBLE
+        b.progress.visibility = View.GONE
         web.visibility = View.INVISIBLE
-        setBarColour(ContextCompat.getColor(this, R.color.bg))
+        setBarColour(ContextCompat.getColor(this, R.color.r_bg))
     }
 
     private fun showWeb() {
         b.offline.visibility = View.GONE
         web.visibility = View.VISIBLE
+        offlineKind = null
     }
 
     private fun retry() {
-        b.offline.visibility = View.GONE
-        web.visibility = View.VISIBLE
-        val url = failedUrl?.takeIf { it.startsWith(hub) } ?: "$hub/"
-        failedUrl = null
-        web.loadUrl(url)
+        if (offlineKind == Offline.IDENTITY) {
+            startActivity(Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_REPAIR, true))
+            return
+        }
+        val r = Router.current()
+        if (r == null) {
+            showLooking()
+            Router.refresh()
+            return
+        }
+        showWeb()
+        if (r.base != origin) switchTo(r) else web.loadUrl(r.base + (pagePath() ?: "/"))
+    }
+
+    private fun tailscaleIntent(): Intent? = packageManager.getLaunchIntentForPackage(TAILSCALE)
+
+    private fun openTailscale() {
+        val intent = tailscaleIntent() ?: return
+        try {
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            toast(getString(R.string.no_app_for_link))
+        }
     }
 
     private fun friendlyError(raw: String): String = when {
-        "NAME_NOT_RESOLVED" in raw -> "The hub's name didn't resolve. Tailscale is probably off."
-        "CONNECTION_REFUSED" in raw -> "The hub refused the connection. Is droplet running?"
-        "TIMED_OUT" in raw || "ADDRESS_UNREACHABLE" in raw -> "The hub didn't answer in time."
-        "INTERNET_DISCONNECTED" in raw -> "This phone is offline."
+        "NAME_NOT_RESOLVED" in raw -> getString(R.string.offline_err_name)
+        "CONNECTION_REFUSED" in raw -> getString(R.string.offline_err_refused)
+        "TIMED_OUT" in raw || "ADDRESS_UNREACHABLE" in raw -> getString(R.string.offline_err_timeout)
+        "INTERNET_DISCONNECTED" in raw -> getString(R.string.offline_err_offline)
+        "CERT" in raw || "SSL" in raw -> getString(R.string.live_err_identity)
         else -> raw
-    }
-
-    /** Retry by itself as soon as the network comes back. */
-    private fun watchNetwork(on: Boolean) {
-        val cm = getSystemService(ConnectivityManager::class.java)
-        networkCallback?.let { runCatching { cm.unregisterNetworkCallback(it) } }
-        networkCallback = null
-        if (!on) return
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                runOnUiThread { if (b.offline.visibility == View.VISIBLE) retry() }
-            }
-        }.also { cm.registerDefaultNetworkCallback(it) }
     }
 
     /** Colour the status/navigation bar area like the page, and pick matching bar icons. */
@@ -333,6 +499,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val name = fileName(url, contentDisposition)
+        val route = Router.current()
+        if (route?.kind == Router.Kind.LAN && url.startsWith(route.base + "/")) {
+            // DownloadManager can't check a pinned certificate: fetch it here
+            downloadPinned(route, url, name, mimeType)
+            return
+        }
         val request = DownloadManager.Request(Uri.parse(url)).apply {
             CookieManager.getInstance().getCookie(url)?.let { addRequestHeader("Cookie", it) }
             addRequestHeader("User-Agent", userAgent)
@@ -346,6 +518,37 @@ class MainActivity : AppCompatActivity() {
             toast(getString(R.string.download_started, name))
         } catch (e: Exception) {
             toast(getString(R.string.download_failed, name))
+        }
+    }
+
+    /**
+     * A download from the LAN origin, over the pinned client, into Downloads.
+     * Runs in the app's scope, so leaving the screen doesn't stop it.
+     */
+    private fun downloadPinned(route: Router.Route, url: String, fallbackName: String, mimeType: String?) {
+        toast(getString(R.string.download_started, fallbackName))
+        val app = applicationContext
+        Router.scope.launch {
+            var name = fallbackName
+            val ok = runCatching {
+                val req = Hub.request(route, url.removePrefix(route.base)).build()
+                Router.clientFor(route).newBuilder().readTimeout(5, TimeUnit.MINUTES).build().newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) throw java.io.IOException("The hub answered ${r.code}")
+                    name = fileName(url, r.header("Content-Disposition") ?: "attachment; filename=\"$fallbackName\"")
+                    val mime = mimeType?.takeIf { it.isNotBlank() } ?: r.body?.contentType()?.let { "${it.type}/${it.subtype}" }
+                        ?: "application/octet-stream"
+                    val tmp = File.createTempFile("dl", null, app.cacheDir)
+                    try {
+                        tmp.outputStream().use { out -> r.body!!.byteStream().use { it.copyTo(out) } }
+                        saveToDownloads(tmp, name, mime)
+                    } finally {
+                        tmp.delete()
+                    }
+                }
+            }.isSuccess
+            withContext(Dispatchers.Main) {
+                Toast.makeText(app, app.getString(if (ok) R.string.download_saved else R.string.download_failed, name), Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -429,6 +632,10 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_PATH = "path"
+        private const val STATE_PATH = "page_path"
+        private const val ROUTER_TAG = "main"
+        private const val TAILSCALE = "com.tailscale.ipn"
+        private const val AUTO_RETRY_MS = 5_000L
 
         /** Whether the web app is on screen (its own page flashes new items then). */
         @Volatile

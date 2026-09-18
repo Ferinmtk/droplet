@@ -6,8 +6,10 @@
 //	droplet text --to <device> <message…>
 //	droplet ring <device|hub>
 //	droplet status
+//	droplet hubs
+//	droplet join [<hub>] --name <name> [--pin <pin>]
 //	droplet setup --hub <url> --name <name> [--pin <pin>]
-//	droplet link --code <code> [--hub <url>] [--pin <pin>]
+//	droplet link --code <code> [--hub <url> | --lan <hub>] [--pin <pin>]
 //	droplet live [--caps input,media,…]
 //	droplet settings | stop-ring | uninstall | version
 package main
@@ -40,10 +42,15 @@ Usage:
   droplet send --to <dest> <file>...    send files; dest is a device name or id, or "hub"
   droplet text --to <device> <message>  send a chat message ("hub" saves a text file there)
   droplet ring <device|hub>             make a device (or the hub) ring
-  droplet status                        show the hub connection and devices
-  droplet setup --hub <url> --name <n>  register this PC without the settings page [--pin <pin>]
+  droplet status                        show the hub, how it's reached, and the devices
+  droplet hubs                          list the droplet hubs on this network
+  droplet join [<hub>] --name <n>       ask a hub on this network to let this PC in, and wait for
+                                        the answer [--pin <pin>]; <hub> is a name or id from "hubs"
+  droplet setup --hub <url> --name <n>  register this PC over the hub's address (e.g. its tailnet URL)
+                                        [--pin <pin>]
   droplet link --code <123456>          join this PC's browser as one device, with the code from
-                                        "Set up remote control of this device" [--hub <url>] [--pin <pin>]
+                                        "Set up remote control of this device"
+                                        [--hub <url> | --lan <hub>] [--pin <pin>]
   droplet live [--caps input,media]     run only the remote-control connection, with a log (for testing)
   droplet settings                      open the settings page
   droplet stop-ring                     silence this PC
@@ -84,14 +91,23 @@ func openStore() (*config.Store, error) {
 	return s, nil
 }
 
-// client builds a hub client from the saved settings.
-func client(store *config.Store) (*hub.Client, config.Config, error) {
+// client builds a hub client from the saved settings, along the best route
+// (the LAN when the hub is there, else the tailnet).
+func client(store *config.Store) (*agent.Agent, *hub.Client, error) {
 	cfg := store.Get()
-	if !cfg.Registered() {
-		return nil, cfg, errors.New("this PC isn't set up yet: run droplet (or droplet setup) first")
+	if cfg.Pending() {
+		return nil, nil, fmt.Errorf("this PC is waiting to be let in to %s (code %s)", agent.HubName(cfg), cfg.PairCode)
 	}
-	c, err := hub.New(cfg.HubURL, cfg.DeviceToken, cfg.Session)
-	return c, cfg, err
+	if !cfg.Registered() {
+		return nil, nil, errors.New("this PC isn't set up yet: run droplet (or droplet join) first")
+	}
+	exe, _ := os.Executable()
+	a := agent.New(store, exe)
+	c, err := a.Client()
+	if err != nil {
+		return a, nil, fmt.Errorf("can't reach %s: %w", agent.HubName(cfg), err)
+	}
+	return a, c, nil
 }
 
 func runCLI(args []string, console bool) error {
@@ -111,6 +127,10 @@ func runCLI(args []string, console bool) error {
 		return cmdRing(rest)
 	case "status":
 		return cmdStatus()
+	case "hubs":
+		return cmdHubs()
+	case "join":
+		return cmdJoin(rest)
 	case "setup":
 		return cmdSetup(rest)
 	case "link":
@@ -175,7 +195,7 @@ func cmdSend(args []string, console bool) error {
 	if err != nil {
 		return err
 	}
-	c, _, err := client(store)
+	a, c, err := client(store)
 	if err != nil {
 		return err
 	}
@@ -200,7 +220,7 @@ func cmdSend(args []string, console bool) error {
 		}
 	}
 	// from Explorer there's no console, so the outcome comes as a toast
-	err = agent.SendFiles(c, id, name, paths, progress, !console)
+	err = a.SendFilesWith(c, id, name, paths, progress, !console)
 	if console {
 		fmt.Fprintln(os.Stderr)
 	}
@@ -231,7 +251,7 @@ func cmdText(args []string) error {
 	if err != nil {
 		return err
 	}
-	c, _, err := client(store)
+	_, c, err := client(store)
 	if err != nil {
 		return err
 	}
@@ -256,7 +276,7 @@ func cmdRing(args []string) error {
 	if err != nil {
 		return err
 	}
-	c, _, err := client(store)
+	_, c, err := client(store)
 	if err != nil {
 		return err
 	}
@@ -280,18 +300,49 @@ func cmdStatus() error {
 	}
 	cfg := store.Get()
 	fmt.Println("settings:", store.Path)
-	fmt.Println("hub:     ", cfg.HubURL)
-	if !cfg.Registered() {
-		fmt.Println("this PC: not set up yet (run droplet, or droplet setup)")
+	if h := cfg.Hub; h != nil {
+		fmt.Printf("hub:      %s (id %s)\n", agent.HubName(cfg), h.ID)
+		if h.Fingerprint != "" {
+			how := "checked over the tailnet"
+			if h.PinSource == config.PinFromLAN {
+				how = "trusted when this PC paired on the LAN"
+			}
+			fmt.Printf("pinned:   %s… (%s)\n", h.Fingerprint[:16], how)
+		}
+		if len(h.LAN) > 0 {
+			fmt.Println("LAN:     ", strings.Join(h.LAN, ", "), "(last seen)")
+		}
+	}
+	if u := cfg.RemoteURL(); u != "" {
+		fmt.Println("remote:  ", u)
+	}
+	if cfg.Pending() {
+		fmt.Printf("this PC:  waiting to be let in as %q: allow it on one of your devices (code %s)\n", cfg.DeviceName, cfg.PairCode)
 		return nil
 	}
-	c, _, err := client(store)
+	if !cfg.Registered() {
+		fmt.Println("this PC: not set up yet (run droplet, or droplet join)")
+		return nil
+	}
+	a, c, err := client(store)
 	if err != nil {
+		if w := changedWarning(a, store); w != "" {
+			fmt.Println(w)
+		}
 		return err
+	}
+	r, _ := a.Routes.Current()
+	fmt.Printf("route:    %s (%s)\n", r.Label(), r.Base)
+	if w := changedWarning(a, store); w != "" {
+		fmt.Println(w)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	files, err := c.Files(ctx)
+	if errors.Is(err, hub.ErrNotAllowed) {
+		fmt.Println("this PC:  not let in (removed from the hub, or declined): pair it again with droplet join")
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("can't reach %s: %w", c.HubName(), err)
 	}
@@ -363,9 +414,30 @@ func cmdSetup(args []string) error {
 	if err := a.Configure(context.Background(), s); err != nil {
 		return err
 	}
+	_ = postRunningReload()
 	cfg := store.Get()
-	fmt.Printf("this PC is %q (id %s) on %s\n", cfg.DeviceName, cfg.DeviceID, cfg.HubURL)
+	fmt.Printf("this PC is %q (id %s) on %s\n", cfg.DeviceName, cfg.DeviceID, agent.HubName(cfg))
+	if cfg.Pending() {
+		fmt.Printf("waiting to be let in: on one of your devices, allow %q and check the code is %s\n", cfg.DeviceName, cfg.PairCode)
+	}
 	return nil
+}
+
+// changedWarning is a warning line when the hub's LAN identity changed.
+func changedWarning(a *agent.Agent, store *config.Store) string {
+	if a == nil {
+		return ""
+	}
+	ch := a.Routes.Changed()
+	if ch == nil {
+		return ""
+	}
+	name := agent.HubName(store.Get())
+	if ch.Verified {
+		return "WARNING:  " + name + " has a new LAN certificate (confirmed over the tailnet). Re-pair in Settings to use it on Wi-Fi."
+	}
+	return "WARNING:  something at " + ch.Addr + " claims to be " + name + " with a different certificate; droplet won't use it. " +
+		"If you reset the hub, re-pair in Settings."
 }
 
 func stopRing() error {
@@ -377,7 +449,7 @@ func stopRing() error {
 	if err != nil {
 		return err
 	}
-	c, _, err := client(store)
+	_, c, err := client(store)
 	if err != nil {
 		return err
 	}

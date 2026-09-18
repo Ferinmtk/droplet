@@ -8,14 +8,17 @@ import logging
 import os
 import shutil
 import signal
+import socket
 import sys
 import threading
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from . import APP_ID, __version__, clip, config, env, hub, lock, mediastate, screenshot
+from . import APP_ID, __version__, clip, config, discovery, env, hub, lock, mediastate, pairing, routes, screenshot
 from .inject import manager as input_manager
 
 SERVICE = "droplet-agent.service"
+DISCOVER_FOR = 3  # seconds setup listens for hubs on the LAN
 
 
 def data_dir() -> Path:
@@ -39,29 +42,201 @@ def _setup_logging(verbose: bool):
 
 # --- setup -------------------------------------------------------------------
 
-def cmd_setup(args) -> int:
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _choose_hub() -> discovery.Found | None:
+    """Look for hubs on the LAN; pick one (asking when there's a choice)."""
+    print("Looking for droplet hubs on this network…", flush=True)
+    found = discovery.browse(timeout=DISCOVER_FOR)
+    if not found:
+        print("No droplet hub answered on this network. Is this computer on the same Wi-Fi as the hub?\n"
+              "Or say which hub: droplet-agent setup --hub http://<hub's address>:8000 "
+              "(or its tailnet URL)", file=sys.stderr)
+        return None
+    for i, f in enumerate(found, 1):
+        where = ", ".join(hub.host_url("https", a, f.https_port).split("//")[1] for a in f.addresses)
+        print(f"  {i}. {f.name}  {where}  (id {f.id})")
+    sys.stdout.flush()
+    if len(found) == 1:
+        if _interactive() and input(f"Use {found[0].name}? [Y/n] ").strip().lower() not in ("", "y", "yes"):
+            return None
+        return found[0]
+    if not _interactive():
+        print("More than one hub answered. Say which, with one of:", file=sys.stderr)
+        for f in found:
+            if f.http_port:
+                print(f"  --hub {hub.host_url('http', f.addresses[0], f.http_port)}   ({f.name}, id {f.id})",
+                      file=sys.stderr)
+        return None
+    answer = input(f"Which one? [1-{len(found)}] ").strip()
+    if not answer.isdigit() or not 1 <= int(answer) <= len(found):
+        return None
+    return found[int(answer) - 1]
+
+
+def _describe_trust(info: dict, route: hub.Route, how: str):
+    name = info.get("name") or "the hub"
+    print(f"Hub: {name} (id {info['id']}), reached over {route.describe()}")
+    if how == "first-use":
+        print(f"First contact over the LAN: pinned its certificate {info['fingerprint']}.\n"
+              "From now on the agent only talks to a hub with that certificate. Pair only with a hub you know\n"
+              "is yours: when it asks, check the code on your other device matches the one here.")
+    elif how == "plain":
+        print("Warning: this hub has no LAN HTTPS, so the agent's token will cross the network "
+              "unencrypted. Its tailnet URL is safer, if it has one.")
+    sys.stdout.flush()
+
+
+def _save_link(cfg: dict, hub_url: str, route: hub.Route, info: dict, got: dict, pending: bool) -> Path:
+    cfg.update(hub=hub_url, token=got["token"], device={"id": got["id"], "name": got["name"]}, pending=pending)
+    cfg["hub_identity"] = routes.identity_from(info, route)
+    return config.save(cfg)
+
+
+def _refresh_identity(cfg: dict) -> int:
+    """`setup` with nothing else on a linked agent: read the hub's identity again, over a
+    route that proves who it is (this machine, if it's the hub, or the tailnet), and keep
+    the token. This is how a regenerated LAN certificate gets pinned again."""
+    ident = cfg["hub_identity"]
+    candidates = [hub.Route("hub-local", f"http://127.0.0.1:{ident.get('http_port') or routes.DEFAULT_HTTP_PORT}")]
+    if ident.get("tailnet"):
+        candidates.append(hub.Route("tailnet", ident["tailnet"]))
     try:
-        url = hub.normalize(args.hub)
-        if args.code:
-            code = "".join(ch for ch in args.code if ch.isdigit())
-            if len(code) != 6:
-                print("The link code is six digits, from droplet on this computer's browser "
-                      "(Devices → Link an app).", file=sys.stderr)
-                return 2
-            got = hub.link(url, code)
+        configured = hub.normalize(cfg["hub"])
+        host = urlsplit(configured).hostname or ""
+        if configured.startswith("https://") and configured != ident.get("tailnet") and not routes.is_ip(host):
+            candidates.append(hub.Route("direct", configured))
+    except hub.HubError:
+        pass
+    for route in candidates:
+        try:
+            info = hub.info(route, timeout=routes.REMOTE_TIMEOUT)
+        except hub.HubError:
+            continue
+        if ident.get("id") and info["id"] != ident["id"]:
+            continue
+        try:
+            dev = hub.me(route, cfg["token"])
+        except hub.HubError as e:
+            print(f"Couldn't check this device's token: {e}", file=sys.stderr)
+            return 1
+        if dev is None or dev.get("pending"):
+            print("The hub doesn't know this device any more. Pair again: droplet-agent setup --name NAME "
+                  "(or --code 123456).", file=sys.stderr)
+            return 1
+        new = routes.identity_from(info, route)
+        new["lan"] = routes.dedupe(new["lan"] + list(ident.get("lan") or []))[:routes.MAX_LAN_HINTS]
+        old_fp = ident.get("fingerprint")
+        cfg["hub_identity"] = new
+        config.save_identity(new)
+        print(f"Read the hub's identity over {route.describe()}: {new['name'] or '?'} (id {new['id']}).")
+        if new["fingerprint"] and old_fp and new["fingerprint"] != old_fp:
+            print(f"Its LAN certificate changed: pinned {new['fingerprint']} (was {old_fp}).")
+        elif new["fingerprint"]:
+            print(f"LAN certificate pinned: {new['fingerprint']}")
+        print("Restart the agent to use it: systemctl --user restart droplet-agent")
+        return 0
+    print("Couldn't reach the hub over a route that proves who it is (its tailnet URL, or this\n"
+          "machine if it's the hub). To pair again over the LAN instead:\n"
+          "  droplet-agent setup --name NAME     (or --code 123456 from a browser that's already in)\n"
+          f"If the hub still lists {cfg['device'].get('name') or 'this computer'}, remove it there first, "
+          "or use another name.", file=sys.stderr)
+    return 1
+
+
+def cmd_setup(args) -> int:
+    code = None
+    if args.code is not None:
+        code = "".join(ch for ch in args.code if ch.isdigit())
+        if len(code) != 6:
+            print("The link code is six digits, from droplet on this computer's browser "
+                  "(Devices → Link an app).", file=sys.stderr)
+            return 2
+        if args.pin is not None:
+            print("Use --code or --pin, not both.", file=sys.stderr)
+            return 2
+    name = " ".join((args.name or "").split())[:40] or socket.gethostname().split(".")[0][:40]
+    pin = args.pin
+    if pin == "":
+        pin = getpass.getpass("The hub's PIN: ")
+    cfg = config.load()
+    try:
+        if config.is_set_up(cfg) and not (args.hub or code or args.name or pin is not None):
+            return _refresh_identity(cfg)
+        resuming = bool(cfg.get("pending") and cfg.get("token") and cfg["hub_identity"].get("id") and not code)
+        if args.hub:
+            hub_url = hub.normalize(args.hub)
+            route, info, how = routes.establish(hub_url)
+        elif resuming:
+            # the request to join from last time: find the same hub again
+            route = routes.Router(cfg, persist=False).select()
+            info, how, hub_url = hub.info(route, timeout=routes.REMOTE_TIMEOUT), "known", cfg["hub"]
         else:
-            name = " ".join(args.name.split())[:40]
-            if not name:
-                print("Give the device a name with --name.", file=sys.stderr)
-                return 2
-            got = hub.register(url, name)
+            found = _choose_hub()
+            if found is None:
+                return 1
+            route, info, how = routes.establish_found(found)
+            hub_url = route.url
+        _describe_trust(info, route, how)
+        resuming = resuming and cfg["hub_identity"]["id"] == info["id"]
+
+        if code:
+            got = hub.link(route, code)
+            state = pairing.APPROVED
+        else:
+            got, state = None, None
+            if resuming:
+                dev = hub.me(route, cfg["token"])
+                state = pairing.state_of(dev)
+                if state == pairing.DENIED:
+                    print("The last request to join was denied, or expired. Asking again.")
+                else:
+                    got = {"id": dev["id"], "name": dev["name"], "token": cfg["token"], "code": dev.get("code")}
+            if got is None:
+                if pin is not None and not info["pin"]:
+                    print("This hub has no PIN. Leave out --pin, and allow this computer from one of "
+                          "your devices instead.", file=sys.stderr)
+                    return 2
+                got = hub.register(route, name)
+                state = pairing.PENDING if got.get("pending") else pairing.APPROVED
+            if state == pairing.PENDING:
+                # kept, so a second `setup` picks the same request up again
+                _save_link(cfg, hub_url, route, info, got, pending=True)
+                if pin is not None:
+                    if not hub.login_pin(route, got["token"], pin):
+                        print("Wrong PIN. Try again: droplet-agent setup --pin", file=sys.stderr)
+                        return 1
+                    state = pairing.state_of(hub.me(route, got["token"]))
+                else:
+                    print()
+                    print(f"    {got.get('code') or '????'}")
+                    print()
+                    print(f"On one of your devices, allow {got['name']} — check the code matches.")
+                    print("Waiting… (Ctrl+C to stop; running setup again picks up where this left off)",
+                          flush=True)
+                    state = pairing.wait_for_approval(
+                        lambda: hub.me(route, got["token"]),
+                        on_error=lambda e: logging.getLogger("droplet_agent").debug("%s", e))
+        if state == pairing.DENIED:
+            cfg.update(token="", pending=False)
+            config.save(cfg)
+            print("The hub said no: the request was denied, or it expired.", file=sys.stderr)
+            return 1
+        if state == pairing.TIMED_OUT:
+            print("Still not allowed in. The request stays open for a day: allow it, then run "
+                  "droplet-agent setup again to finish.", file=sys.stderr)
+            return 1
+        if state != pairing.APPROVED:
+            print("The hub didn't let this computer in.", file=sys.stderr)
+            return 1
     except hub.HubError as e:
         print(f"Setup failed: {e}", file=sys.stderr)
         return 1
-    cfg = config.load()
-    cfg.update(hub=url, token=got["token"], device={"id": got["id"], "name": got["name"]})
-    path = config.save(cfg)
-    print(f"Linked to {url} as \"{got['name']}\". Settings saved in {path}")
+    path = _save_link(cfg, hub_url, route, info, got, pending=False)
+    print(f"Linked to {info.get('name') or hub_url} as \"{got['name']}\" over {route.describe()}. "
+          f"Settings saved in {path}")
     return 0
 
 
@@ -71,14 +246,18 @@ def cmd_run(args) -> int:
     _setup_logging(args.verbose)
     log = logging.getLogger("droplet_agent")
     cfg = config.load()
+    if cfg.get("pending"):
+        print("This computer is still waiting to be let in. Run droplet-agent setup to see the code "
+              "and finish.", file=sys.stderr)
+        return 2
     if not config.is_set_up(cfg):
-        print("Not set up yet. Run: droplet-agent setup --hub https://<hub> --code 123456", file=sys.stderr)
+        print("Not set up yet. Run: droplet-agent setup", file=sys.stderr)
         return 2
     from .agent import Agent
     from .connection import Connection
 
     agent = Agent(cfg, dry_run=args.dry_run, input_backend=args.input)
-    conn = Connection(agent, cfg["hub"], cfg["token"])
+    conn = Connection(agent, routes.Router(cfg), cfg["token"])
     stop = agent.stop
 
     def bye(*_):
@@ -87,8 +266,10 @@ def cmd_run(args) -> int:
     signal.signal(signal.SIGTERM, bye)
     signal.signal(signal.SIGINT, bye)
 
+    ident = cfg["hub_identity"]
     log.info("droplet-agent %s for %s, hub %s%s", __version__, cfg["device"].get("name") or "?",
-             cfg["hub"], " (dry run)" if args.dry_run else "")
+             f"{ident['name'] or '?'} (id {ident['id']})" if ident.get("id") else cfg["hub"],
+             " (dry run)" if args.dry_run else "")
     agent.start()
     t = threading.Thread(target=conn.run, args=(stop,), name="connection", daemon=True)
     t.start()
@@ -139,16 +320,40 @@ def _service_state() -> str:
 def cmd_status(args) -> int:
     cfg = config.load()
     print(f"droplet-agent {__version__}")
-    if config.is_set_up(cfg):
-        print(f"hub:      {cfg['hub']}")
-        print(f"device:   {cfg['device'].get('name')} ({cfg['device'].get('id')})")
+    if cfg.get("pending"):
+        print("not set up: waiting to be let in; run droplet-agent setup to see the code and finish")
+    elif config.is_set_up(cfg):
+        ident = cfg["hub_identity"]
+        # persist=False: status only looks. A config from before local-first is
+        # read from the hub here, and stored by the next `droplet-agent run`.
+        router = routes.Router(cfg, persist=False)
+        route = None
         try:
-            dev = hub.me(cfg["hub"], cfg["token"])
-            print("token:    " + ("accepted by the hub" if dev else "NOT known to the hub; run setup again"))
+            route = router.select()
+            route_text = route.describe()
         except hub.HubError as e:
-            print(f"token:    can't check ({e})")
+            route_text = f"none: {e}"
+        stored = "" if ident.get("id") else "  (read from the hub just now; `run` stores it)"
+        ident = cfg["hub_identity"]
+        print(f"hub:      {ident.get('name') or cfg['hub']}  (id {ident.get('id') or 'unknown'}){stored}")
+        print(f"pin:      {ident.get('fingerprint') or 'none: the hub has no LAN HTTPS, so no LAN route'}")
+        print(f"route:    {route_text}")
+        if router.warning:
+            print(f"warning:  {router.warning}")
+        if router.on_hub_machine() or (route is not None and route.kind == "hub-local"):
+            print("          this computer is the hub")
+        print(f"tailnet:  {ident.get('tailnet') or 'none'}")
+        print(f"lan:      {', '.join(ident.get('lan') or []) or 'no address known yet'}")
+        print(f"device:   {cfg['device'].get('name')} ({cfg['device'].get('id')})")
+        if route is not None:
+            try:
+                dev = hub.me(route, cfg["token"])
+                print("token:    " + ("accepted by the hub" if dev and not dev.get("pending")
+                                      else "NOT known to the hub; run setup again"))
+            except hub.HubError as e:
+                print(f"token:    can't check ({e})")
     else:
-        print("not set up: run droplet-agent setup --hub https://<hub> --code 123456")
+        print("not set up: run droplet-agent setup")
     print(f"service:  {_service_state()}")
     print(f"desktop:  {', '.join(sorted(env.desktops())) or 'unknown'}"
           f" ({'Wayland' if env.is_wayland() else 'X11' if env.x11_display() else 'no display'})")
@@ -218,8 +423,9 @@ def cmd_doctor(args) -> int:
     print("droplet-agent doctor\n")
     if not config.is_set_up(cfg):
         problems += 1
-        print("• Not linked to a hub. On this computer's browser, open droplet → Devices →")
-        print("  Link an app, then run: droplet-agent setup --hub https://<hub> --code <code>\n")
+        print("• Not linked to a hub. Run droplet-agent setup: it finds the hub on this network")
+        print("  and asks one of your devices to let this computer in. Or, from droplet in this")
+        print("  computer's browser (Devices → Link an app): droplet-agent setup --code <code>\n")
 
     tries = {n: (ok, why) for n, ok, why in input_manager.probe("auto")}
     if not config.enabled(cfg, "input"):
@@ -316,11 +522,18 @@ def main(argv=None) -> int:
     p.add_argument("--version", action="version", version=f"droplet-agent {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("setup", help="link this computer to a droplet hub")
-    s.add_argument("--hub", required=True, help="the hub's URL, e.g. https://t15.tail1234.ts.net")
-    g = s.add_mutually_exclusive_group(required=True)
+    s = sub.add_parser("setup", help="link this computer to a droplet hub",
+                       description="Link this computer to a droplet hub. With no --hub, looks for hubs on "
+                                   "this network. With no --code, joins as a new device that one of your "
+                                   "devices allows in (or --pin). On a linked computer with no options, "
+                                   "reads the hub's identity again over the tailnet.")
+    s.add_argument("--hub", help="the hub: http://<LAN address>:8000 or its tailnet URL "
+                                 "(default: look for it on this network)")
+    g = s.add_mutually_exclusive_group()
     g.add_argument("--code", help="six-digit link code from droplet on this computer's browser")
-    g.add_argument("--name", help="register as a new device with this name instead")
+    g.add_argument("--name", help="join as a new device with this name (default: this computer's name)")
+    s.add_argument("--pin", nargs="?", const="", metavar="PIN",
+                   help="get in with the hub's PIN instead of waiting to be allowed (asked for if left out)")
     s.set_defaults(func=cmd_setup)
 
     r = sub.add_parser("run", help="connect to the hub and act on what arrives")
@@ -337,6 +550,8 @@ def main(argv=None) -> int:
     u.set_defaults(func=cmd_uninstall)
 
     args = p.parse_args(argv)
+    # setup and status say what matters themselves; `run` sets up real logging
+    logging.getLogger("droplet_agent").addHandler(logging.NullHandler())
     try:
         return args.func(args)
     except KeyboardInterrupt:

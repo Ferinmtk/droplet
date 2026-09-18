@@ -2289,6 +2289,13 @@
     s.root.append(x, box);
 
     const hub = (typeof hubUrl === "string" && hubUrl) || location.origin;
+    // local-first: the hub's LAN address works with no Tailscale; the tailnet
+    // URL is shown as the "from anywhere" alternative
+    let lanBase = null;
+    fetch("/api/hub/info").then(r => r.json()).then(info => {
+      const addr = info && info.lan && info.lan.addresses && info.lan.addresses[0];
+      if (addr && info.lan.http_port) { lanBase = `http://${addr}:${info.lan.http_port}`; drawSteps(); }
+    }).catch(() => {});
     const ua = navigator.userAgent;
     let platform = LS.get("droplet-rc-linkos") || (/Android/i.test(ua) ? "android" : /Windows/i.test(ua) ? "windows" : "linux");
     const appsBefore = ((live.presence[me.id] || {}).apps || []).length;
@@ -2363,9 +2370,15 @@
       const c = spaced();
       const B = t => el("b", { textContent: t });
       if (platform === "linux") {
+        const cmd = base => `curl -fsSL ${base}/agent/install.sh | sh -s -- --code ${code || "123456"}`;
+        const first = lanBase || hub;
+        const alt = lanBase && hub !== lanBase
+          ? [el("p", { className: "dim small", textContent: "Or, from anywhere on your tailnet:" }), copyable(cmd(hub))]
+          : [];
         steps.replaceChildren(
-          li("In a terminal on this machine, run:", copyable(`curl -fsSL ${hub}/agent/install.sh | sh -s -- --code ${code || "123456"}`)),
-          li("It installs droplet's agent for your user, links it to ", B(me.name), " with the code, and starts it."));
+          li(lanBase ? "On the same Wi-Fi as the hub, in a terminal on this machine, run:" : "In a terminal on this machine, run:",
+             copyable(cmd(first)), ...alt),
+          li("It installs droplet's agent for your user, links it to ", B(me.name), " with the code, and starts it. At home it talks to the hub directly; away, over Tailscale."));
       } else if (platform === "windows") {
         const files = el("button", { type: "button", className: "soft", style: "min-height:34px; margin-top:6px; font-size:13px" }, icon("folder"), "Open Files");
         files.onclick = () => { s.close(); showTab("files"); };

@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,6 +34,9 @@ var (
 	ErrNotFound = errors.New("not found on the hub")
 	// ErrNotRegistered means the hub doesn't know this device's cookie.
 	ErrNotRegistered = errors.New("this PC isn't registered with the hub (open Settings)")
+	// ErrNotAllowed is the hub's 403 {"pair": true}: this device hasn't been
+	// let in (yet, or any more). It needs pairing, not a retry.
+	ErrNotAllowed = errors.New("this PC hasn't been allowed in to the hub")
 )
 
 // NameTakenError is the hub's 409 when registering a name that exists.
@@ -63,8 +68,15 @@ type Client struct {
 	Transfer *http.Client
 }
 
-// New makes a client for the hub at base (e.g. https://t15.tail7375fe.ts.net).
+// New makes a client for the hub at base (e.g. https://t15.tail7375fe.ts.net),
+// with Go's normal TLS verification.
 func New(base, token, session string) (*Client, error) {
+	return NewWithTransport(base, token, session, nil)
+}
+
+// NewWithTransport makes a client that connects through rt: the pinned LAN
+// transport, or nil for the default one.
+func NewWithTransport(base, token, session string, rt http.RoundTripper) (*Client, error) {
 	u, err := ParseHubURL(base)
 	if err != nil {
 		return nil, err
@@ -74,8 +86,8 @@ func New(base, token, session string) (*Client, error) {
 		Base:     u,
 		Token:    token,
 		Session:  session,
-		HTTP:     &http.Client{Timeout: 20 * time.Second, CheckRedirect: noRedirect},
-		Transfer: &http.Client{CheckRedirect: noRedirect},
+		HTTP:     &http.Client{Timeout: 20 * time.Second, CheckRedirect: noRedirect, Transport: rt},
+		Transfer: &http.Client{CheckRedirect: noRedirect, Transport: rt},
 	}, nil
 }
 
@@ -156,11 +168,13 @@ func (c *Client) do(hc *http.Client, req *http.Request) (*http.Response, error) 
 	}
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
-		msg := errorMessage(resp)
-		switch resp.StatusCode {
-		case http.StatusConflict:
+		msg, pair := errorMessage(resp)
+		switch {
+		case resp.StatusCode == http.StatusForbidden && pair:
+			return nil, ErrNotAllowed
+		case resp.StatusCode == http.StatusConflict:
 			return nil, &NameTakenError{Msg: msg}
-		case http.StatusNotFound:
+		case resp.StatusCode == http.StatusNotFound:
 			return nil, ErrNotFound
 		}
 		return nil, &StatusError{Code: resp.StatusCode, Msg: msg}
@@ -168,15 +182,17 @@ func (c *Client) do(hc *http.Client, req *http.Request) (*http.Response, error) 
 	return resp, nil
 }
 
-func errorMessage(resp *http.Response) string {
+// errorMessage reads the hub's {"error": …, "pair": …} body.
+func errorMessage(resp *http.Response) (msg string, pair bool) {
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	var body struct {
 		Error string `json:"error"`
+		Pair  bool   `json:"pair"`
 	}
-	if json.Unmarshal(data, &body) == nil && body.Error != "" {
-		return body.Error
+	if json.Unmarshal(data, &body) == nil {
+		return body.Error, body.Pair
 	}
-	return ""
+	return "", false
 }
 
 // absorbCookies keeps a new device or session cookie if the hub sets one.
@@ -248,6 +264,10 @@ type Device struct {
 	Online bool   `json:"online"`
 	Push   bool   `json:"push"`
 	Self   bool   `json:"self"`
+	// Pending means it asked to join over the LAN and hasn't been let in;
+	// Code is the four digits both screens show meanwhile (/api/me, /api/device).
+	Pending bool   `json:"pending,omitempty"`
+	Code    string `json:"code,omitempty"`
 }
 
 // File is an item in a folder listing.
@@ -313,6 +333,64 @@ type Ring struct {
 }
 
 // --- endpoints ---------------------------------------------------------------
+
+// Info is GET /api/hub/info: who the hub is and how to reach it. It
+// answers before a device is let in.
+type Info struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Fingerprint *string `json:"fingerprint"` // of the LAN certificate; nil without LAN HTTPS
+	LAN         struct {
+		Addresses []string `json:"addresses"`
+		HTTPPort  int      `json:"http_port"`
+		HTTPSPort *int     `json:"https_port"`
+	} `json:"lan"`
+	Tailnet *string `json:"tailnet"`
+	PIN     bool    `json:"pin"`
+}
+
+// FP is the fingerprint, or "".
+func (i *Info) FP() string {
+	if i.Fingerprint == nil {
+		return ""
+	}
+	return *i.Fingerprint
+}
+
+// TailnetURL is the tailnet URL, or "".
+func (i *Info) TailnetURL() string {
+	if i.Tailnet == nil {
+		return ""
+	}
+	return *i.Tailnet
+}
+
+// LANEndpoints are the hub's LAN HTTPS addresses as "ip:port".
+func (i *Info) LANEndpoints() []string {
+	if i.LAN.HTTPSPort == nil || *i.LAN.HTTPSPort <= 0 {
+		return nil
+	}
+	var out []string
+	for _, a := range i.LAN.Addresses {
+		if ip := net.ParseIP(a); ip != nil && ip.To4() != nil {
+			out = append(out, net.JoinHostPort(ip.String(), strconv.Itoa(*i.LAN.HTTPSPort)))
+		}
+	}
+	return out
+}
+
+// HubInfo fetches /api/hub/info. ErrNotFound means a hub from before
+// local-first, which has no identity to pin.
+func (c *Client) HubInfo(ctx context.Context) (*Info, error) {
+	var info Info
+	if err := c.getJSON(ctx, "/api/hub/info", &info); err != nil {
+		return nil, err
+	}
+	if info.ID == "" {
+		return nil, errors.New("the hub didn't say who it is")
+	}
+	return &info, nil
+}
 
 // Me fetches /api/me.
 func (c *Client) Me(ctx context.Context) (*Me, error) {
