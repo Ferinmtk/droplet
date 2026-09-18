@@ -324,6 +324,28 @@ def folder_dir(folder: str) -> Path:
     return directory
 
 
+# --- cross-site guard -------------------------------------------------------
+
+@app.before_request
+def same_origin_writes():
+    """Refuse state-changing requests that another website started.
+
+    Tailnet visitors are trusted by network, not by cookie, so a page on any
+    site could otherwise make the visitor's browser POST here (delete files,
+    run hub commands…). Browsers always send Origin on cross-site POSTs;
+    curl and the native apps send none and aren't affected.
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS") or request.endpoint == "share":
+        return None  # /share: Android's share sheet may post with Origin: null
+    origin = request.headers.get("Origin")
+    if origin is None:
+        return None
+    from urllib.parse import urlsplit
+    if urlsplit(origin).netloc != request.host:
+        abort(403)
+    return None
+
+
 # --- PIN gate ----------------------------------------------------------------
 
 @app.before_request
@@ -714,6 +736,33 @@ def banner(url: str, tailnet_url: str | None = None):
     except ImportError:
         print("  (qrcode not installed — skipping QR)")
     print()
+
+
+# --- feature modules ---------------------------------------------------------
+# Each module exposes register(ctx) and adds its own routes and page script,
+# so features stay out of this file. The PIN gate above covers their routes too.
+
+from types import SimpleNamespace  # noqa: E402
+
+import clipboard  # noqa: E402
+import commands  # noqa: E402
+import media  # noqa: E402
+import ring  # noqa: E402
+
+FEATURES: list = [clipboard, commands, media, ring]
+
+
+feature_ctx = SimpleNamespace(
+    app=app,
+    base_dir=BASE_DIR,
+    devices=devices,
+    pusher=pusher,
+    chats=chats,
+    current_device=current_device,
+    sender_name=sender_name,
+)
+for _feature in FEATURES:
+    _feature.register(feature_ctx)
 
 
 if __name__ == "__main__":
