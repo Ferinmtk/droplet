@@ -130,6 +130,11 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 	if len(cookies) > 0 {
 		req.Header.Set("Cookie", strings.Join(cookies, "; "))
 	}
+	if c.Token != "" {
+		// how helpers identify themselves (docs/remote.md); the cookie above
+		// is kept for hubs from before bearer tokens
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
 	req.Header.Set("User-Agent", "droplet-windows/1 (Windows)")
 	return req, nil
 }
@@ -358,6 +363,47 @@ func (c *Client) Register(ctx context.Context, name string) (*Device, error) {
 	return &d, nil
 }
 
+// Linked is the hub's answer to a link code: the device this app now
+// belongs to, and its own token for it.
+type Linked struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Token string `json:"token"`
+}
+
+// ErrBadLinkCode is the hub refusing a link code (wrong, used or expired).
+var ErrBadLinkCode = errors.New("that code is wrong or has expired: make a new one")
+
+// Link trades a six-digit code from "Set up remote control of this device"
+// for a token on that device, so this app and the PC's browser are one
+// device on the hub. The new token replaces c.Token.
+func (c *Client) Link(ctx context.Context, code, client string) (*Linked, error) {
+	body, _ := json.Marshal(map[string]string{"code": code, "client": client})
+	// a token from an earlier registration mustn't come along: the hub
+	// doesn't need it, and it would be the identity for this request
+	c.Token = ""
+	var out Linked
+	err := c.post(ctx, "/api/device/link", "application/json", strings.NewReader(string(body)), &out)
+	var se *StatusError
+	switch {
+	case errors.As(err, &se) && se.Code == http.StatusForbidden:
+		return nil, ErrBadLinkCode
+	case errors.Is(err, ErrNotFound):
+		return nil, errors.New("this hub can't link apps yet (update the hub)")
+	case err != nil:
+		return nil, err
+	case out.Token == "" || out.ID == "":
+		return nil, errors.New("the hub's answer had no device token")
+	}
+	c.Token = out.Token
+	return &out, nil
+}
+
+// RemoveDevice removes a device from the hub (as the web app's Devices list does).
+func (c *Client) RemoveDevice(ctx context.Context, id string) error {
+	return c.post(ctx, "/api/device/"+url.PathEscape(id)+"/remove", "", nil, nil)
+}
+
 // Chat fetches the thread with another device (and marks it read on the hub).
 func (c *Client) Chat(ctx context.Context, deviceID string) ([]Message, error) {
 	var out struct {
@@ -471,6 +517,45 @@ func (c *Client) Upload(ctx context.Context, to string, paths []string, progress
 		return nil, err
 	}
 	return out.Saved, nil
+}
+
+// UploadData sends one in-memory file (a screenshot, say) to a device or the hub.
+func (c *Client) UploadData(ctx context.Context, to, name string, data []byte) error {
+	var body strings.Builder
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("files", name)
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(data); err != nil {
+		return err
+	}
+	if err := mw.Close(); err != nil {
+		return err
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, "/upload?to="+url.QueryEscape(to), strings.NewReader(body.String()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := c.do(c.Transfer, req)
+	if errors.Is(err, ErrNotFound) {
+		return fmt.Errorf("no device %q on the hub", to)
+	}
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Saved []string `json:"saved"`
+	}
+	if err := decode(resp, &out); err != nil {
+		return err
+	}
+	if len(out.Saved) == 0 {
+		return errors.New("the hub didn't save the file")
+	}
+	return nil
 }
 
 type countingReader struct {
