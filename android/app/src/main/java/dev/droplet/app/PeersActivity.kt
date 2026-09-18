@@ -159,6 +159,13 @@ class PeersActivity : AppCompatActivity() {
                 pickFiles.launch(arrayOf("*/*"))
             },
             R.string.mesh_act_ring to { background({ Mesh.node!!.ring(e.fp) }) { toast(getString(R.string.mesh_sent_route, Mesh.describeRoute(this, it))) } },
+            R.string.mesh_act_clip to {
+                // this screen has focus, so Android lets it read the clipboard now
+                val text = getSystemService(android.content.ClipboardManager::class.java).primaryClip
+                    ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+                if (text.isNullOrEmpty()) toast(getString(R.string.clip_empty))
+                else background({ Mesh.node!!.clip(e.fp, text) }) { toast(getString(R.string.mesh_sent_route, Mesh.describeRoute(this, it))) }
+            },
             R.string.mesh_act_ring_stop to { background({ Mesh.node!!.ring(e.fp, stop = true) }) { } },
         )
         if ("input" in e.caps) items += R.string.mesh_act_remote to {

@@ -242,6 +242,26 @@ object Mesh {
 
     fun broadcast(msg: JSONObject): Boolean = node?.broadcast(msg) ?: false
 
+    /**
+     * This phone's clipboard to your devices that take one, directly. When
+     * the hub already took it to all of them ([viaHub]), only peers with an
+     * open link get a direct copy too; otherwise each is reached directly,
+     * in the background. True if at least one open link had it at once.
+     */
+    fun clipToPeers(text: String, viaHub: Boolean): Boolean {
+        val n = node ?: return false
+        val msg = JSONObject().put("t", "clip").put("text", text)
+        val peers = n.trust.all().filter { "clipboard" in it.caps }
+        var sent = false
+        val rest = ArrayList<String>()
+        for (e in peers) {
+            val link = n.openLink(e.fp)
+            if (link != null) sent = link.send(msg) || sent else if (!viaHub) rest += e.fp
+        }
+        if (rest.isNotEmpty()) scope.launch { for (fp in rest) runCatching { n.direct(fp)?.send(msg) } }
+        return sent
+    }
+
     // --- for screens ------------------------------------------------------------------
 
     data class PeerView(val entry: TrustList.Entry, val route: String)

@@ -314,6 +314,14 @@ class WsServerConn private constructor(
 ) {
     private val out = socket.getOutputStream()
     private val writeLock = Any()
+    /**
+     * Frames go out on a thread of their own, in order: a send never blocks
+     * the caller (state updates come from the main thread, where Android
+     * forbids network I/O), and a close goes out after what was queued before it.
+     */
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "mesh-ws-write").apply { isDaemon = true }
+    }
     @Volatile var closed = false; private set
     @Volatile var lastRx = System.currentTimeMillis(); private set
     @Volatile private var closeSent = false
@@ -400,7 +408,7 @@ class WsServerConn private constructor(
                 return null
             }
             when (f.opcode) {
-                0x9 -> send(0xA, f.payload)
+                0x9 -> queue(0xA, f.payload)
                 0xA -> Unit
                 0x8 -> {
                     val code = if (f.payload.size >= 2) ((f.payload[0].toInt() and 0xff) shl 8) or (f.payload[1].toInt() and 0xff) else 1000
@@ -465,27 +473,48 @@ class WsServerConn private constructor(
         }
     }
 
-    fun sendText(text: String): Boolean = send(0x1, text.toByteArray(Charsets.UTF_8))
-
-    fun ping(): Boolean = send(0x9, (System.currentTimeMillis() / 1000).toString().toByteArray())
-
-    fun close(code: Int = 1000, reason: String = "") {
-        synchronized(writeLock) {
-            if (!closed && !closeSent) {
-                val r = reason.toByteArray(Charsets.UTF_8).take(120).toByteArray()
-                closeSent = true
-                runCatching {
-                    out.write(byteArrayOf(0x88.toByte(), (2 + r.size).toByte(), (code shr 8).toByte(), (code and 0xff).toByte()) + r)
-                    out.flush()
-                }
-            }
+    /** Queues a frame; false if the connection is closing or closed. */
+    private fun queue(opcode: Int, payload: ByteArray): Boolean {
+        if (closed || closeSent) return false
+        return try {
+            writer.execute { send(opcode, payload) }
+            true
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            false
         }
-        shutdown()
     }
 
+    fun sendText(text: String): Boolean = queue(0x1, text.toByteArray(Charsets.UTF_8))
+
+    fun ping(): Boolean = queue(0x9, (System.currentTimeMillis() / 1000).toString().toByteArray())
+
+    /** A close frame after everything queued, then the socket closes. */
+    fun close(code: Int = 1000, reason: String = "") {
+        val r = reason.toByteArray(Charsets.UTF_8).take(120).toByteArray()
+        try {
+            writer.execute {
+                synchronized(writeLock) {
+                    if (!closed && !closeSent) {
+                        closeSent = true
+                        runCatching {
+                            out.write(byteArrayOf(0x88.toByte(), (2 + r.size).toByte(), (code shr 8).toByte(), (code and 0xff).toByte()) + r)
+                            out.flush()
+                        }
+                    }
+                }
+                shutdown()
+            }
+            writer.shutdown()
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            shutdown()
+        }
+    }
+
+    /** Closes the socket now, whatever is queued (a peer that stopped answering). */
     fun shutdown() {
         if (closed) return
         closed = true
         runCatching { socket.close() }
+        writer.shutdownNow()
     }
 }

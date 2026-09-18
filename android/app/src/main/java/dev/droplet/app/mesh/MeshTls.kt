@@ -1,5 +1,6 @@
 package dev.droplet.app.mesh
 
+import android.annotation.SuppressLint
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -64,6 +65,7 @@ object MeshTls {
         CertificateException("the peer presented certificate ${seen.take(16)}…, not the expected ${expected.take(16)}…")
 
     /** Accepts anything: the loopback self-test only. */
+    @SuppressLint("CustomX509TrustManager")
     class AcceptAll : X509ExtendedTrustManager() {
         override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
         override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
@@ -81,6 +83,7 @@ object MeshTls {
      * handshake, so pairing and unpairing take effect at once. No CA list is
      * sent, and a client with no certificate never gets here: it may pair.
      */
+    @SuppressLint("CustomX509TrustManager")  // on purpose: trust is the fingerprint, checked here
     class ServerTrust(private val trusted: (String) -> Boolean) : X509ExtendedTrustManager() {
         private fun check(chain: Array<out X509Certificate>?) {
             val leaf = chain?.firstOrNull() ?: throw CertificateException("no certificate")
@@ -102,6 +105,7 @@ object MeshTls {
      * confirms who it is). A mismatch aborts the handshake before a byte of
      * HTTP is sent.
      */
+    @SuppressLint("CustomX509TrustManager")  // on purpose: the pin is the fingerprint, checked here
     class ClientTrust(private val expect: String?) : X509ExtendedTrustManager() {
         /** The last leaf certificate a server presented (DER), for pairing: OkHttp's Handshake can't give it back. */
         @Volatile var lastLeaf: ByteArray? = null

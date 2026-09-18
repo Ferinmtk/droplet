@@ -306,7 +306,9 @@ class MeshNode(
             val quiet = now - conn.lastRx
             if (quiet > DEAD_AFTER_MS) {
                 host.log("mesh: link with $address went quiet; closing it")
-                close(1001, "no answer")
+                // at once: a write to a peer that's gone may be stuck, and a close frame would queue behind it
+                conn.shutdown()
+                finished()
             } else if (quiet > IDLE_PING_MS && now - lastPing > IDLE_PING_MS) {
                 lastPing = now
                 conn.ping()

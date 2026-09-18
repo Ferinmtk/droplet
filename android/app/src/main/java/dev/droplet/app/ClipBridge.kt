@@ -54,7 +54,7 @@ object ClipBridge {
      * "droplet pasted from your clipboard" notice doesn't show every time.
      */
     fun onForeground(context: Context) {
-        if (!Prefs.capClipboard || !Live.state.value.connected) return
+        if (!Prefs.capClipboard || (!Live.state.value.connected && Mesh.state.value.links == 0)) return
         val cm = context.getSystemService(ClipboardManager::class.java) ?: return
         val desc = cm.primaryClipDescription ?: return
         if (desc.timestamp != 0L && desc.timestamp == Prefs.clipSeenAt) return
@@ -79,7 +79,10 @@ object ClipBridge {
         if (!manual && print == Prefs.clipLast) return Result.SAME
         val now = SystemClock.elapsedRealtime()
         if (!manual && now - lastSentAt < MIN_GAP_MS) return Result.SAME
-        if (!Live.send(JSONObject().put("t", "clip").put("text", text))) return Result.OFFLINE
+        val hub = Live.send(JSONObject().put("t", "clip").put("text", text))
+        // and straight to your devices on direct links (all of them, when the hub is down)
+        val direct = Mesh.clipToPeers(text, viaHub = hub)
+        if (!hub && !direct) return Result.OFFLINE
         lastSentAt = now
         Prefs.clipLast = print
         return Result.SENT

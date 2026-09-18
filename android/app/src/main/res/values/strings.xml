@@ -231,7 +231,7 @@
     <string name="clip_empty">The clipboard is empty</string>
     <string name="clip_too_big">That\'s too much text to sync (256 KB at most)</string>
     <string name="clip_off">Clipboard sync is off in droplet\'s settings</string>
-    <string name="clip_offline">Not connected to the hub</string>
+    <string name="clip_offline">Not connected to the hub or to any of your devices</string>
 
     <!-- presentation remote -->
     <string name="back">Back</string>
@@ -424,7 +424,6 @@
     <string name="mesh_pair_request">%1$s wants to pair</string>
     <string name="mesh_pair_request_code">Code %1$s. Tap to answer.</string>
     <string name="mesh_kept_for_later">The device isn\'t reachable right now; it gets the file when it is.</string>
-    <string name="mesh_this_phone">This phone</string>
     <string name="mesh_identity">Fingerprint %1$s · port %2$d</string>
     <string name="mesh_identity_file">The key is kept in the app\'s private storage (%1$s).</string>
     <string name="mesh_status_off">Direct connections are off</string>
@@ -472,12 +471,10 @@
     <string name="mesh_chat_send">Send</string>
     <string name="mesh_chat_empty">No messages with %1$s yet.</string>
     <string name="mesh_chat_waiting">waiting: %1$s</string>
-    <string name="mesh_chat_failed">not sent: %1$s</string>
     <string name="mesh_chat_sending">sending…</string>
     <string name="up_kept">Kept for %1$s</string>
     <string name="up_kept_body">It goes as soon as %1$s or the hub is reachable.</string>
     <string name="up_done_route">Sent to %1$s (%2$s)</string>
-    <string name="share_mesh_sub">%1$s · %2$s</string>
     <string name="remote_mesh_target">%1$s (direct)</string>
     <!-- settings: the mesh -->
     <string name="s_mesh">Direct connections</string>
