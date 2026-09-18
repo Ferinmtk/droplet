@@ -385,9 +385,13 @@ def same_origin_writes():
 # to join, code 1234: Allow / Deny", or it can type the PIN.
 
 # reachable before being trusted: the app shell (browsers fetch the manifest
-# and service worker without cookies), asking to join, and the hub's identity
+# and service worker without cookies), asking to join, the hub's identity,
+# and the Linux agent's installer and package (public code, the same as in
+# the repository), so a new computer on the LAN can install it and then ask
+# to join
 PUBLIC_ENDPOINTS = {"login", "static", "manifest", "service_worker", "home",
-                    "api_me", "api_device", "api_link", "hub_info"}
+                    "api_me", "api_device", "api_link", "hub_info",
+                    "agent_install_script", "agent_package"}
 GUEST_DROP_ENDPOINTS = {"upload", "share"}
 
 

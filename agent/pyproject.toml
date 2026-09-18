@@ -8,10 +8,13 @@ dynamic = ["version"]
 description = "Lets your other devices control this Linux computer through droplet"
 readme = "README.md"
 requires-python = ">=3.9"
-# both pure Python, so pip never needs a compiler
+# websockets and jeepney are pure Python. zeroconf (finding the hub on the
+# LAN) has wheels for the usual platforms and builds without a compiler
+# elsewhere, as pure Python.
 dependencies = [
     "websockets>=15.0",
     "jeepney>=0.8",
+    "zeroconf>=0.132",
 ]
 
 [project.scripts]

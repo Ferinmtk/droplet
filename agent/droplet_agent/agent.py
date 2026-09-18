@@ -36,6 +36,7 @@ class Agent:
         self.dry_run = dry_run
         self.stop = threading.Event()
         self.transport = None      # set by the connection: send(dict) -> bool
+        self.route = None          # set by the connection: the route it last connected over (hub.Route)
         self.on_caps_changed = None  # set by the connection: reconnect with a new hello
         self.advertised: set[str] = set()
         # media actions and clipboard writes keep their order; locks and
@@ -234,7 +235,9 @@ class Agent:
             return
         name = f"screenshot-{self.host}-{time.strftime('%Y%m%d-%H%M%S')}.png"
         try:
-            hub.upload(self.cfg["hub"], self.cfg["token"], to, name, data)
+            # the route of the WebSocket the request came over: the pinned LAN,
+            # loopback or the tailnet (the configured URL only before any connection)
+            hub.upload(self.route or self.cfg["hub"], self.cfg["token"], to, name, data)
         except hub.HubError as e:
             log.warning("uploading the screenshot failed: %s", e)
             return
