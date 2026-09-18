@@ -160,7 +160,9 @@ class Hub:
                 requester.send({"t": "rpc-result", "id": key.split(":", 1)[1], **out})
             return
 
-        if t == "state" and conn.caps:
+        # helpers publish state; a browser tab (platform "web", no caps) can't.
+        # A helper with every capability switched off still reports battery.
+        if t == "state" and (conn.caps or conn.platform in ("linux", "windows", "android")):
             kind = str(msg.get("kind") or "")[:20]
             data = msg.get("data")
             with self._lock:
