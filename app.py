@@ -53,8 +53,13 @@ FOLDERS = {"received": RECEIVED_DIR, "shared": SHARED_DIR}
 # raster only — /raw serves inline, and an inline SVG can carry script.
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
 
+STATIC_DIR = Path(__file__).parent / "static"
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
+# an installed app drops browser-session cookies whenever it's closed, which
+# would mean typing the PIN on every launch
+app.config["PERMANENT_SESSION_LIFETIME"] = 30 * 24 * 3600
 
 
 def _secret_key() -> bytes:
@@ -136,7 +141,9 @@ def tailnet_user() -> str | None:
 
 @app.before_request
 def require_pin():
-    if not PIN or session.get("authed") or request.endpoint in ("login", "static"):
+    # browsers fetch the manifest and service worker without cookies, so
+    # they (and the icons) must load before login or install breaks
+    if not PIN or session.get("authed") or request.endpoint in ("login", "static", "manifest", "service_worker"):
         return None
     if TAILNET_TRUST and tailnet_user():
         return None
@@ -150,6 +157,7 @@ def login():
     error = None
     if request.method == "POST":
         if secrets.compare_digest(request.form.get("pin", ""), PIN):
+            session.permanent = True
             session["authed"] = True
             return redirect(url_for("home"))
         error = "Wrong PIN"
@@ -189,6 +197,44 @@ def share_text():
     dest = unique_path(RECEIVED_DIR, f"text-{time.strftime('%Y%m%d-%H%M%S')}.txt")
     dest.write_text(text, encoding="utf-8")
     return jsonify({"saved": dest.name})
+
+
+@app.route("/share", methods=["POST"])
+def share():
+    # Android's share sheet posts here (see share_target in the manifest).
+    # Normally the service worker catches it first; this is the fallback for
+    # when it isn't running yet.
+    saved = []
+    for f in request.files.getlist("files"):
+        name = secure_filename(f.filename or "")
+        if name:
+            dest = unique_path(RECEIVED_DIR, name)
+            f.save(dest)
+            saved.append(dest.name)
+    parts = []
+    for key in ("title", "text", "url"):
+        v = (request.form.get(key) or "").strip()
+        if v and not any(v in p for p in parts):
+            parts.append(v)
+    if parts:
+        dest = unique_path(RECEIVED_DIR, f"text-{time.strftime('%Y%m%d-%H%M%S')}.txt")
+        dest.write_text("\n".join(parts), encoding="utf-8")
+        saved.append(dest.name)
+    return redirect(url_for("home", shared=len(saved)), code=303)
+
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(STATIC_DIR, "manifest.webmanifest", mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def service_worker():
+    # served from the root so its scope covers the whole app;
+    # no-cache so a new version is picked up on the next visit
+    resp = send_from_directory(STATIC_DIR, "sw.js", mimetype="text/javascript")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.route("/d/<folder>/<path:name>")
