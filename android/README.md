@@ -1,6 +1,6 @@
 # droplet for Android
 
-A native companion app for the droplet hub. It does six things that the web
+A native companion app for the droplet hub. It does seven things that the web
 app can't do as a browser tab or PWA:
 
 - **Share → droplet from any app.** A native sheet lists the hub and your
@@ -19,6 +19,10 @@ app can't do as a browser tab or PWA:
   music, read and send its SMS, browse its files and share its clipboard.
   The phone becomes a presentation remote for a computer: the volume keys
   change slides. See [Remote control](#remote-control).
+- **Direct connections to your devices (the mesh).** The phone talks to
+  your computers straight over the Wi-Fi or Tailscale, so sending files and
+  messages, ringing, the clipboard and the presentation remote keep working
+  when the hub is down. See [Direct connections](#direct-connections-the-mesh).
 - **A Bluetooth mouse and keyboard.** The phone pairs with a computer or TV
   as an ordinary Bluetooth keyboard and mouse: touchpad, keyboard, media keys
   and slides, with nothing installed on the other side and no Wi-Fi or hub.
@@ -26,8 +30,8 @@ app can't do as a browser tab or PWA:
 
 Everything else is the droplet web app, full screen in a WebView. It uses the
 same device token as the page, so the app is the same device the page named.
-The app talks only to your hub: no Firebase, no Google Play Services, no
-analytics.
+The app talks only to your hub and your own devices: no Firebase, no
+Google Play Services, no analytics.
 
 It's **local-first**, like KDE Connect: at home it talks to the hub straight
 over the Wi-Fi, and Tailscale is only the way in when you're away. See
@@ -259,6 +263,69 @@ When MIUI blocks sending, the app returns a clear error saying so instead of
 pretending it worked. A send counts as done only once the radio reports it
 sent.
 
+## Direct connections (the mesh)
+
+The phone is a peer in droplet's mesh ([docs/mesh.md](../docs/mesh.md)):
+your devices with the droplet app talk to each other directly, and the hub
+is a helper. The phone speaks exactly the protocol the Linux agent does
+(§9 of the design), and is tested against it.
+
+**Who it talks to.** Only devices whose certificate fingerprint is in its
+trust list:
+
+- **Devices on your hub** trust each other by themselves. Each time the
+  phone connects to the hub it announces its certificate and fetches the
+  hub's roster (`POST /api/mesh/announce`, `GET /api/mesh/roster`), and
+  again whenever the hub says the roster changed. Removing a device on the
+  hub removes it everywhere.
+- **Anything else pairs directly**, like Bluetooth: Settings → Direct
+  connections → **Devices and pairing**, tap a device on the Wi-Fi (or
+  **Pair by address**), and check both screens show the same four-digit
+  code. A device asking to pair with the phone shows a notification; tap it
+  to see the code and answer.
+
+**How a message gets there**, the first that works: directly over the
+Wi-Fi; directly over Tailscale; through the hub; the hub's mailbox (for a
+device that's off); or kept on the phone until one of them is back. Live
+control (the presentation remote), the clipboard and rings don't wait:
+they go directly or through the hub, or not at all.
+
+**What uses it:**
+
+- **Share → droplet** lists your devices with how each is reached now
+  ("Direct · Wi-Fi", "Via the hub", "Offline"). Files and text go directly
+  when they can, and still reach devices on the hub the usual way.
+- **Messages:** the devices screen has a chat per device. Messages that
+  arrive show a notification.
+- **Files sent to the phone** land in **Download/droplet**, with a
+  notification that opens them. A transfer that stops part-way carries on
+  where it stopped when the sender offers it again.
+- **Ring, clipboard:** a device can ring the phone (the same loud ring) or
+  put text on its clipboard directly; the devices screen rings them back.
+- **Remote control:** media, SMS and files answer over a direct link
+  exactly as through the hub. A file taken off the phone that way goes back
+  directly, not through the hub. The phone doesn't take keyboard and mouse
+  input, and says so.
+- **Presentation remote:** a computer that takes input is listed as
+  "<name> (direct)"; key presses go straight to it.
+
+**When it listens.** Other devices can reach the phone while **Stay
+connected** runs (and while a droplet screen that sends is open), on port
+1739 (or the next free one up to 1749), announced on the Wi-Fi as
+`_droplet-peer._tcp`. With no hub at all, Stay connected keeps the phone
+reachable by its directly paired devices. Settings → Direct connections
+turns it all off.
+
+**Security.** Mutual TLS with self-signed certificates; the fingerprint is
+the identity, never a hostname or CA. The phone's key is made in the
+Android Keystore and never leaves it (if a phone's Keystore can't do TLS
+with it, which the app tests when the key is made, it's kept in the app's
+private storage instead, and the devices screen says so). A device whose
+certificate isn't trusted fails the TLS handshake; a device with no
+certificate may only ask to pair. The phone checks each server's
+fingerprint before sending anything. Pairing uses committed nonces and a
+signature, so the code can't be forced to match by a man in the middle.
+
 ## Bluetooth mouse & keyboard
 
 Settings → **Bluetooth mouse & keyboard**, the touchpad icon on the
@@ -476,6 +543,21 @@ adb shell cmd notification post -t 'Title' tag 'Some text'
   firmware without the service, a refused or unanswered registration,
   connecting, switching hosts, letting go), and the real backend under
   Robolectric's Bluetooth shadows.
+- **`MeshUnitTest`** (always runs): the mesh certificate against the
+  profile, pairing codes against vectors from the Linux reference, the
+  pairing proof checks, Range, safe names, the server's access rules over
+  real TLS sockets (strangers refused in the handshake, no certificate
+  gets only pairing, an unpaired peer refused even on a resumed session,
+  the client's fingerprint pin), and two phones pairing and talking.
+- **`MeshInteropTest`** (needs the Linux agent in a venv, and a hub for
+  its second half): the phone against real `droplet-agent run --dry-run`
+  processes, both ways. TLS fingerprints, strangers refused, pairing
+  started by either side with matching codes, text, a 20 MB file each way
+  interrupted and resumed, ring, clip, media and RPC answered by the
+  phone's bridges, `files.get` coming back as a mesh file, `input`
+  refused, unpairing; then the roster through a hub, and direct delivery
+  after the hub is stopped. The agent is driven by
+  `src/test/python/mesh_agent.py`.
 - **`ScreensTest`** renders the remote, Settings, setup, the pairing code,
   the offline screen and the Bluetooth screens to PNGs for review.
 
@@ -489,4 +571,22 @@ DROPLET_HOME=$C DROPLET_PORT=8985 DROPLET_LAN_TLS_PORT=8986 DROPLET_PUSH=0 pytho
 cd android
 DROPLET_TEST_HUB=http://127.0.0.1:8831 DROPLET_TEST_PIN_HUB=http://127.0.0.1:8981 DROPLET_TEST_PIN=2468 \
   DROPLET_TEST_CLONE_HUB=http://127.0.0.1:8985 DROPLET_SHOTS=/tmp/shots ./gradlew testReleaseUnitTest
+
+# the mesh against the Linux agent (and a hub, which the test stops)
+python3 -m venv /tmp/v && /tmp/v/bin/pip install ../agent
+H=$(mktemp -d); DROPLET_HOME=$H DROPLET_PORT=8881 DROPLET_LAN_TLS_PORT=8882 DROPLET_HOST=0.0.0.0 DROPLET_PUSH=0 python ../app.py &
+DROPLET_TEST_AGENT_PY=/tmp/v/bin/python DROPLET_TEST_HUB=http://127.0.0.1:8881 DROPLET_TEST_HUB_PID=$! \
+  ./gradlew testReleaseUnitTest --tests '*MeshInteropTest*'
 ```
+
+### What only the real phone can confirm (the mesh)
+
+- that the Keystore key works for TLS on MIUI/HyperOS (the app tests it
+  when it makes the key, and falls back if not; the devices screen says
+  which it got);
+- NsdManager announcing `_droplet-peer._tcp` and finding other peers on
+  the Wi-Fi (Robolectric has no NsdManager; the TXT parsing is tested);
+- MediaStore saving into Download/droplet, and opening a received file;
+- the server staying reachable with the screen off under MIUI's battery
+  rules (Stay connected is a foreground service, as before);
+- the devices, pairing and chat screens by hand.
