@@ -59,7 +59,7 @@
 </head>
 <body>
   <h1>💧 droplet</h1>
-  <p class="sub">hub: {{ host }} — drop a file below to send it here</p>
+  <p class="sub">hub: {{ host }}{% if tailnet_user %} · via tailnet as {{ tailnet_user }}{% endif %} — drop a file below to send it here</p>
 
   <div id="drop">Drop files here or tap to choose</div>
   <input type="file" id="file" multiple hidden>
