@@ -2,36 +2,67 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#0f172a">
+<meta name="theme-color" content="#f5f2ec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#061419" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="dark light">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-<title>droplet 💧 — PIN</title>
+<title>droplet · PIN</title>
 <style>
-  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --accent:#38bdf8; }
+  /* same palette as the app: deep water at night, rain on paper by day */
+  :root { color-scheme:dark; --bg:#061419; --card:#0b1f26; --line:#173640; --text:#e3f1ef; --dim:#7d9da0;
+          --accent:#4de8d4; --accent-soft:rgba(77,232,212,.12); --on-accent:#032824; --coral:#ff8468;
+          --tide:linear-gradient(140deg,#6af2dc 0%,#40c6ec 55%,#3a9ff5 100%); --tide-a:#6af2dc; --tide-b:#3a9ff5;
+          --caustic-1:rgba(77,232,212,.10); --caustic-2:rgba(58,167,245,.09);
+          --shadow:0 24px 60px -30px rgba(0,0,0,.9); }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f1f5f9; --card:#ffffff; --line:#cbd5e1; --text:#0f172a; --accent:#0284c7; }
+    :root { color-scheme:light; --bg:#f5f2ec; --card:#fffdf9; --line:#e6e0d4; --text:#0c2a30; --dim:#5e7478;
+            --accent:#0a7d84; --accent-soft:rgba(10,125,132,.09); --on-accent:#fff; --coral:#e2563f;
+            --tide:linear-gradient(140deg,#12a5a0 0%,#127fa8 55%,#1a62ad 100%); --tide-a:#19b3a8; --tide-b:#1a62ad;
+            --caustic-1:rgba(18,165,160,.08); --caustic-2:rgba(26,98,173,.06);
+            --shadow:0 24px 60px -30px rgba(12,42,48,.35); }
   }
   * { box-sizing:border-box; margin:0; }
-  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif;
-         display:grid; place-items:center; min-height:100vh; padding:1rem; }
-  form { background:var(--card); border:1px solid var(--line); border-radius:12px;
-         padding:2rem; text-align:center; width:100%; max-width:320px; }
-  h1 { font-size:1.25rem; margin-bottom:1rem; }
-  input { width:100%; padding:.6rem; font-size:1.2rem; text-align:center; letter-spacing:.3em;
-          background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; }
-  button { width:100%; margin-top:.75rem; padding:.6rem; font-size:1rem; border:none;
-           border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
-  .err { color:#f87171; font-size:.85rem; margin-top:.6rem; }
+  body { background:var(--bg); color:var(--text); min-height:100vh; min-height:100dvh; display:grid; place-items:center;
+         padding:max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+         font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",Ubuntu,Cantarell,sans-serif; -webkit-font-smoothing:antialiased; }
+  body::before { content:""; position:fixed; inset:0; z-index:-1;
+    background:radial-gradient(70% 45% at 10% -5%, var(--caustic-1), transparent 70%),
+               radial-gradient(60% 40% at 100% 105%, var(--caustic-2), transparent 70%); }
+  form { width:100%; max-width:340px; text-align:center; background:var(--card); border:1px solid var(--line);
+         border-radius:28px; padding:36px 28px 28px; box-shadow:var(--shadow); }
+  .mark { width:52px; height:60px; display:block; margin:0 auto 14px; filter:drop-shadow(0 8px 18px rgba(58,167,245,.35)); }
+  h1 { font-family:ui-rounded,"SF Pro Rounded",system-ui,sans-serif; font-size:28px; font-weight:800; letter-spacing:-.045em; }
+  p { color:var(--dim); margin:4px 0 22px; }
+  input { width:100%; min-height:56px; font:inherit; font-size:24px; font-weight:700; text-align:center; letter-spacing:.5em;
+          text-indent:.5em; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:16px; }
+  input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
+  input::placeholder { letter-spacing:.1em; text-indent:0; font-size:16px; font-weight:500; color:var(--dim); }
+  button { width:100%; min-height:52px; margin-top:12px; font:inherit; font-size:16px; font-weight:700; border:none; border-radius:16px;
+           background:var(--tide); color:var(--on-accent); cursor:pointer; box-shadow:0 10px 24px -12px var(--tide-b);
+           transition:transform .12s, filter .15s; }
+  button:hover { filter:brightness(1.05); }
+  button:active { transform:scale(.97); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+  .err { color:var(--coral); font-size:14px; font-weight:600; margin-top:14px; animation:shake .4s; }
+  @keyframes shake { 20%, 60% { transform:translateX(-6px); } 40%, 80% { transform:translateX(6px); } }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
   <form method="post">
-    <h1>💧 droplet</h1>
-    <input name="pin" type="password" inputmode="numeric" placeholder="PIN" autofocus autocomplete="off">
-    <button>Enter</button>
-    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+    <svg class="mark" viewBox="0 0 30 34" aria-hidden="true">
+      <defs><linearGradient id="g" x1="0" y1="0" x2=".7" y2="1"><stop offset="0" style="stop-color:var(--tide-a)"/><stop offset="1" style="stop-color:var(--tide-b)"/></linearGradient></defs>
+      <path d="M15 1.5C11.6 6.4 3.5 15 3.5 22.3a11.5 11.5 0 0 0 23 0C26.5 15 18.4 6.4 15 1.5Z" fill="url(#g)"/>
+      <path d="M9.2 22.8a5.9 5.9 0 0 0 4.2 5.4" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+    <h1>droplet</h1>
+    <p>Enter the PIN for this hub</p>
+    <input name="pin" type="password" inputmode="numeric" placeholder="PIN" aria-label="PIN" autofocus autocomplete="off">
+    <button>Unlock</button>
+    {% if error %}<p class="err" role="alert">{{ error }}</p>{% endif %}
   </form>
 </body>
 </html>
