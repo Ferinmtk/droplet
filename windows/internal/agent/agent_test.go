@@ -319,3 +319,79 @@ func TestRemoteSwitches(t *testing.T) {
 		t.Fatalf("current %+v", got)
 	}
 }
+
+// sendToCalls records what the agent asks of Explorer's Send To folder.
+type sendToCalls struct {
+	mu    sync.Mutex
+	calls [][]platform.Dest // nil: remove them all
+}
+
+func (s *sendToCalls) take() [][]platform.Dest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.calls
+	s.calls = nil
+	return out
+}
+
+func captureSendTo(t *testing.T) *sendToCalls {
+	rec := &sendToCalls{}
+	syncSendTo = func(exe string, dests []platform.Dest) error {
+		rec.mu.Lock()
+		defer rec.mu.Unlock()
+		if exe == "" {
+			dests = nil
+		}
+		rec.calls = append(rec.calls, dests)
+		return nil
+	}
+	t.Cleanup(func() { syncSendTo = platform.SyncSendTo })
+	return rec
+}
+
+func TestSendToNeedsConsent(t *testing.T) {
+	rec := captureSendTo(t)
+	a, h, _, dl := setup(t)
+	h.AddDevice("phone")
+	ctx := context.Background()
+	if c := a.Store.Get(); c.SendTo || c.Autostart {
+		t.Fatalf("a new setup must leave Send To and autostart off: %+v", c)
+	}
+	rec.take()
+
+	// off: polling only ever clears the folder, once
+	a.tick(ctx)
+	a.tick(ctx)
+	if got := rec.take(); len(got) != 1 || got[0] != nil {
+		t.Fatalf("with Send To off, want one clear, got %v", got)
+	}
+
+	// turned on in Settings: the next poll adds the hub and each device
+	s := a.CurrentSettings()
+	s.SendTo = true
+	if err := a.Configure(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	if !a.Store.Get().SendTo || !a.CurrentSettings().SendTo {
+		t.Fatal("Send To not saved")
+	}
+	a.tick(ctx)
+	got := rec.take()
+	if len(got) != 1 || len(got[0]) != 2 || got[0][0].ID != "hub" || got[0][1].Name != "phone" {
+		t.Fatalf("want hub + phone, got %v", got)
+	}
+	a.tick(ctx)
+	if got := rec.take(); len(got) != 0 {
+		t.Fatalf("unchanged devices shouldn't rewrite the shortcuts: %v", got)
+	}
+
+	// turned off again: removed at once, without waiting for the hub
+	s.SendTo = false
+	if err := a.Configure(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.take(); len(got) != 1 || got[0] != nil {
+		t.Fatalf("turning Send To off should remove the entries at once, got %v", got)
+	}
+	_ = dl
+}

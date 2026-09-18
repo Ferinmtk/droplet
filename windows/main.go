@@ -149,6 +149,12 @@ func runCLI(args []string, console bool) error {
 		if err := platform.Unregister(); err != nil {
 			return err
 		}
+		// and don't put them back on the next start: they need a fresh yes in Settings
+		if store, err := openStore(); err == nil && store.Exists() {
+			if err := store.Update(func(c *config.Config) { c.Autostart, c.SendTo = false, false }); err == nil {
+				_ = postRunningReload()
+			}
+		}
 		dir, _ := config.Dir()
 		fmt.Println("Removed autostart, Send To entries, the Start menu entry and the droplet: link handler.")
 		fmt.Println("Settings are kept in", dir, "— delete that folder to forget this PC.")

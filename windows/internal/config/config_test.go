@@ -126,3 +126,62 @@ func TestOldConfigLoads(t *testing.T) {
 		t.Fatalf("old config: %+v", c)
 	}
 }
+
+func TestNewInstallAddsNothingToWindows(t *testing.T) {
+	c := Defaults()
+	if c.Autostart || c.SendTo {
+		t.Fatalf("autostart and Send To must be off until turned on: %+v", c)
+	}
+}
+
+// Configs written before Send To was a setting keep what those versions
+// did (Send To for a PC on a hub, autostart as chosen); the rest start off.
+func TestConsentMigration(t *testing.T) {
+	for _, tc := range []struct {
+		name, json        string
+		autostart, sendTo bool
+	}{
+		{"old, paired, autostart on", `{"hub_url":"https://h","device_token":"tok","autostart":true}`, true, true},
+		{"old, paired, autostart off", `{"hub_url":"https://h","device_token":"tok","autostart":false}`, false, true},
+		{"old, waiting to be let in", `{"device_token":"tok","pair_pending":true}`, false, true},
+		{"old, never paired", `{"hub_url":"https://h","autostart":true}`, true, false},
+		{"new, Send To turned off", `{"device_token":"tok","send_to":false}`, false, false},
+		{"new, Send To turned on", `{"device_token":"tok","send_to":true,"autostart":true}`, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(tc.json), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := OpenPath(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := s.Get()
+			if c.Autostart != tc.autostart || c.SendTo != tc.sendTo {
+				t.Fatalf("autostart %v send_to %v, want %v %v", c.Autostart, c.SendTo, tc.autostart, tc.sendTo)
+			}
+			// saved once, the choice is explicit and survives a reload
+			if err := s.Update(func(*Config) {}); err != nil {
+				t.Fatal(err)
+			}
+			s2, _ := OpenPath(path)
+			if c2 := s2.Get(); c2.Autostart != tc.autostart || c2.SendTo != tc.sendTo {
+				t.Fatalf("after saving: %+v", c2)
+			}
+		})
+	}
+}
+
+func TestSendToOffStaysOffWhenPaired(t *testing.T) {
+	// a new install that pairs later must not gain Send To by migration
+	path := filepath.Join(t.TempDir(), "config.json")
+	s, _ := OpenPath(path)
+	if err := s.Update(func(c *Config) { c.DeviceToken = "tok" }); err != nil {
+		t.Fatal(err)
+	}
+	s2, _ := OpenPath(path)
+	if s2.Get().SendTo {
+		t.Fatal("Send To turned itself on")
+	}
+}

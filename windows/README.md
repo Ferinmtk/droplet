@@ -13,8 +13,9 @@ companion covers what a browser tab can't do in the background:
 - **Lets your other devices control this PC** in real time: mouse and
   keyboard (and the presentation remote), media and volume, locking,
   screenshots, and clipboard sync. See [Remote control](#remote-control).
-- **Adds a Send to menu in Explorer.** Right-click any file and choose
-  **Send to → droplet → Hub** (or a device name).
+- **Can add a Send to menu in Explorer**, once you turn it on in Settings.
+  Right-click any file and choose **Send to → droplet → Hub** (or a device
+  name).
 - **Tray menu:** Open droplet · Send files to ▸ · Send clipboard to ▸ (text,
   a screenshot or copied files) · Ring ▸ · Open downloads folder ·
   Pause notifications · Pause remote control · Settings… · Quit.
@@ -57,6 +58,23 @@ work away from home. See [How it finds and trusts the hub](#how-it-finds-and-tru
 
 If you set the app up as its own device before linking existed, link with a
 code now. The settings page then offers to remove the old entry.
+
+droplet doesn't add itself to Windows' startup or to Explorer unless you ask.
+Under **Windows** in Settings, both are off until you turn them on:
+
+- **Start droplet when I sign in** adds droplet to your sign-in apps (the
+  per-user `Run` key).
+- **Add droplet to Explorer's "Send to" menu** adds one shortcut per device
+  to your Send to folder. Turning it off removes them.
+
+If you used droplet before these switches existed, they keep what that
+version did: Send to stays on for a PC that was already set up, and
+start-with-Windows stays as you chose it.
+
+droplet does add a **Start menu** entry on first start, like any installed
+app. The entry carries droplet's app ID, which is how Windows shows its
+notifications with droplet's name and icon. `droplet uninstall` removes it,
+along with everything else droplet added (see [Where things live](#where-things-live)).
 
 You can reopen Settings from the tray, or by running `droplet.exe` again.
 Each Windows sign-in runs only one copy.
@@ -157,12 +175,15 @@ at once, and a drag in progress is released.
 | Settings (including the remote-control switches `remote_*` and `clipboard_sync`), the device token, the hub's identity (`hub`: id, pinned certificate, last LAN addresses, tailnet URL), and the "already shown" markers | `%APPDATA%\droplet\config.json` |
 | Log | `%APPDATA%\droplet\droplet.log` |
 | Received files | `%USERPROFILE%\Downloads\droplet` (configurable) |
-| Start with Windows | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\droplet` |
-| Send To entries | `%APPDATA%\Microsoft\Windows\SendTo\droplet → *.lnk` |
+| Start with Windows (only if turned on) | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\droplet` |
+| Send To entries (only if turned on) | `%APPDATA%\Microsoft\Windows\SendTo\droplet → *.lnk` |
+| Start menu entry | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\droplet.lnk` |
 | Notification identity and the `droplet:` link handler | `HKCU\Software\Classes\AppUserModelId\Ferinmtk.droplet`, `HKCU\Software\Classes\droplet` |
 
 Everything is per user, and nothing needs admin rights. `droplet uninstall`
-removes the registry entries, the shortcuts and autostart. Delete
+removes the registry entries, the shortcuts and autostart, and switches
+start-with-Windows and Send to off in the settings so they don't come back
+on the next start. Delete
 `%APPDATA%\droplet` as well to forget the PC entirely.
 
 ## How it finds and trusts the hub
