@@ -48,6 +48,19 @@ DEFAULTS: dict = {
     # null: portal, then spectacle, gnome-screenshot, grim, niri, import
     "screenshot_command": None,
     "clipboard_max_bytes": 256 * 1024,
+    # the mesh: other devices talk to this one directly (docs/mesh.md)
+    "mesh": {
+        "enabled": True,
+        # null: 1739, or the next free port up to 1749
+        "port": None,
+        # where files sent directly land. null: ~/Downloads/droplet (your
+        # desktop's download folder, from user-dirs.dirs)
+        "downloads": None,
+        # bytes a second when sending files directly; 0 for no limit
+        "max_rate": 0,
+        # announce this computer over mDNS, so peers on the LAN find it
+        "announce": True,
+    },
 }
 
 
@@ -58,6 +71,37 @@ def config_dir() -> Path:
 
 def config_path() -> Path:
     return config_dir() / "config.json"
+
+
+def data_dir() -> Path:
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "droplet-agent"
+
+
+def mesh_config_dir() -> Path:
+    """The mesh key, certificate and trust list: secrets, so in the owner-only config dir."""
+    return config_dir() / "mesh"
+
+
+def mesh_data_dir() -> Path:
+    """The outbox, chat history and what was received."""
+    return data_dir() / "mesh"
+
+
+def downloads_dir(cfg: dict) -> Path:
+    configured = (cfg.get("mesh") or {}).get("downloads")
+    if isinstance(configured, str) and configured.strip():
+        return Path(configured).expanduser()
+    base = Path.home() / "Downloads"
+    try:
+        dirs = (config_dir().parent / "user-dirs.dirs").read_text()
+        for line in dirs.splitlines():
+            if line.startswith("XDG_DOWNLOAD_DIR="):
+                val = line.split("=", 1)[1].strip().strip('"').replace("$HOME", str(Path.home()))
+                if val.startswith("/") and val.rstrip("/") != str(Path.home()):
+                    base = Path(val)
+    except OSError:
+        pass
+    return base / "droplet"
 
 
 def portal_token_path() -> Path:
