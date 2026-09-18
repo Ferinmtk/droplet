@@ -744,7 +744,9 @@ def banner(url: str, tailnet_url: str | None = None):
 
 from types import SimpleNamespace  # noqa: E402
 
-FEATURES: list = []
+import commands  # noqa: E402
+
+FEATURES: list = [commands]
 
 feature_ctx = SimpleNamespace(
     app=app,
