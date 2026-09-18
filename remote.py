@@ -196,7 +196,12 @@ def register(ctx):
     app.config.setdefault("SOCK_SERVER_OPTIONS", {"ping_interval": 25})
     sock = Sock(app)
 
-    ctx.presence_hooks.append(hub.summary)
+    def listing_extra():
+        # a device with a live connection is online, even when nothing on it
+        # polls /api/files (a headless machine's agent, the Windows app alone)
+        return {k: {**v, "online": True} for k, v in hub.summary().items()}
+
+    ctx.presence_hooks.append(listing_extra)
 
     @sock.route("/ws")
     def ws(ws):

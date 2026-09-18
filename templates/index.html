@@ -733,6 +733,19 @@ function icon(name, cls = "") {
 
 const HUB_NAME = {{ host|tojson }};   // the hub's machine name, for feature cards
 
+// feature scripts can add to the parts this page rebuilds itself:
+//   hooks.meCard.push((box, status) => …)   after the "This device" card is drawn
+//   hooks.deviceRow.push((d, meta) => [nodes])   extra buttons for a row under Devices
+//   hooks.chat.push(dev => …)   whenever the chat switches or refreshes (dev is null when closed)
+const hooks = { meCard: [], deviceRow: [], chat: [] };
+function runHooks(name, ...args) {
+  const out = [];
+  for (const fn of hooks[name]) {
+    try { out.push(...[fn(...args) || []].flat()); } catch (e) { console.error(e); }
+  }
+  return out;
+}
+
 // the standard feature-card header: an icon tile, a title and an optional line under it
 function cardHead(iconName, title, sub, ...actions) {
   return el("div", { className: "card-head" },
@@ -992,6 +1005,7 @@ function renderMe(suggested) {
     el("div", { className: "who" }, el("b", { textContent: me.name }), status),
     ...actions, rename));
   if (extra) box.append(extra);
+  runHooks("meCard", box, status);
 }
 
 async function nameDevice(name) {
@@ -1111,6 +1125,7 @@ function renderChatMode() {
   document.getElementById("text-box").hidden = !!dev;
   document.getElementById("chat").hidden = !dev;
   document.getElementById("panel-send").classList.toggle("chatting", !!dev);
+  runHooks("chat", dev || null);
   if (!dev) { chatWith = null; return; }
   document.getElementById("chat-with").textContent = dev.name;
   const status = document.getElementById("chat-status");
@@ -1235,6 +1250,7 @@ function renderDevices() {
     ul.append(el("li", {},
       avatar(d.name, { online: d.online }),
       el("span", { className: "dname" }, d.name, meta),
+      ...runHooks("deviceRow", d, meta),
       del));
   }
   const osName = { windows: "Windows", android: "Android", linux: "Linux", macOS: "Mac", iOS: "iPhone/iPad" };
@@ -1490,5 +1506,6 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) refr
 <script src="/static/clipboard.js"></script>
 <script src="/static/media.js"></script>
 <script src="/static/tv.js"></script>
+<script src="/static/remote.js"></script>
 </body>
 </html>
