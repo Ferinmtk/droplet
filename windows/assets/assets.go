@@ -13,6 +13,11 @@ var Icon []byte
 //go:embed droplet-dim.ico
 var IconDim []byte
 
+// IconLive is the tray icon for a few seconds after remote input.
+//
+//go:embed droplet-live.ico
+var IconLive []byte
+
 // PNG is the icon shown on notifications.
 //
 //go:embed droplet.png
