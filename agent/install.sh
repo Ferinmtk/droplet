@@ -1,16 +1,23 @@
 #!/bin/sh
 # Installs (or upgrades) the droplet agent for the current user. No sudo.
 #
-#   curl -fsSL https://<hub>/agent/install.sh | sh -s -- --code 123456
+#   curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 123456
+#   curl -fsSL https://<hub's tailnet name>/agent/install.sh | sh -s -- --code 123456
 #
 # The hub fills in its own address below when it serves this script, and
-# the agent itself is downloaded from that hub. Only the agent's two small
-# dependencies (websockets, jeepney) come from PyPI.
+# the agent itself is downloaded from that hub. Only the agent's small
+# dependencies (websockets, jeepney, zeroconf) come from PyPI.
+#
+# Fetched over the LAN's plain http, the agent reads the hub's certificate
+# fingerprint from it, then switches to the hub's LAN HTTPS with that
+# certificate pinned before it sends anything that matters.
 #
 # Options:
 #   --code 123456   link to this computer's existing droplet device (from its
 #                   browser: Devices → Link an app)
-#   --name NAME     or register this computer as a new device called NAME
+#   --name NAME     or join as a new device called NAME (default: this
+#                   computer's name): one of your devices allows it in
+#   --pin PIN       join with the hub's PIN instead of waiting to be allowed
 #   --hub URL       the hub, if this copy of the script didn't come from it
 #   --no-service    don't install the systemd user service
 #
@@ -23,9 +30,10 @@ DROPLET_WHEEL=''  # likewise
 
 say() { printf '%s\n' "$*"; }
 usage() {
-    say "usage: install.sh [--code 123456 | --name NAME] [--hub URL] [--no-service]"
+    say "usage: install.sh [--code 123456 | --name NAME] [--pin PIN] [--hub URL] [--no-service]"
     say "  --code     link to this computer's droplet device (browser: Devices, Link an app)"
-    say "  --name     or register this computer as a new device"
+    say "  --name     or join as a new device (default: this computer's name)"
+    say "  --pin      join with the hub's PIN instead of waiting to be allowed"
     say "  --hub      the hub, when this script didn't come from it"
     say "  --no-service   don't install the systemd user service"
 }
@@ -42,7 +50,7 @@ fetch() {  # fetch URL FILE
 }
 
 main() {
-    hub="$DROPLET_HUB" code="" name="" service=1
+    hub="$DROPLET_HUB" code="" name="" pin="" service=1
     # a copy that wasn't served by a hub gets the hub's own copy and runs that
     prev=""
     for a in "$@"; do
@@ -66,12 +74,14 @@ main() {
             --hub) [ $# -ge 2 ] || die "--hub needs a URL"; shift 2 ;;
             --code) [ $# -ge 2 ] || die "--code needs the six-digit code"; code="$2"; shift 2 ;;
             --name) [ $# -ge 2 ] || die "--name needs a name"; name="$2"; shift 2 ;;
+            --pin) [ $# -ge 2 ] || die "--pin needs the PIN"; pin="$2"; shift 2 ;;
             --no-service) service=0; shift ;;
             -h|--help) usage; exit 0 ;;
             *) die "unknown option $1" ;;
         esac
     done
     [ -z "$code" ] || [ -z "$name" ] || die "use --code or --name, not both"
+    [ -z "$code" ] || [ -z "$pin" ] || die "use --code or --pin, not both"
 
     # --- Python and a venv --------------------------------------------------
     py=""
@@ -123,14 +133,21 @@ NoDisplay=true
 EOF
 
     # --- link to the hub -----------------------------------------------------
+    # a plain http:// LAN hub is fine here: setup reads the hub's certificate
+    # fingerprint from it and carries on over the pinned LAN HTTPS
     if [ -n "$code" ]; then
         "$agent" setup --hub "$hub" --code "$code" </dev/null
-    elif [ -n "$name" ]; then
-        "$agent" setup --hub "$hub" --name "$name" </dev/null
-    elif [ -f "$config/droplet-agent/config.json" ]; then
-        say "Keeping the existing link ($config/droplet-agent/config.json)"
+    elif [ -n "$name" ] || [ -n "$pin" ] || ! "$data/bin/python" -c \
+        'import sys; from droplet_agent import config; sys.exit(not config.is_set_up(config.load()))' \
+        2>/dev/null </dev/null; then
+        # not linked yet (or still waiting to be let in): join as a new
+        # device, and wait for one of yours to allow it (or use the PIN)
+        set -- --hub "$hub"
+        [ -z "$name" ] || set -- "$@" --name "$name"
+        [ -z "$pin" ] || set -- "$@" --pin "$pin"
+        "$agent" setup "$@" </dev/null
     else
-        die "not linked yet: re-run with --code 123456 (from droplet in this computer's browser: Devices → Link an app)"
+        say "Keeping the existing link ($config/droplet-agent/config.json)"
     fi
 
     # --- the service ---------------------------------------------------------
