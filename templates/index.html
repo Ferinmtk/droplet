@@ -500,6 +500,16 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
   }
+  /* a LAN device that hasn't been let in yet: just the join card and the drop zone */
+  body.guest .tabbar, body.guest #panel-files, body.guest #panel-hub, body.guest #panel-devices,
+  body.guest #targets, body.guest #text-box, body.guest #chat, body.guest #features,
+  body.guest #pair-requests { display:none !important; }
+  .pair-code { font:800 34px/1 ui-monospace, "SF Mono", "Cascadia Mono", monospace; letter-spacing:.35em;
+               color:var(--accent); text-align:center; padding:6px 0 2px; }
+  #pair-requests { display:flex; flex-direction:column; gap:var(--s4, 16px); }
+  #pair-requests .row, #me .join-alt .row { gap:10px; }
+  #me .join-alt { border-top:1px solid var(--line); padding-top:12px; }
+  #me .join-alt summary { cursor:pointer; color:var(--dim); font-size:14px; }
 </style>
 </head>
 <body>
@@ -566,6 +576,7 @@
   <!-- Send: this device, who to send to, the drop zone, a note to the hub or a chat -->
   <section class="panel active" id="panel-send" data-panel="send" aria-label="Send">
     <div id="me" class="card" hidden></div>
+    <div id="pair-requests" hidden></div>
     <div id="share-choice" class="card attn" hidden></div>
     <div id="targets" hidden></div>
 
@@ -917,6 +928,31 @@ function render() {
   renderTabBadges();
 }
 
+function renderPairRequests() {
+  const box = document.getElementById("pair-requests");
+  const list = latest.pending || [];
+  box.hidden = !list.length;
+  box.innerHTML = "";
+  for (const p of list) {
+    const allow = el("button", { className: "primary", textContent: "Allow" });
+    const deny = el("button", { className: "ghost", textContent: "Deny" });
+    allow.onclick = async () => {
+      const r = await fetch(`/api/device/${p.id}/approve`, { method: "POST" }).catch(() => null);
+      if (r && r.ok) flash(`${p.name} can use droplet now`);
+      refresh();
+    };
+    deny.onclick = async () => {
+      if (!confirm(`Deny ${p.name}? It won't be able to use droplet.`)) return;
+      await fetch(`/api/device/${p.id}/remove`, { method: "POST" }).catch(() => null);
+      refresh();
+    };
+    box.append(el("div", { className: "card attn" },
+      cardHead("devices", `${p.name} wants to join`, "Only allow it if the code matches the one on that device"),
+      el("div", { className: "pair-code", textContent: p.code.split("").join(" ") }),
+      el("div", { className: "row" }, allow, deny)));
+  }
+}
+
 let inboxSeen = null;   // names already shown, so only new arrivals get flashed
 let lastUnread = {};
 
@@ -927,7 +963,8 @@ function setConn(ok) {
 
 async function refresh() {
   const res = await fetch("/api/files").catch(() => null);   // hub briefly unreachable
-  setConn(!!(res && res.ok));
+  // 403 = the hub answered but hasn't let this device in yet: it's reachable
+  setConn(!!(res && (res.ok || res.status === 403)));
   if (!res || !res.ok) return;
   latest = await res.json();
   const names = new Set(latest.inbox.map(f => f.name));
@@ -944,19 +981,84 @@ async function refresh() {
   }
   lastUnread = unread;
   render();
+  renderPairRequests();
 }
 
 // --- this device: name + notifications ---
+
+// A device on the LAN that hasn't been let in yet (droplet is local-first, so
+// the LAN alone isn't trusted): { pending: true, name, code } once it has asked,
+// or { unnamed: true } before. It can still drop files on the hub.
+let guest = null;
 
 async function loadMe() {
   const res = await fetch("/api/me");
   if (!res.ok) return;
   const d = await res.json();
-  me = d.device;
+  guest = null;
+  if (d.device && d.device.pending) guest = { ...d.device, pin: d.pin };
+  else if (!d.device && !d.trusted) guest = { unnamed: true, pin: d.pin };
+  document.body.classList.toggle("guest", !!guest);
+  // a waiting device isn't one yet: keep the rest of the page (live link,
+  // feature cards) from acting as it
+  me = guest && guest.pending ? null : d.device;
   pushKey = d.push_key;
   hubUrl = d.hub_url;
   renderMe(d.suggested);
   if (me) syncPush();
+  if (guest && guest.pending) waitForApproval();
+}
+
+let approvalTimer = null;
+function waitForApproval() {
+  clearInterval(approvalTimer);
+  approvalTimer = setInterval(async () => {
+    const res = await fetch("/api/me").catch(() => null);
+    if (!res || !res.ok) return;
+    const d = await res.json();
+    if (d.device && !d.device.pending) { clearInterval(approvalTimer); location.reload(); }
+    else if (!d.device) {
+      clearInterval(approvalTimer);
+      guest = { unnamed: true, pin: d.pin, declined: true };
+      renderMe(d.suggested);
+    }
+  }, 3000);
+}
+
+async function enterPin(pin) {
+  const body = new URLSearchParams({ pin });
+  const res = await fetch("/login", { method: "POST", body, redirect: "manual" }).catch(() => null);
+  const check = await fetch("/api/me").then(r => r.json()).catch(() => ({}));
+  if (check.trusted) location.reload(); else flash("That PIN isn't right");
+}
+
+async function linkWithCode(code) {
+  const res = await fetch("/api/device/link", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, client: "browser" }),
+  }).catch(() => null);
+  if (res && res.ok) location.reload();
+  else flash((res && (await res.json().catch(() => ({}))).error) || "That code didn't work");
+}
+
+// the other ways in, under the join card: the hub's PIN, or a link code from
+// a device you already use (so this browser becomes that same device)
+function joinAlternatives() {
+  const wrap = el("details", { className: "join-alt" }, el("summary", { textContent: "Other ways in" }));
+  if (guest.pin) {
+    const pin = el("input", { type: "password", inputMode: "numeric", placeholder: "PIN", autocomplete: "off" });
+    const go = el("button", { className: "soft", textContent: "Enter PIN" });
+    go.onclick = () => pin.value && enterPin(pin.value);
+    pin.onkeydown = e => { if (e.key === "Enter" && pin.value) enterPin(pin.value); };
+    wrap.append(el("p", { className: "dim small", textContent: "Know the hub's PIN?" }), el("div", { className: "row" }, pin, go));
+  }
+  const code = el("input", { type: "text", inputMode: "numeric", maxLength: 7, placeholder: "123456", autocomplete: "off" });
+  const link = el("button", { className: "soft", textContent: "Link" });
+  link.onclick = () => code.value && linkWithCode(code.value);
+  wrap.append(el("p", { className: "dim small",
+    textContent: "Already use droplet on this device (e.g. over Tailscale)? There, choose This device → Set up remote control, and type its code here." }),
+    el("div", { className: "row" }, code, link));
+  return wrap;
 }
 
 function renderMe(suggested) {
@@ -965,6 +1067,28 @@ function renderMe(suggested) {
   box.innerHTML = "";
   box.classList.toggle("onboard", !me);
   box.classList.toggle("attn", !me);
+  if (guest && guest.pending) {
+    box.append(el("span", { className: "eyebrow", textContent: "Waiting to join" }),
+               el("h3", { textContent: `Let ${guest.name} in from one of your devices` }),
+               el("p", { textContent: "On a phone or computer that already uses droplet, you'll see a request with this code. Check it matches, then tap Allow." }),
+               el("div", { className: "pair-code", textContent: guest.code.split("").join(" ") }),
+               el("p", { className: "dim small", textContent: "You can already drop files on the hub below." }),
+               joinAlternatives());
+    return;
+  }
+  if (!me && guest && guest.unnamed) {
+    const input = el("input", { type: "text", value: suggested || "", maxLength: 40, placeholder: "Phone, Laptop…" });
+    input.setAttribute("aria-label", "Device name");
+    const ask = el("button", { className: "primary", textContent: "Ask to join" });
+    ask.onclick = () => nameDevice(input.value);
+    input.onkeydown = e => { if (e.key === "Enter") nameDevice(input.value); };
+    box.append(el("span", { className: "eyebrow", textContent: guest.declined ? "Not let in" : "On your Wi-Fi" }),
+               el("h3", { textContent: guest.declined ? "That request was declined" : `Join ${typeof HUB_NAME === "string" ? HUB_NAME : "droplet"}` }),
+               el("p", { textContent: "Name this device, and one of your devices will be asked to let it in." }),
+               el("div", { className: "row" }, input, ask),
+               joinAlternatives());
+    return;
+  }
   if (!me) {
     const input = el("input", { type: "text", value: suggested || "", maxLength: 40, placeholder: "Phone, Laptop…" });
     input.setAttribute("aria-label", "Device name");
@@ -1211,8 +1335,14 @@ async function sendChat() {
   }
 }
 
-// deep links from a notification: /#chat-<device id>, /#inbox
+// deep links from a notification: /#chat-<device id>, /#inbox, /#pair
 function openFromHash() {
+  if (location.hash === "#pair") {
+    history.replaceState(null, "", location.pathname);
+    showTab("send");
+    document.getElementById("pair-requests").scrollIntoView({ block: "start" });
+    return;
+  }
   if (location.hash === "#inbox") {
     history.replaceState(null, "", location.pathname);
     showTab("files");

@@ -52,6 +52,14 @@ TAILNET_TRUST = os.environ.get("DROPLET_TAILNET_TRUST", "1") not in ("", "0", "f
 TAILNET_URL: str | None = None  # set at startup once `tailscale serve` is confirmed
 # 0 = no push notifications (fully local; devices only see new items while open)
 USE_PUSH = os.environ.get("DROPLET_PUSH", "1") not in ("", "0", "false")
+# what a device on the LAN may do before one of yours allows it in (or it
+# enters the PIN): "drop" = send files to the hub, "none" = nothing
+LAN_GUESTS = os.environ.get("DROPLET_LAN_GUESTS", "drop")
+# HTTPS for native apps on the LAN, with a self-signed certificate they pin
+# (0 turns it off). Browsers keep using PORT, or the tailnet URL.
+LAN_TLS_PORT = int(os.environ.get("DROPLET_LAN_TLS_PORT", "8443"))
+LAN_IP = ""        # set at startup
+LAN_FP = ""        # sha256 of the LAN certificate, set at startup
 
 FOLDERS = {"received": RECEIVED_DIR, "shared": SHARED_DIR}
 
@@ -78,6 +86,17 @@ def _secret_key() -> bytes:
 
 
 app.secret_key = _secret_key()
+
+
+def _hub_id() -> str:
+    # stable across restarts and IP changes, so apps can tell it's the same hub
+    f = BASE_DIR / ".hub_id"
+    if not f.exists():
+        f.write_text(secrets.token_hex(8))
+    return f.read_text().strip()
+
+
+HUB_ID = _hub_id()
 
 DEVICE_COOKIE = "droplet_device"
 devices = DeviceStore(BASE_DIR)
@@ -352,17 +371,46 @@ def same_origin_writes():
     return None
 
 
-# --- PIN gate ----------------------------------------------------------------
+# --- who gets in --------------------------------------------------------------
+#
+# droplet is local-first, like KDE Connect: devices on the same Wi-Fi talk to
+# the hub directly. So the LAN can't be trusted by itself. A request is
+# trusted when it comes
+#   - from a process on the hub itself,
+#   - through `tailscale serve` (your tailnet; DROPLET_TAILNET_TRUST=0 turns
+#     this off),
+#   - with a PIN login, or
+#   - from a device you've already allowed in.
+# A new device on the LAN names itself and waits: your devices get "X wants
+# to join, code 1234: Allow / Deny", or it can type the PIN.
+
+# reachable before being trusted: the app shell (browsers fetch the manifest
+# and service worker without cookies), asking to join, and the hub's identity
+PUBLIC_ENDPOINTS = {"login", "static", "manifest", "service_worker", "home",
+                    "api_me", "api_device", "api_link", "hub_info"}
+GUEST_DROP_ENDPOINTS = {"upload", "share"}
+
+
+def trusted() -> bool:
+    if "trusted" not in g:
+        if request.remote_addr in ("127.0.0.1", "::1") and not (TAILNET_URL and request.headers.get("X-Forwarded-For")):
+            g.trusted = True  # a process on the hub machine
+        elif via_tailnet() and TAILNET_TRUST and request.headers.get("X-Forwarded-For"):
+            g.trusted = True  # a tailnet member, through tailscale serve
+        else:
+            g.trusted = bool(session.get("authed")) or devices.is_approved(current_device())
+    return g.trusted
+
 
 @app.before_request
-def require_pin():
-    # browsers fetch the manifest and service worker without cookies, so
-    # they (and the icons) must load before login or install breaks
-    if not PIN or session.get("authed") or request.endpoint in ("login", "static", "manifest", "service_worker"):
+def access_gate():
+    ep = request.endpoint
+    if ep in PUBLIC_ENDPOINTS or trusted():
         return None
-    if TAILNET_TRUST and tailnet_user():
-        return None
-    return redirect(url_for("login"))
+    if (ep in GUEST_DROP_ENDPOINTS and LAN_GUESTS == "drop"
+            and request.args.get("to") in (None, "", "hub")):
+        return None  # a guest may still drop files on the hub, like before
+    return jsonify({"error": "This device hasn't been allowed in yet.", "pair": True}), 403
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -374,6 +422,9 @@ def login():
         if secrets.compare_digest(request.form.get("pin", ""), PIN):
             session.permanent = True
             session["authed"] = True
+            me = current_device()
+            if me and not devices.is_approved(me):
+                devices.approve(me["id"])  # the PIN is as good as being allowed in
             return redirect(url_for("home"))
         error = "Wrong PIN"
     return render_template("login.html", error=error)
@@ -393,6 +444,7 @@ def api_files():
     out = {name: list_files(d) for name, d in FOLDERS.items()}
     out["inbox"] = list_files(devices.inbox(me["id"])) if me else []
     out["unread"] = chats.unread(me["id"], me.get("read") or {}) if me else {}
+    out["pending"] = devices.pending()  # join requests waiting for an answer
     out["devices"] = devices.listing(me["id"] if me else None)
     for hook in PRESENCE_HOOKS:
         extra = hook()
@@ -407,8 +459,16 @@ def api_files():
 @app.route("/api/me")
 def api_me():
     me = current_device()
+    device = None
+    if me:
+        device = {"id": me["id"], "name": me["name"], "push": bool(me.get("push"))}
+        if not devices.is_approved(me):
+            device.update(pending=True, code=devices.pair_code(me))
     return jsonify({
-        "device": {"id": me["id"], "name": me["name"], "push": bool(me.get("push"))} if me else None,
+        "device": device,
+        "trusted": trusted(),
+        "pin": bool(PIN),          # whether "enter the PIN" is a way in
+        "guests": LAN_GUESTS,
         "suggested": None if me else suggest_name(),
         "push_key": pusher.public_key if pusher.enabled else None,
         "hub_url": TAILNET_URL,
@@ -426,12 +486,55 @@ def api_device():
     if me:
         devices.update(me["id"], name=name)
         return jsonify({"id": me["id"], "name": name})
-    dev, token = devices.create(name, node=tailnet_node())
-    resp = jsonify({"id": dev["id"], "name": name})
+    approved = trusted()
+    if not approved and len(devices.pending()) >= devices.PENDING_MAX:
+        return jsonify({"error": "Too many devices are waiting to join. Answer those first."}), 429
+    dev, token = devices.create(name, node=tailnet_node(), approved=approved)
+    body = {"id": dev["id"], "name": name}
+    if not approved:
+        body.update(pending=True, code=devices.pair_code(dev))
+        ask_to_join(dev)
+    resp = jsonify(body)
     secure = request.is_secure or (via_tailnet() and request.headers.get("X-Forwarded-Proto") == "https")
     resp.set_cookie(DEVICE_COOKIE, token, max_age=5 * 365 * 24 * 3600,
                     httponly=True, samesite="Lax", secure=secure)
     return resp
+
+
+def ask_to_join(dev: dict):
+    """Tell every device that can answer that a new one wants in."""
+    code = devices.pair_code(dev)
+    for d in devices.listing(None):
+        if d["push"]:
+            pusher.send(d["id"], {"title": "A new device wants to join",
+                                  "body": f"{dev['name']} · code {code}. Tap to allow or deny.",
+                                  "url": "/#pair", "tag": "pair"})
+
+
+@app.route("/api/hub/info")
+def hub_info():
+    """Who this hub is and how to reach it, for apps pairing or finding it on the LAN."""
+    return jsonify({
+        "id": HUB_ID,
+        "name": socket.gethostname().split(".")[0],
+        "fingerprint": LAN_FP or None,   # sha256 of the LAN HTTPS certificate, to pin
+        "lan": {"addresses": [LAN_IP] if LAN_IP else [], "http_port": PORT,
+                "https_port": LAN_TLS_PORT if LAN_FP else None},
+        "tailnet": TAILNET_URL,
+        "pin": bool(PIN),
+    })
+
+
+@app.route("/api/pair")
+def api_pair():
+    return jsonify({"pending": devices.pending()})
+
+
+@app.route("/api/device/<device_id>/approve", methods=["POST"])
+def api_device_approve(device_id):
+    if not devices.approve(device_id):
+        abort(404)
+    return jsonify({"approved": device_id})
 
 
 @app.route("/api/device/link-code", methods=["POST"])
@@ -721,28 +824,63 @@ def register_mdns(lan_ip: str):
     except ImportError:
         print("  (zeroconf not installed — skipping mDNS)")
         return
-    info = ServiceInfo(
+    infos = [ServiceInfo(
         "_http._tcp.local.",
         f"{MDNS_NAME}._http._tcp.local.",
         addresses=[socket.inet_aton(lan_ip)],
         port=PORT,
         server=f"{MDNS_NAME}.local.",
-    )
+    )]
+    if LAN_FP:
+        # how the native apps find the hub on the Wi-Fi without Tailscale;
+        # the fingerprint lets them check it's the hub they paired with
+        infos.append(ServiceInfo(
+            "_droplet._tcp.local.",
+            f"{MDNS_NAME}-{HUB_ID[:6]}._droplet._tcp.local.",
+            addresses=[socket.inet_aton(lan_ip)],
+            port=LAN_TLS_PORT,
+            server=f"{MDNS_NAME}.local.",
+            properties={"id": HUB_ID, "fp": LAN_FP, "name": socket.gethostname().split(".")[0],
+                        "http": str(PORT), "ts": TAILNET_URL or ""},
+        ))
     zc = Zeroconf()
-    try:
-        zc.register_service(info, allow_name_change=True)
-    except NonUniqueNameException:
-        # stale announcement from a previous run still cached on the LAN;
-        # the app works fine via IP — the name frees up when the TTL expires
-        print(f"  ({MDNS_NAME}.local is taken/stale — skipping mDNS this run)")
+    registered = []
+    for info in infos:
+        try:
+            zc.register_service(info, allow_name_change=True)
+            registered.append(info)
+        except NonUniqueNameException:
+            # stale announcement from a previous run still cached on the LAN;
+            # the app works fine via IP — the name frees up when the TTL expires
+            print(f"  ({info.name} is taken/stale — skipping it this run)")
+    if not registered:
         zc.close()
         return
 
     def _goodbye():
-        zc.unregister_service(info)
+        for info in registered:
+            zc.unregister_service(info)
         zc.close()
 
     atexit.register(_goodbye)
+
+
+def cert_fingerprint(cert_file: str) -> str:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+
+    cert = x509.load_pem_x509_certificate(Path(cert_file).read_bytes())
+    return cert.fingerprint(hashes.SHA256()).hex()
+
+
+def serve_lan_tls(cert_file: str, key_file: str):
+    """A second listener with HTTPS for native apps on the LAN."""
+    import threading
+
+    from werkzeug.serving import make_server
+
+    server = make_server(HOST, LAN_TLS_PORT, app, threaded=True, ssl_context=(cert_file, key_file))
+    threading.Thread(target=server.serve_forever, name="lan-tls", daemon=True).start()
 
 
 # --- startup banner ----------------------------------------------------------
@@ -816,6 +954,15 @@ if __name__ == "__main__":
 
     lan_ip = get_lan_ip()
     scheme = "https" if USE_HTTPS else "http"
+    LAN_IP = lan_ip
+    if LAN_TLS_PORT:
+        cert_file, key_file = ensure_cert(lan_ip)
+        LAN_FP = cert_fingerprint(cert_file)
+        try:
+            serve_lan_tls(cert_file, key_file)
+        except OSError as e:
+            print(f"  LAN HTTPS on :{LAN_TLS_PORT} failed ({e}); apps will use the tailnet")
+            LAN_FP = ""
     TAILNET_URL = setup_tailnet() if USE_TAILSCALE else None
     if TAILNET_URL:
         pusher.contact = TAILNET_URL  # push services want a way to reach the sender
