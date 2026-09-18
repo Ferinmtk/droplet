@@ -3,6 +3,7 @@ package lan
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"sort"
@@ -52,9 +53,12 @@ func (h Hub) Endpoints() []string {
 // returning true stops the search early. Browse returns every complete hub
 // seen. An error means no query could be sent at all.
 func Browse(ctx context.Context, wait time.Duration, found func(Hub) (stop bool)) ([]Hub, error) {
-	conns := openConns()
+	conns, err := openConns()
 	if len(conns) == 0 {
-		return nil, errors.New("no network interface to search the LAN on")
+		if err == nil {
+			err = errors.New("no network interface to search the LAN on")
+		}
+		return nil, fmt.Errorf("can't search the LAN: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, wait)
 
@@ -161,7 +165,7 @@ func (c conn) WriteTo(b []byte, cm *ipv4.ControlMessage, dst net.Addr) (int, err
 // openConns opens one UDP socket per multicast-capable IPv4 interface, each
 // sending its queries out of that interface (a PC can be on Wi-Fi and
 // Ethernet, with VPN and Hyper-V adapters besides).
-func openConns() []conn {
+func openConns() ([]conn, error) {
 	var out []conn
 	ifaces, err := net.Interfaces()
 	if err == nil {
@@ -191,11 +195,13 @@ func openConns() []conn {
 	}
 	if len(out) == 0 {
 		// no usable interface list: let the system pick the route
-		if c, err := net.ListenUDP("udp4", &net.UDPAddr{}); err == nil {
-			out = append(out, conn{c, ipv4.NewPacketConn(c)})
+		c, err := net.ListenUDP("udp4", &net.UDPAddr{})
+		if err != nil {
+			return nil, err // e.g. Wine, which can't open Go's UDP sockets
 		}
+		out = append(out, conn{c, ipv4.NewPacketConn(c)})
 	}
-	return out
+	return out, nil
 }
 
 func interfaceIPv4(ifi *net.Interface) netip.Addr {
