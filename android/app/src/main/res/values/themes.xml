@@ -64,6 +64,53 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
+    <!-- setup and pairing: the same dark teal as the web app and the remote -->
+    <style name="Theme.Droplet.Teal" parent="Theme.Droplet.Remote" />
+
+    <style name="Droplet.Teal.Eyebrow" parent="">
+        <item name="android:textSize">11.5sp</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textColor">@color/r_dim</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Droplet.Teal.Title" parent="">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textColor">@color/r_text</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Droplet.Teal.Body" parent="">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/r_dim</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+    </style>
+
+    <style name="Droplet.Teal.Primary" parent="Widget.Material3.Button">
+        <item name="android:minHeight">56dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/r_on_accent</item>
+        <item name="backgroundTint">@color/r_accent</item>
+        <item name="cornerRadius">16dp</item>
+    </style>
+
+    <style name="Droplet.Teal.Secondary" parent="Widget.Material3.Button">
+        <item name="android:minHeight">52dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/r_text</item>
+        <item name="backgroundTint">@color/r_card_2</item>
+        <item name="strokeColor">@color/r_line_2</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cornerRadius">16dp</item>
+    </style>
+
+    <style name="Droplet.Teal.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/r_accent</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
     <style name="Droplet.Section" parent="">
         <item name="android:textSize">12sp</item>
         <item name="android:textAllCaps">true</item>

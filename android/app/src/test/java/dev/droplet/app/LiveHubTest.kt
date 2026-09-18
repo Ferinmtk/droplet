@@ -54,7 +54,9 @@ import java.util.concurrent.TimeUnit
  * The phone side of docs/remote.md, end to end: the app's real code (Live,
  * the bridges, the remote screen) on Robolectric, connected to a real droplet
  * hub, driven by a fake controller that is also an `input` + `clipboard`
- * helper. Runs only when DROPLET_TEST_HUB points at a hub, e.g.
+ * helper. The app is given only the hub's URL, as 1.1 was; the router learns
+ * the hub's LAN address and certificate from it, so the phone's side runs
+ * over the pinned LAN connection. Runs only when DROPLET_TEST_HUB points at a hub, e.g.
  *
  *   DROPLET_PORT=8814 DROPLET_PUSH=0 DROPLET_HOME=$(mktemp -d) python app.py
  *   DROPLET_TEST_HUB=http://127.0.0.1:8814 ./gradlew testReleaseUnitTest
@@ -73,6 +75,8 @@ class LiveHubTest {
     fun setUp() {
         assumeTrue("set DROPLET_TEST_HUB to run the live tests", hub.isNotEmpty())
         app = ApplicationProvider.getApplicationContext()
+        Router.reset()
+        Router.discover = { _, _ -> emptyList() }  // Robolectric has no NsdManager
     }
 
     @After
@@ -80,6 +84,8 @@ class LiveHubTest {
         if (hub.isEmpty()) return
         Live.release("test")
         if (::ctl.isInitialized) ctl.ws.close(1000, null)
+        Router.lanReachable = { true }
+        Router.reset()
     }
 
     // --- helpers -------------------------------------------------------------------
@@ -400,12 +406,20 @@ class LiveHubTest {
         remote.pause().stop().destroy()
 
         // --- reconnecting ------------------------------------------------------------
+        // the socket went over the LAN, pinned: the router learnt the hub's id and
+        // certificate from its first answer (the upgrade path from 1.1)
+        assertEquals(Router.Kind.LAN, Router.current()?.kind)
+        assertEquals(Router.current()?.base, Live.connectedBase())
+        // out of reach (left the Wi-Fi, no tailnet): the socket fails, and the router finds nothing
+        Router.lanReachable = { false }
         Prefs.hubUrl = "http://127.0.0.1:9"  // nothing listens there
-        Live.refresh()
-        waitFor("a failed connect") { Live.state.value.status == Live.Status.RETRYING || Live.state.value.status == Live.Status.UNNAMED }
+        Router.use(Router.Route(Router.Kind.TAILNET, "http://127.0.0.1:9"))
+        waitFor("a failed connect") { Live.state.value.status in setOf(Live.Status.RETRYING, Live.Status.NO_ROUTE) }
+        // back: the router looks again, finds the hub, and the socket follows
         Prefs.hubUrl = hub
-        Live.kick()
-        waitFor("back online") { Live.state.value.connected }
+        Router.lanReachable = { true }
+        Router.refresh()
+        waitFor("back online") { Live.state.value.connected && Live.connectedBase() != "http://127.0.0.1:9" }
         session.release()
     }
 

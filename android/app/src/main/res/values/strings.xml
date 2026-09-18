@@ -5,21 +5,65 @@
     <string name="open_droplet">Open droplet</string>
     <string name="retry">Try again</string>
 
-    <!-- setup -->
-    <string name="setup_title">Connect to your hub</string>
-    <string name="setup_body">droplet talks to the hub machine that runs the droplet server. Paste its address below.</string>
+    <!-- setup: finding the hub -->
+    <string name="setup_on_wifi">On your Wi-Fi</string>
+    <string name="setup_looking">Looking for droplet on your Wi-Fi…</string>
+    <string name="setup_found_one">Found on your Wi-Fi</string>
+    <string name="setup_found_some">Found on your Wi-Fi: pick your hub</string>
+    <string name="setup_nothing_yet">Nothing yet. The hub machine must be on this Wi-Fi with droplet running. Guest networks and some routers block this; enter its address below instead.</string>
+    <string name="setup_no_search">This phone can\'t search the Wi-Fi right now. Enter the hub\'s address below.</string>
+    <string name="setup_yours">your hub</string>
+    <string name="setup_hub_sub">%1$s · id %2$s</string>
+    <string name="setup_or">Or</string>
+    <string name="setup_address_title">Enter an address</string>
+    <string name="setup_address_body">The hub\'s IP on this Wi-Fi (like 192.168.1.20), or its Tailscale address.</string>
     <string name="setup_hint">Hub address</string>
-    <string name="setup_tailscale">Tailscale must be switched on in the Tailscale app, or the hub can\'t be reached from this phone.</string>
     <string name="setup_connect">Connect</string>
+    <string name="setup_use_tailscale">Use Tailscale · %1$s</string>
     <string name="setup_checking">Checking…</string>
-    <string name="setup_anyway">Use it anyway</string>
-    <string name="setup_bad_url">That doesn\'t look like a web address.</string>
-    <string name="setup_unreachable">Couldn\'t reach %1$s: %2$s\n\nIs Tailscale on, and is the hub awake?</string>
+    <string name="setup_bad_url">That doesn\'t look like an address.</string>
+    <string name="setup_unreachable">Couldn\'t reach %1$s: %2$s</string>
     <string name="setup_not_droplet">%1$s answered, but it doesn\'t look like a droplet hub.</string>
+    <string name="setup_mismatch">That hub\'s answer doesn\'t match what it announced, so droplet won\'t trust it.</string>
+    <string name="setup_no_lan_tls">That hub doesn\'t offer droplet\'s secure LAN port (8443). Update droplet on the hub, or use its Tailscale address.</string>
+    <string name="setup_identity">The hub\'s identity changed: it isn\'t using the certificate this phone paired with. Either it\'s not your hub, or its certificate was made again. Pick it below to pair again; you\'ll check a code on one of your devices.</string>
+
+    <!-- setup: getting let in -->
+    <string name="setup_name_title">Name this phone</string>
+    <string name="setup_name_body">Your other devices will see it by this name on %1$s.</string>
+    <string name="setup_name_hint">Name</string>
+    <string name="setup_join">Ask to join</string>
+    <string name="setup_join_trusted">Join</string>
+    <string name="setup_link">Link with code</string>
+    <string name="setup_back">Back</string>
+    <string name="setup_waiting">Waiting for approval</string>
+    <string name="setup_code_help">On one of your devices, allow %1$s, and check the code matches.</string>
+    <string name="setup_code_status">Waiting for one of your devices…</string>
+    <string name="setup_code_lost">Can\'t reach the hub right now; still trying…</string>
+    <string name="setup_pin">Enter the hub\'s PIN</string>
+    <string name="setup_pin_hint">PIN</string>
+    <string name="setup_pin_wrong">That PIN is wrong.</string>
+    <string name="setup_pin_go">Log in</string>
+    <string name="setup_cancel">Cancel</string>
+    <string name="setup_declined_title">Not let in</string>
+    <string name="setup_declined_body">%1$s wasn\'t allowed in, or the request ran out. Ask again, and allow it on one of your devices.</string>
+    <string name="setup_ask_again">Ask again</string>
+    <string name="setup_name_empty">Give this phone a name.</string>
 
     <!-- main -->
-    <string name="offline_title">Can\'t reach the hub</string>
-    <string name="offline_body">Is Tailscale switched on, and is the hub machine awake? droplet will try again when the network comes back.</string>
+    <string name="offline_title">Can\'t reach %1$s</string>
+    <string name="offline_body">Not on the same Wi-Fi as %1$s, and Tailscale is off. Connect to your home Wi-Fi, or turn on Tailscale.</string>
+    <string name="offline_body_lan">Not on the same Wi-Fi as %1$s. Connect to your home Wi-Fi.</string>
+    <string name="offline_body_retry">droplet tries again by itself when the network changes.</string>
+    <string name="offline_open_tailscale">Open Tailscale</string>
+    <string name="offline_identity_title">The hub\'s identity changed</string>
+    <string name="offline_identity_body">Something at %1$s says it\'s %2$s, but its certificate isn\'t the one this phone paired with. droplet won\'t use it. If you remade the hub\'s certificate, pair again.</string>
+    <string name="offline_repair">Pair again</string>
+    <string name="offline_not_running">The hub machine answered, but droplet isn\'t running on it (%1$d).</string>
+    <string name="offline_err_name">The hub\'s name didn\'t resolve: Tailscale is probably off.</string>
+    <string name="offline_err_refused">The hub refused the connection. Is droplet running?</string>
+    <string name="offline_err_timeout">The hub didn\'t answer in time.</string>
+    <string name="offline_err_offline">This phone is offline.</string>
     <string name="download_started">Downloading %1$s</string>
     <string name="download_saved">Saved %1$s to Downloads</string>
     <string name="download_failed">Couldn\'t save %1$s</string>
@@ -32,7 +76,8 @@
     <string name="share_hub_sub">Saved in Received on the hub</string>
     <string name="share_online">online</string>
     <string name="share_offline">offline: it gets it when it\'s back</string>
-    <string name="share_unreachable">Can\'t reach the hub. Is Tailscale on?</string>
+    <string name="share_unreachable">Can\'t reach the hub.</string>
+    <string name="share_not_let_in">This phone hasn\'t been let in to %1$s yet. Open droplet to finish.</string>
     <string name="share_unnamed">To send to other devices, open droplet and give this phone a name.</string>
     <string name="share_nothing">There\'s nothing droplet can send in that share.</string>
     <string name="share_more">%1$s and %2$d more</string>
@@ -73,7 +118,8 @@
     <!-- stay connected -->
     <string name="conn_title">droplet connected</string>
     <string name="conn_connecting">Connecting…</string>
-    <string name="conn_ok">Listening for rings via %1$s</string>
+    <string name="conn_ok">Listening for rings %1$s</string>
+    <string name="conn_not_let_in">Not let in to %1$s yet: open droplet</string>
     <string name="conn_no_network">Waiting for the network</string>
     <string name="conn_unreachable">Can\'t reach the hub, retrying</string>
     <string name="conn_unnamed">Open droplet and name this phone to receive rings</string>
@@ -87,10 +133,30 @@
         <item quantity="other">%d unread messages</item>
     </plurals>
 
+    <!-- the route to the hub -->
+    <string name="route_lan">On Wi-Fi · %1$s · %2$s</string>
+    <string name="route_tailnet">Via Tailscale</string>
+    <string name="route_direct">Via %1$s</string>
+    <string name="route_searching">Looking for %1$s…</string>
+    <string name="route_none">Can\'t reach %1$s</string>
+    <string name="route_short_lan">on Wi-Fi</string>
+    <string name="route_short_tailnet">via Tailscale</string>
+    <string name="route_short_direct">via %1$s</string>
+
     <!-- settings -->
     <string name="s_hub">Hub</string>
-    <string name="s_hub_address">Hub address</string>
     <string name="s_change">Change</string>
+    <string name="s_hub_identity">id %1$s · certificate %2$s</string>
+    <string name="s_hub_identity_none">Not paired on the LAN yet: reached over Tailscale only.</string>
+    <string name="s_hub_tailnet">Tailscale: %1$s</string>
+    <string name="s_hub_tailnet_none">Tailscale: not set up on the hub</string>
+    <string name="s_pin_tofu">(trusted on first use; confirmed when Tailscale reaches it)</string>
+    <string name="s_find_again">Find hub again</string>
+    <string name="s_forget">Forget this hub</string>
+    <string name="s_forget_title">Forget %1$s?</string>
+    <string name="s_forget_body">droplet forgets the hub, this phone\'s identity on it, and how to reach it. To use it again you\'ll pair again. The hub keeps its files, and this phone stays in its device list until you remove it there.</string>
+    <string name="s_identity">The hub\'s identity changed, so droplet won\'t use it on the Wi-Fi.</string>
+    <string name="s_repair">Pair again</string>
     <string name="s_this_phone">This phone</string>
     <string name="s_unnamed">Not named yet. Open droplet and give this phone a name, so other devices can send to it and ring it.</string>
     <string name="s_named">Named %1$s on the hub.</string>
@@ -133,6 +199,8 @@
     </plurals>
     <string name="live_retrying">Can\'t reach the hub, retrying</string>
     <string name="live_err_pin">the hub wants its PIN: open droplet and log in</string>
+    <string name="live_err_pair">not let in to the hub yet</string>
+    <string name="live_err_identity">the hub\'s certificate changed</string>
     <string name="live_err_http">the hub answered %1$d</string>
     <string name="live_err_off">%1$s is switched off on the phone.</string>
     <string name="live_err_slow">The phone took too long to answer.</string>
@@ -178,7 +246,7 @@
     <string name="remote_live">Live</string>
     <string name="remote_loading">Loading…</string>
     <string name="remote_offline_short">Not connected</string>
-    <string name="remote_offline">Not connected to the hub. Is Tailscale on?</string>
+    <string name="remote_offline">Not connected to the hub. Connect to your home Wi-Fi, or turn on Tailscale.</string>
     <string name="remote_none">No computer ready</string>
     <string name="remote_none_help">No computer is ready for remote control. Start droplet\'s helper on it.</string>
     <string name="remote_no_target">Pick a computer first</string>
