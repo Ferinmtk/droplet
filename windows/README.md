@@ -13,8 +13,9 @@ companion covers what a browser tab can't do in the background:
 - **Lets your other devices control this PC** in real time: mouse and
   keyboard (and the presentation remote), media and volume, locking,
   screenshots, and clipboard sync. See [Remote control](#remote-control).
-- **Adds a Send to menu in Explorer.** Right-click any file and choose
-  **Send to → droplet → Hub** (or a device name).
+- **Can add a Send to menu in Explorer**, once you turn it on in Settings.
+  Right-click any file and choose **Send to → droplet → Hub** (or a device
+  name).
 - **Tray menu:** Open droplet · Send files to ▸ · Send clipboard to ▸ (text,
   a screenshot or copied files) · Ring ▸ · Open downloads folder ·
   Pause notifications · Pause remote control · Settings… · Quit.
@@ -33,7 +34,10 @@ work away from home. See [How it finds and trusts the hub](#how-it-finds-and-tru
    `%LOCALAPPDATA%\Programs\droplet\droplet.exe`. Start-with-Windows and the
    Send to entries point at this location.
 2. Run it. The exe isn't code-signed, so SmartScreen warns you the first
-   time: click **More info → Run anyway**.
+   time: click **More info → Run anyway**. If Windows Defender or another
+   antivirus flags it, don't turn your protection off: see
+   [DEFENDER.md](DEFENDER.md) for why it happens, how to check your copy,
+   and how to allow just this file and report the false positive.
 3. The settings page opens in your browser. Under **Hubs on this network**
    it lists the droplet hubs it finds on your Wi-Fi. Then either:
    - **Join (at home, no Tailscale needed).** Check the PC's name, and
@@ -57,6 +61,23 @@ work away from home. See [How it finds and trusts the hub](#how-it-finds-and-tru
 
 If you set the app up as its own device before linking existed, link with a
 code now. The settings page then offers to remove the old entry.
+
+droplet doesn't add itself to Windows' startup or to Explorer unless you ask.
+Under **Windows** in Settings, both are off until you turn them on:
+
+- **Start droplet when I sign in** adds droplet to your sign-in apps (the
+  per-user `Run` key).
+- **Add droplet to Explorer's "Send to" menu** adds one shortcut per device
+  to your Send to folder. Turning it off removes them.
+
+If you used droplet before these switches existed, they keep what that
+version did: Send to stays on for a PC that was already set up, and
+start-with-Windows stays as you chose it.
+
+droplet does add a **Start menu** entry on first start, like any installed
+app. The entry carries droplet's app ID, which is how Windows shows its
+notifications with droplet's name and icon. `droplet uninstall` removes it,
+along with everything else droplet added (see [Where things live](#where-things-live)).
 
 You can reopen Settings from the tray, or by running `droplet.exe` again.
 Each Windows sign-in runs only one copy.
@@ -131,12 +152,11 @@ at once, and a drag in progress is released.
 - If Core Audio isn't available, volume falls back to the volume keys
   (down to zero, then up in 2 % steps), and mute to the mute key (a toggle).
 - What's playing comes from Windows' media sessions (the same source as the
-  volume flyout: Spotify, browsers, Media Player…). It's read by a hidden
-  PowerShell loop, because that WinRT API isn't reachable from Go without
-  cgo. The loop runs only while the live connection is up with Media on, and
-  it's tied to droplet with a kill-on-close job object. If it fails
-  repeatedly, droplet stops trying and reports the volume with an empty
-  player list. Seeking isn't supported (`can_seek` is always false), and
+  volume flyout: Spotify, browsers, Media Player…). droplet reads it once a
+  second through the WinRT API itself, called directly from Go, with no cgo
+  and no helper process. It's read only while the live connection is up with
+  Media on. If reading fails repeatedly, droplet stops trying and reports the
+  volume with an empty player list. Seeking isn't supported (`can_seek` is always false), and
   media keys act on Windows' current session, not a chosen player.
 - The connection pings every 25 s and reconnects after any drop, waiting 1,
   2, 4 … up to 30 s. It authenticates with the device token as a bearer
@@ -158,12 +178,15 @@ at once, and a drag in progress is released.
 | Settings (including the remote-control switches `remote_*` and `clipboard_sync`), the device token, the hub's identity (`hub`: id, pinned certificate, last LAN addresses, tailnet URL), and the "already shown" markers | `%APPDATA%\droplet\config.json` |
 | Log | `%APPDATA%\droplet\droplet.log` |
 | Received files | `%USERPROFILE%\Downloads\droplet` (configurable) |
-| Start with Windows | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\droplet` |
-| Send To entries | `%APPDATA%\Microsoft\Windows\SendTo\droplet → *.lnk` |
+| Start with Windows (only if turned on) | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\droplet` |
+| Send To entries (only if turned on) | `%APPDATA%\Microsoft\Windows\SendTo\droplet → *.lnk` |
+| Start menu entry | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\droplet.lnk` |
 | Notification identity and the `droplet:` link handler | `HKCU\Software\Classes\AppUserModelId\Ferinmtk.droplet`, `HKCU\Software\Classes\droplet` |
 
 Everything is per user, and nothing needs admin rights. `droplet uninstall`
-removes the registry entries, the shortcuts and autostart. Delete
+removes the registry entries, the shortcuts and autostart, and switches
+start-with-Windows and Send to off in the settings so they don't come back
+on the next start. Delete
 `%APPDATA%\droplet` as well to forget the PC entirely.
 
 ## How it finds and trusts the hub
@@ -237,8 +260,9 @@ This follows [`docs/local-first.md`](../docs/local-first.md).
   from the internet" mark a browser adds.
 - Each file and message is announced once, including across restarts: the
   markers are kept in the config.
-- Notifications go through Windows PowerShell 5.1 and the built-in WinRT
-  toast API. Notification buttons are `droplet:` links that start a short-lived
+- Notifications use Windows' own toast API (WinRT), called directly from
+  droplet.exe. If they can't be shown, the failure is logged and droplet
+  carries on. Notification buttons are `droplet:` links that start a short-lived
   `droplet.exe`. Each link carries a random key from the config, so a web
   page can't trigger them.
 - Hubs without ringing are handled: the ring options report "ring not
@@ -255,8 +279,12 @@ go test ./...               # tests run on Linux/macOS too
 ```
 
 `build.sh` runs [go-winres](https://github.com/tc-hib/go-winres), which embeds
-the icon, the manifest and the version information, then
-`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-H windowsgui"`.
+the icon, the manifest (`asInvoker`, Windows 10/11, per-monitor DPI) and the
+version information, then
+`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-H windowsgui"`.
+The exe keeps its symbols (no `-s -w`) and is never packed (no UPX). A
+stripped or packed binary is a classic antivirus red flag; see
+[DEFENDER.md](DEFENDER.md).
 The icons in `assets/` are generated from `../static/icon-512.png` by
 `go run ./tools/mkicon` (including `droplet-live.ico`, the amber "being
 controlled" icon). The committed icons were made from the icon as it was
@@ -285,4 +313,6 @@ is useful for testing against a local hub, for example with
   keep the web app's unread badges.
 - **Send files to** picks the destination first and then opens the file
   picker.
-- It is unsigned, so SmartScreen warns on first run (see Install).
+- It is unsigned, so SmartScreen warns on first run (see Install), and
+  antivirus heuristics may flag it. [DEFENDER.md](DEFENDER.md) covers what to
+  do, and the code-signing options.

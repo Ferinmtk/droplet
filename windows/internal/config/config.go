@@ -65,8 +65,13 @@ type Config struct {
 	NotifyFiles    bool   `json:"notify_files"`
 	NotifyMessages bool   `json:"notify_messages"`
 	RingSound      bool   `json:"ring_sound"`
-	Autostart      bool   `json:"autostart"`
 	Paused         bool   `json:"paused"`
+
+	// What droplet adds to Windows, each only once the person turns it on
+	// in Settings: starting at sign-in (the per-user Run key), and one
+	// Explorer "Send to" shortcut per device.
+	Autostart bool `json:"autostart"`
+	SendTo    bool `json:"send_to"`
 
 	// Remote control (docs/remote.md): what other devices may do to this
 	// PC over the live connection. RemotePaused switches all of it off at
@@ -197,6 +202,7 @@ func load(path string) (*Config, error) {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	migrateSendTo(cfg, data)
 	if cfg.HubURL == "" && cfg.Hub == nil {
 		// a hub paired on the LAN may have no tailnet URL at all; only a
 		// config that knows no hub gets the default
@@ -212,6 +218,20 @@ func load(path string) (*Config, error) {
 		cfg.ActionKey = randomKey()
 	}
 	return cfg, nil
+}
+
+// migrateSendTo carries Send To over from configs written before it was a
+// setting. Those droplets added the Send To entries for every PC let in to
+// a hub, without asking; such a PC keeps them (Settings can turn them
+// off). Any other config starts with them off, like a new one.
+func migrateSendTo(c *Config, data []byte) {
+	var keys map[string]json.RawMessage
+	if json.Unmarshal(data, &keys) != nil {
+		return
+	}
+	if _, ok := keys["send_to"]; !ok {
+		c.SendTo = c.DeviceToken != ""
+	}
 }
 
 // Get returns a copy of the current config.
