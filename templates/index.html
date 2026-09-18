@@ -60,11 +60,32 @@
   li .del { flex:0 0 auto; border:none; background:none; color:var(--dim); font-size:1.1rem;
             line-height:1; padding:.5rem .7rem; }
   li .del:hover { color:var(--danger); }
+  li a .from { display:block; color:var(--dim); font-size:.75rem; margin-top:.1rem; }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.7rem .8rem;
+          margin-bottom:1rem; font-size:.85rem; }
+  .card.attn { border-color:var(--accent); }
+  .row { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
+  .card input[type=text] { flex:1; min-width:8rem; font:inherit; background:var(--bg); color:var(--text);
+                           border:1px solid var(--line); border-radius:8px; padding:.45rem .6rem; }
+  .dim { color:var(--dim); }
+  .chips { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin-bottom:.6rem; font-size:.85rem; }
+  .chip { border-radius:999px; padding:.3rem .75rem; }
+  .chip.on { border-color:var(--accent); color:var(--accent); background:rgba(56,189,248,.1); }
+  .dot { display:inline-block; width:.5rem; height:.5rem; border-radius:50%; background:var(--line);
+         margin-right:.35rem; vertical-align:middle; }
+  .dot.online { background:#4ade80; }
+  #devices li { padding:.5rem .3rem .5rem .7rem; }
+  #devices .dname { flex:1; }
 </style>
 </head>
 <body>
   <h1>💧 droplet <button id="install" hidden>Install app</button></h1>
   <p class="sub">hub: {{ host }}{% if tailnet_user %} · via tailnet as {{ tailnet_user }}{% endif %} — drop a file below to send it here</p>
+
+  <div id="me" class="card" hidden></div>
+  <div id="share-choice" class="card attn" hidden></div>
+  <div id="targets" class="chips" hidden></div>
 
   <div id="drop">Drop files here or tap to choose</div>
   <input type="file" id="file" multiple hidden>
@@ -95,10 +116,17 @@
     <button id="zip" class="primary">Download zip</button>
   </div>
 
+  <h2 id="inbox-h" hidden>For this device</h2>
+  <ul id="inbox" hidden></ul>
   <h2>Received</h2>
   <ul id="received"></ul>
   <h2>Shared</h2>
   <ul id="shared"></ul>
+
+  <details id="devices-box" hidden>
+    <summary>Devices</summary>
+    <ul id="devices" class="text-body"></ul>
+  </details>
 
 <script>
 const drop = document.getElementById("drop");
@@ -112,7 +140,29 @@ const selbar = document.getElementById("selbar");
 const selcount = document.getElementById("selcount");
 
 const selected = new Set();   // "folder/name", kept across auto-refreshes
-let latest = { received: [], shared: [] };
+let latest = { received: [], shared: [], inbox: [], devices: [] };
+let me = null;                // this browser's device record, once named
+let pushKey = null;           // hub's VAPID public key; null = push is off on the hub
+
+const LS = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+let target = LS.get("droplet-target") || "hub";   // where drops and text go
+
+function el(tag, props = {}, ...kids) {
+  const e = Object.assign(document.createElement(tag), props);
+  e.append(...kids);
+  return e;
+}
+
+function ago(ts) {
+  const s = Date.now() / 1000 - ts;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
 
 function fmtSize(b) {
   if (b < 1024) return b + " B";
@@ -165,6 +215,7 @@ function row(folder, f) {
   const name = document.createElement("span");
   name.className = "name";
   name.textContent = f.name;
+  if (f.from) name.append(el("span", { className: "from", textContent: `from ${f.from} · ${ago(f.mtime)}` }));
   const size = document.createElement("span");
   size.className = "size";
   size.textContent = fmtSize(f.size);
@@ -187,36 +238,197 @@ function row(folder, f) {
 }
 
 function render() {
-  for (const folder of ["received", "shared"]) {
+  document.getElementById("inbox-h").hidden = document.getElementById("inbox").hidden = !me;
+  for (const folder of me ? ["inbox", "received", "shared"] : ["received", "shared"]) {
     const ul = document.getElementById(folder);
     ul.innerHTML = "";
     const files = arrange(latest[folder] || []);
     if (!files.length) {
       const li = document.createElement("li");
       li.className = "empty";
-      li.textContent = q.value.trim() ? "nothing matches" : "nothing yet";
+      li.textContent = q.value.trim() ? "nothing matches" : folder === "inbox" ? "nothing waiting for this device" : "nothing yet";
       ul.appendChild(li);
       continue;
     }
     for (const f of files) ul.appendChild(row(folder, f));
   }
+  renderTargets();
+  renderDevices();
   updateSelBar();
 }
 
+let inboxSeen = null;   // names already shown, so only new arrivals get flashed
+
 async function refresh() {
-  const res = await fetch("/api/files");
-  if (!res.ok) return;
+  const res = await fetch("/api/files").catch(() => null);   // hub briefly unreachable
+  if (!res || !res.ok) return;
   latest = await res.json();
+  const names = new Set(latest.inbox.map(f => f.name));
+  if (inboxSeen) {
+    const fresh = latest.inbox.filter(f => !inboxSeen.has(f.name));
+    if (fresh.length) flash(`New from ${fresh[0].from || "someone"}: ${fresh.map(f => f.name).join(", ")}`);
+  }
+  inboxSeen = names;
   render();
 }
 
-function upload(files) {
+// --- this device: name + notifications ---
+
+async function loadMe() {
+  const res = await fetch("/api/me");
+  if (!res.ok) return;
+  const d = await res.json();
+  me = d.device;
+  pushKey = d.push_key;
+  renderMe(d.suggested);
+  if (me) syncPush();
+}
+
+function renderMe(suggested) {
+  const box = document.getElementById("me");
+  box.hidden = false;
+  box.innerHTML = "";
+  if (!me) {
+    const input = el("input", { type: "text", value: suggested || "", maxLength: 40 });
+    const save = el("button", { className: "primary", textContent: "Save" });
+    save.onclick = () => nameDevice(input.value);
+    input.onkeydown = e => { if (e.key === "Enter") nameDevice(input.value); };
+    box.append(el("p", { className: "dim", textContent: "Name this device so others can send files straight to it." }),
+               el("div", { className: "row", style: "margin-top:.5rem" }, input, save));
+    return;
+  }
+  const r = el("div", { className: "row" }, el("span", {}, "This device: ", el("b", { textContent: me.name })));
+  const rename = el("button", { textContent: "Rename" });
+  rename.onclick = () => { const n = prompt("Name this device", me.name); if (n && n.trim()) nameDevice(n); };
+  r.append(rename);
+  if (pushKey && "PushManager" in window && "Notification" in window) {
+    if (me.push && Notification.permission === "granted") {
+      const test = el("button", { textContent: "Test" });
+      test.onclick = async () => { await fetch("/api/push/test", { method: "POST" }); flash("Test sent, it should pop up in a moment"); };
+      r.append(el("span", { className: "dim", textContent: "🔔 notifications on" }), test);
+    } else if (Notification.permission === "denied") {
+      r.append(el("span", { className: "dim", textContent: "🔕 notifications are blocked in this browser's site settings" }));
+    } else {
+      const on = el("button", { className: "primary", textContent: "Turn on notifications" });
+      on.onclick = enablePush;
+      r.append(on);
+    }
+  }
+  box.append(r);
+}
+
+async function nameDevice(name) {
+  name = name.trim();
+  if (!name) return;
+  const res = await fetch("/api/device", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+  });
+  if (res.ok) { await loadMe(); refresh(); return; }
+  const err = (await res.json().catch(() => ({}))).error;
+  if (!me) await refresh();   // show the Devices list so the old one can be removed
+  alert(err || "Couldn't save that name");
+}
+
+function b64ToBytes(b64) {
+  const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - b64.length % 4) % 4));
+  return Uint8Array.from(s, c => c.charCodeAt(0));
+}
+
+async function subscribe() {
+  const reg = await navigator.serviceWorker.ready;
+  const key = b64ToBytes(pushKey);
+  let sub = await reg.pushManager.getSubscription();
+  // a subscription made against a different hub key can't be reused
+  const old = sub?.options?.applicationServerKey;
+  if (sub && old && new Uint8Array(old).join() !== key.join()) { await sub.unsubscribe(); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  const res = await fetch("/api/push/subscribe", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sub),
+  });
+  return res.ok;
+}
+
+async function enablePush() {
+  if (await Notification.requestPermission() === "granted") {
+    try {
+      if (await subscribe()) { me.push = true; flash("Notifications on"); }
+    } catch (e) {
+      flash("Couldn't turn on notifications: " + e.message);
+    }
+  }
+  renderMe();
+}
+
+// browsers rotate subscriptions now and then; keep the hub's copy current
+async function syncPush() {
+  if (!pushKey || !("PushManager" in window) || Notification.permission !== "granted") return;
+  try {
+    if (await subscribe() && !me.push) { me.push = true; renderMe(); }
+  } catch {}
+}
+
+// --- other devices: send-to picker + list ---
+
+function others() { return (latest.devices || []).filter(d => !d.self); }
+
+function chips(selectedId, onPick) {
+  const hub = el("button", { className: "chip" + (selectedId === "hub" ? " on" : ""), textContent: "Hub" });
+  hub.onclick = () => onPick("hub");
+  const out = [hub];
+  for (const d of others()) {
+    const c = el("button", {
+      className: "chip" + (selectedId === d.id ? " on" : ""),
+      title: d.online ? "online" : "offline: it gets it when it's back",
+    }, el("span", { className: "dot" + (d.online ? " online" : "") }), d.name);
+    c.onclick = () => onPick(d.id);
+    out.push(c);
+  }
+  return out;
+}
+
+function targetName() {
+  return target === "hub" ? "the hub" : (others().find(d => d.id === target) || {}).name;
+}
+
+function renderTargets() {
+  const box = document.getElementById("targets");
+  const list = others();
+  if (target !== "hub" && !list.some(d => d.id === target)) target = "hub";
+  box.hidden = !list.length;
+  box.innerHTML = "";
+  if (list.length) {
+    box.append(el("span", { className: "dim", textContent: "Send to" }),
+               ...chips(target, id => { target = id; LS.set("droplet-target", id); renderTargets(); }));
+  }
+  drop.textContent = list.length ? `Drop files here or tap to choose (to ${targetName()})` : "Drop files here or tap to choose";
+}
+
+function renderDevices() {
+  const list = latest.devices || [];
+  const ul = document.getElementById("devices");
+  document.getElementById("devices-box").hidden = !list.length;
+  ul.innerHTML = "";
+  for (const d of list) {
+    const del = el("button", { className: "del", title: "Remove device", textContent: "×" });
+    del.onclick = async () => {
+      if (!confirm(`Remove ${d.name}? Anything waiting for it is deleted.`)) return;
+      await fetch(`/api/device/${d.id}/remove`, { method: "POST" });
+      if (d.self) location.reload(); else refresh();
+    };
+    ul.append(el("li", {},
+      el("span", { className: "dname" }, el("span", { className: "dot" + (d.online ? " online" : "") }),
+         d.name + (d.self ? " (this device)" : "") + (d.push ? " 🔔" : "")),
+      del));
+  }
+}
+
+function upload(files, to = target) {
   if (!files.length) return Promise.resolve(true);
   return new Promise(resolve => {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   const xhr = new XMLHttpRequest();
-  xhr.open("POST", "/upload");
+  xhr.open("POST", "/upload?to=" + encodeURIComponent(to));
   barWrap.style.display = "block";
   const started = Date.now();
   xhr.upload.onprogress = e => {
@@ -245,17 +457,33 @@ function flash(msg) {
 
 // Items shared from another app wait in the service worker's inbox cache
 // until this page uploads them, so a PIN login in between doesn't lose them.
+// With other devices around, the user picks where shared items go.
 async function drainInbox() {
   if (!("caches" in window) || !(await caches.has("droplet-share-inbox"))) return;
   const cache = await caches.open("droplet-share-inbox");
   const keys = await cache.keys();
   if (!keys.length) return;
+  if (!others().length) return sendParked(cache, keys, "hub");
+  const box = document.getElementById("share-choice");
+  const discard = el("button", { textContent: "Discard" });
+  discard.onclick = async () => { for (const k of keys) await cache.delete(k); box.hidden = true; };
+  box.innerHTML = "";
+  box.append(el("p", { textContent: `${keys.length} shared item(s). Send to:`, style: "margin-bottom:.5rem" }),
+             el("div", { className: "chips" }, ...chips(null, to => sendParked(cache, keys, to)), discard));
+  box.hidden = false;
+  box.scrollIntoView({ block: "nearest" });
+}
+
+async function sendParked(cache, keys, to) {
+  document.getElementById("share-choice").hidden = true;
   const files = [], fileKeys = [];
   for (const key of keys) {
     const res = await cache.match(key);
+    if (!res) continue;
     if (res.headers.get("X-Kind") === "text") {
       const body = new FormData();
       body.append("text", await res.text());
+      body.append("to", to);
       if ((await fetch("/text", { method: "POST", body })).ok) await cache.delete(key);
     } else {
       const name = decodeURIComponent(res.headers.get("X-Name") || "shared");
@@ -263,9 +491,10 @@ async function drainInbox() {
       fileKeys.push(key);
     }
   }
-  if (await upload(files)) for (const key of fileKeys) await cache.delete(key);
+  if (await upload(files, to)) for (const key of fileKeys) await cache.delete(key);
   const left = (await cache.keys()).length;
-  flash(left ? `${left} shared item(s) didn't send — they'll retry next time` : `Shared ${keys.length} item(s) to the hub`);
+  const where = to === "hub" ? "the hub" : (others().find(d => d.id === to) || {}).name;
+  flash(left ? `${left} shared item(s) didn't send, they'll retry next time` : `Sent ${keys.length} item(s) to ${where}`);
 }
 
 document.getElementById("send-text").onclick = async () => {
@@ -274,6 +503,7 @@ document.getElementById("send-text").onclick = async () => {
   if (!box.value.trim()) return;
   const body = new FormData();
   body.append("text", box.value);
+  body.append("to", target);
   const res = await fetch("/text", { method: "POST", body });
   if (res.ok) {
     box.value = "";
@@ -334,9 +564,9 @@ if (params.has("shared")) {
   if (n) flash(`Shared ${n} item(s) to the hub`);  // server fallback path
 }
 
-refresh();
-drainInbox();
+loadMe().then(refresh).then(drainInbox);
 setInterval(refresh, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 </script>
 </body>
 </html>

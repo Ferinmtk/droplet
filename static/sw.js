@@ -1,5 +1,6 @@
 // droplet service worker: makes the app installable, catches Android's
-// "Share → droplet" POST, and shows a friendly page when the hub is unreachable.
+// "Share → droplet" POST, shows notifications for items sent to this device,
+// and shows a friendly page when the hub is unreachable.
 
 const INBOX = "droplet-share-inbox";
 
@@ -14,6 +15,35 @@ self.addEventListener("fetch", event => {
   } else if (req.mode === "navigate") {
     event.respondWith(fetch(req).catch(offline));
   }
+});
+
+// Something was sent to this device. The payload is written by deliver() in app.py.
+self.addEventListener("push", event => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch {}
+  event.waitUntil(self.registration.showNotification(d.title || "droplet", {
+    body: d.body || "",
+    icon: "/static/icon-192.png",
+    tag: d.tag,
+    data: { url: d.url || "/" },
+  }));
+});
+
+// Tap: a sent link opens directly; anything else opens droplet on its inbox.
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil((async () => {
+    if (/^https?:\/\//.test(url)) return self.clients.openWindow(url);
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const w of wins) {
+      if (new URL(w.url).origin === self.location.origin) {
+        await w.focus();
+        return w.navigate(url).catch(() => {});
+      }
+    }
+    return self.clients.openWindow(url);
+  })());
 });
 
 // Park shared items in a cache and open the page, which uploads them with the

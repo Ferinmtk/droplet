@@ -3,6 +3,7 @@
 import atexit
 import json
 import os
+import re
 import secrets
 import signal
 import socket
@@ -16,6 +17,7 @@ from pathlib import Path
 from flask import (
     Flask,
     abort,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -26,6 +28,8 @@ from flask import (
     url_for,
 )
 from werkzeug.utils import secure_filename
+
+from devices import DeviceStore, Pusher
 
 # --- config (env-driven so any machine can be the hub) -----------------------
 
@@ -46,6 +50,8 @@ USE_TAILSCALE = os.environ.get("DROPLET_TAILSCALE", "") not in ("", "0", "false"
 # they skip the PIN; set to 0 to make them enter it like LAN guests
 TAILNET_TRUST = os.environ.get("DROPLET_TAILNET_TRUST", "1") not in ("", "0", "false")
 TAILNET_URL: str | None = None  # set at startup once `tailscale serve` is confirmed
+# 0 = no push notifications (fully local; devices only see new items while open)
+USE_PUSH = os.environ.get("DROPLET_PUSH", "1") not in ("", "0", "false")
 
 FOLDERS = {"received": RECEIVED_DIR, "shared": SHARED_DIR}
 
@@ -73,6 +79,11 @@ def _secret_key() -> bytes:
 
 app.secret_key = _secret_key()
 
+DEVICE_COOKIE = "droplet_device"
+devices = DeviceStore(BASE_DIR)
+pusher = Pusher(BASE_DIR, devices, USE_PUSH)
+URL_ONLY = re.compile(r"^https?://\S+$")
+
 
 # --- helpers -----------------------------------------------------------------
 
@@ -99,19 +110,29 @@ def unique_path(directory: Path, name: str) -> Path:
     return p
 
 
+def meta_path(p: Path) -> Path:
+    # inbox items carry a hidden sidecar saying who sent them
+    return p.with_name(f".{p.name}.json")
+
+
 def list_files(directory: Path) -> list[dict]:
     items = []
+    if not directory.is_dir():
+        return items
     for p in directory.iterdir():
         if p.is_file() and not p.name.startswith("."):
             st = p.stat()
-            items.append(
-                {
-                    "name": p.name,
-                    "size": st.st_size,
-                    "mtime": int(st.st_mtime),
-                    "image": p.suffix.lower() in IMAGE_SUFFIXES,
-                }
-            )
+            item = {
+                "name": p.name,
+                "size": st.st_size,
+                "mtime": int(st.st_mtime),
+                "image": p.suffix.lower() in IMAGE_SUFFIXES,
+            }
+            try:
+                item["from"] = json.loads(meta_path(p).read_text())["from"]
+            except (OSError, ValueError, KeyError):
+                pass
+            items.append(item)
     items.sort(key=lambda f: f["mtime"], reverse=True)
     return items
 
@@ -135,6 +156,125 @@ def tailnet_user() -> str | None:
     if not TAILNET_URL or request.remote_addr not in ("127.0.0.1", "::1"):
         return None
     return request.headers.get("Tailscale-User-Login") or None
+
+
+def via_tailnet() -> bool:
+    return bool(TAILNET_URL) and request.remote_addr in ("127.0.0.1", "::1")
+
+
+# --- devices -----------------------------------------------------------------
+
+def current_device() -> dict | None:
+    if "device" not in g:
+        g.device = devices.by_token(request.cookies.get(DEVICE_COOKIE))
+        if g.device:
+            devices.touch(g.device["id"])
+    return g.device
+
+
+def sender_name() -> str:
+    dev = current_device()
+    if dev:
+        return dev["name"]
+    return tailnet_user() or "someone"
+
+
+_whois_cache: dict[str, str] = {}
+
+
+def suggest_name() -> str:
+    """A starting name for a new device: its tailnet machine name if we can see it."""
+    if via_tailnet():
+        ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        if ip and ip not in _whois_cache:
+            r = _tailscale("whois", "--json", ip)
+            try:
+                _whois_cache[ip] = json.loads(r.stdout)["Node"]["ComputedName"] if r else ""
+            except (ValueError, KeyError, TypeError):
+                _whois_cache[ip] = ""
+        if _whois_cache.get(ip):
+            return _whois_cache[ip]
+    ua = request.user_agent.string
+    for needle, name in (("Android", "Android phone"), ("iPhone", "iPhone"), ("iPad", "iPad"),
+                         ("Windows", "Windows PC"), ("Macintosh", "Mac"), ("Linux", "Linux PC")):
+        if needle in ua:
+            return name
+    return "This device"
+
+
+def clean_name(raw) -> str:
+    name = " ".join(str(raw or "").split())[:40]
+    if not name:
+        abort(400)
+    return name
+
+
+def destination(to: str | None) -> tuple[Path, dict | None]:
+    """Where an upload goes: the hub's received/ folder, or a device's inbox."""
+    if not to or to == "hub":
+        return RECEIVED_DIR, None
+    dev = devices.get(to)
+    if dev is None:
+        abort(404)
+    inbox = devices.inbox(dev["id"])
+    inbox.mkdir(parents=True, exist_ok=True)
+    return inbox, dev
+
+
+def deliver(dev: dict | None, paths: list[Path], text: str | None = None):
+    """Label items sent to a device with their sender, then notify the device."""
+    if dev is None or not paths:
+        return
+    sender = sender_name()
+    for p in paths:
+        meta_path(p).write_text(json.dumps({"from": sender, "sent": int(time.time())}))
+    if text is not None:
+        link = URL_ONLY.match(text)
+        payload = {
+            "title": f"{sender} sent {'a link' if link else 'a note'}",
+            "body": text[:200],
+            # a bare link opens straight away when the notification is tapped
+            "url": text if link else "/#inbox",
+        }
+    else:
+        names = [p.name for p in paths]
+        payload = {
+            "title": f"{sender} sent {len(names)} file{'s' if len(names) != 1 else ''}",
+            "body": ", ".join(names[:3]) + (f" +{len(names) - 3} more" if len(names) > 3 else ""),
+            "url": "/#inbox",
+        }
+    payload["tag"] = f"droplet-{int(time.time() * 1000)}"
+    pusher.send(dev["id"], payload)
+
+
+def save_files(directory: Path) -> list[Path]:
+    saved = []
+    for f in request.files.getlist("files"):
+        name = secure_filename(f.filename or "")
+        if not name:
+            continue
+        dest = unique_path(directory, name)
+        f.save(dest)
+        saved.append(dest)
+    return saved
+
+
+def save_text(directory: Path, text: str) -> Path:
+    dest = unique_path(directory, f"text-{time.strftime('%Y%m%d-%H%M%S')}.txt")
+    dest.write_text(text, encoding="utf-8")
+    return dest
+
+
+def folder_dir(folder: str) -> Path:
+    if folder == "inbox":
+        dev = current_device()
+        if dev is None:
+            abort(404)
+        return devices.inbox(dev["id"])
+    directory = FOLDERS.get(folder)
+    if directory is None:
+        abort(404)
+    return directory
 
 
 # --- PIN gate ----------------------------------------------------------------
@@ -173,20 +313,83 @@ def home():
 
 @app.route("/api/files")
 def api_files():
-    return jsonify({name: list_files(d) for name, d in FOLDERS.items()})
+    # polled every few seconds, which is also how devices show as online
+    me = current_device()
+    out = {name: list_files(d) for name, d in FOLDERS.items()}
+    out["inbox"] = list_files(devices.inbox(me["id"])) if me else []
+    out["devices"] = devices.listing(me["id"] if me else None)
+    return jsonify(out)
+
+
+@app.route("/api/me")
+def api_me():
+    me = current_device()
+    return jsonify({
+        "device": {"id": me["id"], "name": me["name"], "push": bool(me.get("push"))} if me else None,
+        "suggested": None if me else suggest_name(),
+        "push_key": pusher.public_key if pusher.enabled else None,
+    })
+
+
+@app.route("/api/device", methods=["POST"])
+def api_device():
+    """Name this browser (registering it as a device), or rename it."""
+    name = clean_name((request.get_json(silent=True) or {}).get("name"))
+    me = current_device()
+    if devices.name_taken(name, except_id=me["id"] if me else None):
+        return jsonify({"error": f"{name} is already a device here. Pick another name, "
+                                 "or remove the old one under Devices."}), 409
+    if me:
+        devices.update(me["id"], name=name)
+        return jsonify({"id": me["id"], "name": name})
+    dev, token = devices.create(name)
+    resp = jsonify({"id": dev["id"], "name": name})
+    secure = request.is_secure or (via_tailnet() and request.headers.get("X-Forwarded-Proto") == "https")
+    resp.set_cookie(DEVICE_COOKIE, token, max_age=5 * 365 * 24 * 3600,
+                    httponly=True, samesite="Lax", secure=secure)
+    return resp
+
+
+@app.route("/api/device/<device_id>/remove", methods=["POST"])
+def api_device_remove(device_id):
+    # any device can remove any other (e.g. a lost phone, an old browser);
+    # the PIN / tailnet is the trust boundary, as for everything else here
+    if devices.get(device_id) is None:
+        abort(404)
+    devices.remove(device_id)
+    resp = jsonify({"removed": device_id})
+    me = current_device()
+    if me and me["id"] == device_id:
+        resp.delete_cookie(DEVICE_COOKIE)
+    return resp
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+def api_push_subscribe():
+    me = current_device()
+    sub = request.get_json(silent=True) or {}
+    keys = sub.get("keys") or {}
+    if me is None or not str(sub.get("endpoint", "")).startswith("https://") or not (keys.get("p256dh") and keys.get("auth")):
+        abort(400)
+    devices.update(me["id"], push={"endpoint": sub["endpoint"], "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]}})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/test", methods=["POST"])
+def api_push_test():
+    me = current_device()
+    if me is None:
+        abort(400)
+    pusher.send(me["id"], {"title": "droplet", "body": f"Notifications work on {me['name']} 👋", "url": "/", "tag": "droplet-test"})
+    return jsonify({"ok": True})
 
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    saved = []
-    for f in request.files.getlist("files"):
-        name = secure_filename(f.filename or "")
-        if not name:
-            continue
-        dest = unique_path(RECEIVED_DIR, name)
-        f.save(dest)
-        saved.append(dest.name)
-    return jsonify({"saved": saved})
+    directory, dev = destination(request.args.get("to"))
+    saved = save_files(directory)
+    deliver(dev, saved)
+    return jsonify({"saved": [p.name for p in saved]})
 
 
 @app.route("/text", methods=["POST"])
@@ -194,8 +397,9 @@ def share_text():
     text = (request.form.get("text") or "").strip()
     if not text:
         return jsonify({"error": "empty"}), 400
-    dest = unique_path(RECEIVED_DIR, f"text-{time.strftime('%Y%m%d-%H%M%S')}.txt")
-    dest.write_text(text, encoding="utf-8")
+    directory, dev = destination(request.form.get("to"))
+    dest = save_text(directory, text)
+    deliver(dev, [dest], text)
     return jsonify({"saved": dest.name})
 
 
@@ -204,22 +408,14 @@ def share():
     # Android's share sheet posts here (see share_target in the manifest).
     # Normally the service worker catches it first; this is the fallback for
     # when it isn't running yet.
-    saved = []
-    for f in request.files.getlist("files"):
-        name = secure_filename(f.filename or "")
-        if name:
-            dest = unique_path(RECEIVED_DIR, name)
-            f.save(dest)
-            saved.append(dest.name)
+    saved = save_files(RECEIVED_DIR)
     parts = []
     for key in ("title", "text", "url"):
         v = (request.form.get(key) or "").strip()
         if v and not any(v in p for p in parts):
             parts.append(v)
     if parts:
-        dest = unique_path(RECEIVED_DIR, f"text-{time.strftime('%Y%m%d-%H%M%S')}.txt")
-        dest.write_text("\n".join(parts), encoding="utf-8")
-        saved.append(dest.name)
+        saved.append(save_text(RECEIVED_DIR, "\n".join(parts)))
     return redirect(url_for("home", shared=len(saved)), code=303)
 
 
@@ -239,28 +435,23 @@ def service_worker():
 
 @app.route("/d/<folder>/<path:name>")
 def download(folder, name):
-    directory = FOLDERS.get(folder)
-    if directory is None:
-        abort(404)
+    directory = folder_dir(folder)
     return send_from_directory(directory, name, as_attachment=True)
 
 
 @app.route("/raw/<folder>/<path:name>")
 def raw(folder, name):
     # inline rather than attachment, so thumbnails can render
-    directory = FOLDERS.get(folder)
-    if directory is None:
-        abort(404)
+    directory = folder_dir(folder)
     resolve_in(directory, name)
     return send_from_directory(directory, name)
 
 
 @app.route("/delete/<folder>/<path:name>", methods=["POST"])
 def delete(folder, name):
-    directory = FOLDERS.get(folder)
-    if directory is None:
-        abort(404)
-    resolve_in(directory, name).unlink()
+    p = resolve_in(folder_dir(folder), name)
+    p.unlink()
+    meta_path(p).unlink(missing_ok=True)
     return jsonify({"deleted": name})
 
 
@@ -274,10 +465,7 @@ def zip_selected():
     with zipfile.ZipFile(spool, "w", zipfile.ZIP_DEFLATED) as zf:
         for item in wanted:
             folder, _, name = str(item).partition("/")
-            directory = FOLDERS.get(folder)
-            if directory is None:
-                abort(404)
-            p = resolve_in(directory, name)
+            p = resolve_in(folder_dir(folder), name)
             zf.write(p, arcname=f"{folder}/{p.name}")
     spool.seek(0)
     return send_file(
@@ -440,6 +628,7 @@ def banner(url: str, tailnet_url: str | None = None):
     if PIN and tailnet_url and TAILNET_TRUST:
         pin += " — tailnet devices skip it"
     print(f"     PIN: {pin}")
+    print(f"     push notifications: {'on' if pusher.enabled else 'off'}")
     print(f"     folders: {RECEIVED_DIR}  |  {SHARED_DIR}")
     print()
     try:
@@ -457,12 +646,14 @@ if __name__ == "__main__":
     # make pkill/SIGTERM exit cleanly so the mDNS goodbye packet goes out
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
-    for d in (RECEIVED_DIR, SHARED_DIR, CERT_DIR):
+    for d in (RECEIVED_DIR, SHARED_DIR, CERT_DIR, devices.inbox_root):
         d.mkdir(parents=True, exist_ok=True)
 
     lan_ip = get_lan_ip()
     scheme = "https" if USE_HTTPS else "http"
     TAILNET_URL = setup_tailnet() if USE_TAILSCALE else None
+    if TAILNET_URL:
+        pusher.contact = TAILNET_URL  # push services want a way to reach the sender
     banner(f"{scheme}://{lan_ip}:{PORT}", TAILNET_URL)
     register_mdns(lan_ip)
 
