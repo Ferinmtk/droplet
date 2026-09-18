@@ -255,8 +255,12 @@ go test ./...               # tests run on Linux/macOS too
 ```
 
 `build.sh` runs [go-winres](https://github.com/tc-hib/go-winres), which embeds
-the icon, the manifest and the version information, then
-`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-H windowsgui"`.
+the icon, the manifest (`asInvoker`, Windows 10/11, per-monitor DPI) and the
+version information, then
+`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-H windowsgui"`.
+The exe keeps its symbols (no `-s -w`) and is never packed (no UPX). A
+stripped or packed binary is a classic antivirus red flag; see
+[DEFENDER.md](DEFENDER.md).
 The icons in `assets/` are generated from `../static/icon-512.png` by
 `go run ./tools/mkicon` (including `droplet-live.ico`, the amber "being
 controlled" icon). The committed icons were made from the icon as it was
