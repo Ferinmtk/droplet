@@ -157,6 +157,36 @@
                     android:layout_height="wrap_content" android:text="@string/s_inbox_desc" />
             </LinearLayout>
 
+            <!-- the mesh: direct connections -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/s_mesh" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/mesh_switch"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_mesh_switch" android:textColor="@color/text" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <View android:id="@+id/mesh_dot" android:layout_width="8dp" android:layout_height="8dp"
+                        android:layout_marginEnd="10dp" android:background="@drawable/dot" />
+
+                    <TextView android:id="@+id/mesh_state" style="@style/Droplet.Body"
+                        android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" />
+                </LinearLayout>
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="6dp"
+                    android:text="@string/s_mesh_desc" />
+
+                <com.google.android.material.button.MaterialButton android:id="@+id/open_peers"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:text="@string/s_mesh_open"
+                    app:cornerRadius="10dp" app:icon="@drawable/ic_device" />
+            </LinearLayout>
+
             <!-- remote control -->
             <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:text="@string/s_remote" />

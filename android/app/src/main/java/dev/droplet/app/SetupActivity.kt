@@ -521,6 +521,8 @@ class SetupActivity : AppCompatActivity() {
         /** Forgets the hub entirely: its identity, this phone's token on it, cookies, the route. */
         fun forget(context: Context) {
             Hub.clearToken()  // first: it needs the origins the hub was reached on
+            // the peers that hub vouched for go too; directly paired ones stay
+            Mesh.forgetHub(Prefs.hubId)
             Prefs.forgetHub()
             Router.reset()
             Live.refresh()

@@ -118,6 +118,7 @@
     <!-- stay connected -->
     <string name="conn_title">droplet connected</string>
     <string name="conn_connecting">Connecting…</string>
+    <string name="conn_mesh_only">Direct connections only (no hub)</string>
     <string name="conn_ok">Listening for rings %1$s</string>
     <string name="conn_not_let_in">Not let in to %1$s yet: open droplet</string>
     <string name="conn_no_network">Waiting for the network</string>
@@ -207,6 +208,7 @@
     <string name="live_err_permission">Permission not granted on the phone.</string>
     <string name="cap_files">Files</string>
     <string name="cap_sms">SMS</string>
+    <string name="cap_media">Media control</string>
 
     <!-- sms -->
     <string name="sms_err_provider">The phone wouldn\'t open its messages. On Xiaomi phones, allow droplet to read SMS under Settings → Apps → droplet → Other permissions.</string>
@@ -403,4 +405,88 @@
     <string name="s_bt_support_unknown">Not tried on this phone yet.</string>
     <string name="s_bt_support_old">Needs Android 9 or newer.</string>
     <string name="s_bt_open">Open mouse &amp; keyboard</string>
+
+    <!-- the mesh: direct links to your other devices (Mesh, PeersActivity, ChatActivity) -->
+    <string name="ch_peers">Other devices\' notifications</string>
+    <string name="ch_peers_desc">Notifications your other devices send straight to this phone</string>
+    <string name="mesh_title">Your devices</string>
+    <string name="mesh_route_lan">Direct · Wi-Fi</string>
+    <string name="mesh_route_tailnet">Direct · Tailscale</string>
+    <string name="mesh_route_seen">On this Wi-Fi</string>
+    <string name="mesh_route_hub">Via the hub</string>
+    <string name="mesh_route_mailbox">The hub\'s mailbox</string>
+    <string name="mesh_route_offline">Offline</string>
+    <string name="mesh_off_now">Direct connections are off. Turn them on in Settings.</string>
+    <string name="mesh_no_input">This phone doesn\'t take keyboard and mouse input.</string>
+    <string name="mesh_no_cmd">This phone doesn\'t take commands.</string>
+    <string name="mesh_file_from">%1$s sent a file</string>
+    <string name="mesh_receiving">Receiving from %1$s</string>
+    <string name="mesh_pair_request">%1$s wants to pair</string>
+    <string name="mesh_pair_request_code">Code %1$s. Tap to answer.</string>
+    <string name="mesh_kept_for_later">The device isn\'t reachable right now; it gets the file when it is.</string>
+    <string name="mesh_this_phone">This phone</string>
+    <string name="mesh_identity">Fingerprint %1$s · port %2$d</string>
+    <string name="mesh_identity_file">The key is kept in the app\'s private storage (%1$s).</string>
+    <string name="mesh_status_off">Direct connections are off</string>
+    <string name="mesh_status_starting">Starting…</string>
+    <string name="mesh_status_failed">Couldn\'t start: %1$s</string>
+    <string name="mesh_trusted">Trusted</string>
+    <string name="mesh_trusted_none">No devices yet. Devices on your hub appear here by themselves; others pair below.</string>
+    <string name="mesh_nearby">On this Wi-Fi, not paired</string>
+    <string name="mesh_nearby_none">No other droplet devices announce themselves on this Wi-Fi.</string>
+    <string name="mesh_asking">Asking to pair</string>
+    <string name="mesh_source_paired">paired directly</string>
+    <string name="mesh_source_roster">from your hub</string>
+    <string name="mesh_pair_address">Pair by address</string>
+    <string name="mesh_pair_address_hint">192.168.1.20 or 192.168.1.20:1739</string>
+    <string name="mesh_pair_bad_address">That isn\'t an address.</string>
+    <string name="mesh_pairing_with">Contacting %1$s…</string>
+    <string name="mesh_pair_check_title">Pair with %1$s?</string>
+    <string name="mesh_pair_check">Check that %1$s shows this code:\n\n%2$s\n\nThen accept it there.</string>
+    <string name="mesh_pair_matches">It matches</string>
+    <string name="mesh_pair_waiting">Waiting for %1$s to accept…</string>
+    <string name="mesh_paired">Paired with %1$s</string>
+    <string name="mesh_pair_failed">Not paired: %1$s</string>
+    <string name="mesh_pair_state_denied">%1$s said no.</string>
+    <string name="mesh_pair_state_expired">the request ran out of time.</string>
+    <string name="mesh_pair_state_cancelled">it was cancelled.</string>
+    <string name="mesh_answer_title">%1$s wants to pair</string>
+    <string name="mesh_answer_body">%1$s (%2$s) asks to pair with this phone. Pair only if %1$s shows this code:\n\n%3$s</string>
+    <string name="mesh_accept">Pair</string>
+    <string name="mesh_deny">Refuse</string>
+    <string name="mesh_answer_gone">That request isn\'t waiting any more.</string>
+    <string name="mesh_act_file">Send a file</string>
+    <string name="mesh_act_text">Messages</string>
+    <string name="mesh_act_ring">Ring</string>
+    <string name="mesh_act_ring_stop">Stop ringing</string>
+    <string name="mesh_act_remote">Presentation remote</string>
+    <string name="mesh_act_clip">Send clipboard</string>
+    <string name="mesh_act_unpair">Unpair</string>
+    <string name="mesh_unpair_title">Unpair %1$s?</string>
+    <string name="mesh_unpair_body">They stop trusting each other. Pair again to undo it.</string>
+    <string name="mesh_unpaired">Unpaired %1$s</string>
+    <string name="mesh_unpaired_untold">Unpaired %1$s. It wasn\'t reachable, so it still lists this phone until it\'s unpaired there too.</string>
+    <string name="mesh_sent_route">Sent (%1$s)</string>
+    <string name="mesh_failed">Couldn\'t: %1$s</string>
+    <string name="mesh_chat_hint">Message</string>
+    <string name="mesh_chat_send">Send</string>
+    <string name="mesh_chat_empty">No messages with %1$s yet.</string>
+    <string name="mesh_chat_waiting">waiting: %1$s</string>
+    <string name="mesh_chat_failed">not sent: %1$s</string>
+    <string name="mesh_chat_sending">sending…</string>
+    <string name="up_kept">Kept for %1$s</string>
+    <string name="up_kept_body">It goes as soon as %1$s or the hub is reachable.</string>
+    <string name="up_done_route">Sent to %1$s (%2$s)</string>
+    <string name="share_mesh_sub">%1$s · %2$s</string>
+    <string name="remote_mesh_target">%1$s (direct)</string>
+    <!-- settings: the mesh -->
+    <string name="s_mesh">Direct connections</string>
+    <string name="s_mesh_desc">Your devices talk to this phone directly, over the Wi-Fi or Tailscale, so sending, ringing and remote control keep working when the hub is down. Other devices reach the phone while Stay connected is on.</string>
+    <string name="s_mesh_switch">Talk to my devices directly</string>
+    <string name="s_mesh_state">%1$s · port %2$d · %3$s</string>
+    <string name="s_mesh_open">Devices and pairing</string>
+    <plurals name="s_mesh_peers">
+        <item quantity="one">%d device</item>
+        <item quantity="other">%d devices</item>
+    </plurals>
 </resources>

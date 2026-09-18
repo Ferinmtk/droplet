@@ -103,7 +103,19 @@ object Discovery {
     fun browse(context: Context, onChange: (List<Announced>) -> Unit, onError: (Int) -> Unit = {}): Handle {
         val nsd = context.applicationContext.getSystemService(NsdManager::class.java)
             ?: return Handle { }.also { onError(-1) }
-        return Browser(nsd, onChange, onError).also { it.start() }
+        return Browser(nsd, SERVICE_TYPE, { host, port, attrs -> parse(host, port, attrs) }, onChange, onError).also { it.start() }
+    }
+
+    /**
+     * Browses [type] until [Handle.stop], with [parse] turning each resolved
+     * service (its best address, port and TXT records) into a [T]. The mesh
+     * uses it for `_droplet-peer._tcp`.
+     */
+    fun <T> browseType(context: Context, type: String, parse: (String?, Int, Map<String, ByteArray?>) -> T?,
+                       onChange: (List<T>) -> Unit, onError: (Int) -> Unit = {}): Handle {
+        val nsd = context.applicationContext.getSystemService(NsdManager::class.java)
+            ?: return Handle { }.also { onError(-1) }
+        return Browser(nsd, type, parse, onChange, onError).also { it.start() }
     }
 
     /**
@@ -128,9 +140,11 @@ object Discovery {
         return latest
     }
 
-    private class Browser(
+    private class Browser<T>(
         private val nsd: NsdManager,
-        private val onChange: (List<Announced>) -> Unit,
+        private val type: String,
+        private val parser: (String?, Int, Map<String, ByteArray?>) -> T?,
+        private val onChange: (List<T>) -> Unit,
         private val onError: (Int) -> Unit,
     ) : NsdManager.DiscoveryListener, Handle {
         private val main = Handler(Looper.getMainLooper())
@@ -139,7 +153,7 @@ object Discovery {
         @Volatile private var stopped = false
         @Volatile private var started = false
         // keyed by service name, which is unique per hub and survives IP changes
-        private val found = LinkedHashMap<String, Announced>()
+        private val found = LinkedHashMap<String, T>()
         // before Android 14: one resolve at a time
         private val queue = ArrayDeque<NsdServiceInfo>()
         private var resolving = false
@@ -148,7 +162,7 @@ object Discovery {
 
         fun start() {
             try {
-                nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, this)
+                nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, this)
             } catch (e: Exception) {
                 // e.g. "listener already in use", or no NSD service on this build
                 main.post { onError(-1) }
@@ -209,7 +223,7 @@ object Discovery {
         }
 
         private fun record(info: NsdServiceInfo, host: String?) {
-            val hub = parse(host, info.port, info.attributes ?: emptyMap()) ?: return
+            val hub = parser(host, info.port, info.attributes ?: emptyMap()) ?: return
             synchronized(lock) {
                 if (stopped) return
                 found[info.serviceName] = hub

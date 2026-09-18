@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/bg"
+        app:navigationContentDescription="Back"
+        app:navigationIcon="@drawable/ic_back"
+        app:title="@string/mesh_title"
+        app:titleTextColor="@color/text" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="32dp">
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginHorizontal="16dp">
+
+                <TextView android:id="@+id/me_name" style="@style/Droplet.Title" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:textStyle="bold" />
+
+                <TextView android:id="@+id/me_state" style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textIsSelectable="true" />
+            </LinearLayout>
+
+            <TextView android:id="@+id/asking_title" style="@style/Droplet.Section" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:layout_marginHorizontal="16dp" android:text="@string/mesh_asking"
+                android:visibility="gone" />
+
+            <LinearLayout android:id="@+id/asking" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" />
+
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp" android:text="@string/mesh_trusted" />
+
+            <LinearLayout android:id="@+id/trusted" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" />
+
+            <TextView android:id="@+id/trusted_none" style="@style/Droplet.Body" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginHorizontal="24dp"
+                android:text="@string/mesh_trusted_none" />
+
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp" android:text="@string/mesh_nearby" />
+
+            <LinearLayout android:id="@+id/nearby" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" />
+
+            <TextView android:id="@+id/nearby_none" style="@style/Droplet.Body" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginHorizontal="24dp"
+                android:text="@string/mesh_nearby_none" />
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/pair_address"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp" android:layout_marginTop="16dp"
+                android:text="@string/mesh_pair_address" app:cornerRadius="10dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
