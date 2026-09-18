@@ -6,25 +6,24 @@
   const SHOWN = 6;   // notifications per phone before "Show all"
 
   document.head.append(el("style", { textContent: `
-    #phones { margin-top:1rem; }
-    .ph-head { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-    .ph-name { font-weight:600; flex:1; min-width:6rem; }
-    .ph-batt { font-size:.8rem; color:var(--dim); white-space:nowrap; }
-    .ph-batt.low { color:var(--danger); }
-    .ph-clear { font-size:.75rem; padding:.2rem .55rem; }
-    .ph-list { margin-top:.6rem; display:flex; flex-direction:column; gap:.4rem; }
-    .ph-n { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:.45rem .6rem; cursor:pointer; }
-    .ph-meta { display:flex; justify-content:space-between; gap:.5rem; font-size:.72rem; color:var(--dim); }
-    .ph-app { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ph-title { font-weight:600; margin-top:.1rem; word-break:break-word; }
-    .ph-text { color:var(--dim); margin-top:.1rem; white-space:pre-wrap; word-break:break-word;
-               display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-    .ph-n.open .ph-text { display:block; -webkit-line-clamp:unset; }
-    .ph-more { margin-top:.5rem; font-size:.8rem; }
-    .ph-empty { color:var(--dim); margin-top:.5rem; }
+    /* right after Now playing in the Hub tab (see the order rules in index.html) */
+    #phones { order:2; display:flex; flex-direction:column; gap:var(--s4, 16px); }
+    #phones .ph-batt.low { color:var(--coral, var(--danger)); font-weight:600; }
+    #phones .ph-list { display:flex; flex-direction:column; gap:8px; }
+    #phones .ph-n { background:var(--card-2, var(--bg)); border:1px solid var(--line); border-radius:var(--r-sm, 10px);
+                    padding:10px 12px; cursor:pointer; transition:border-color .15s; }
+    #phones .ph-n:hover { border-color:var(--line-2, var(--line)); }
+    #phones .ph-meta { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--dim); }
+    #phones .ph-app { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; color:var(--accent); }
+    #phones .ph-title { font-weight:600; margin-top:2px; word-break:break-word; }
+    #phones .ph-text { color:var(--dim); margin-top:2px; white-space:pre-wrap; word-break:break-word;
+                       display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    #phones .ph-n.open .ph-text { display:block; -webkit-line-clamp:unset; }
+    #phones .ph-more { align-self:flex-start; }
   ` }));
 
-  const box = el("div", { id: "phones" });
+  // hidden while no phone has reported, so the Hub tab's empty state can show
+  const box = el("div", { id: "phones", hidden: true });
   document.getElementById("features").append(box);
 
   const expanded = new Set();   // phone ids showing every notification
@@ -40,13 +39,9 @@
   }
 
   function battery(p) {
-    if (p.battery == null) return null;
+    if (p.battery == null) return "Mirrored notifications";
     const stale = Date.now() / 1000 - p.status_ts > 15 * 60;
-    return el("span", {
-      className: "ph-batt" + (p.battery <= 15 && !p.charging ? " low" : ""),
-      title: "reported " + since(p.status_ts),
-      textContent: `${p.charging ? "⚡" : "🔋"} ${p.battery}%${p.charging ? " charging" : ""}${stale ? " · " + since(p.status_ts) : ""}`,
-    });
+    return `Battery ${p.battery}%${p.charging ? ", charging" : ""}${stale ? " · " + since(p.status_ts) : ""}`;
   }
 
   function note(n) {
@@ -61,28 +56,31 @@
   }
 
   function phoneCard(p) {
-    const head = el("div", { className: "ph-head" }, el("span", { className: "ph-name", textContent: "📱 " + p.name }));
-    const batt = battery(p);
-    if (batt) head.append(batt);
-    const card = el("section", { className: "card" }, head);
+    const actions = [];
     if (p.notifications.length) {
-      const clear = el("button", { className: "ph-clear", textContent: "Clear", title: "Clear this list (the phone keeps its notifications)" });
+      const clear = el("button", { className: "ghost", textContent: "Clear", title: "Clear this list (the phone keeps its notifications)" });
       clear.onclick = async () => {
         await fetch(`/api/phone/${p.id}/clear`, { method: "POST" }).catch(() => null);
         last = "";
         poll();
       };
-      head.append(clear);
+      actions.push(clear);
+    }
+    const head = cardHead("phone", p.name, battery(p), ...actions);
+    const low = p.battery != null && p.battery <= 15 && !p.charging;
+    if (low) head.querySelector(".small")?.classList.add("ph-batt", "low");
+    const card = el("section", { className: "card" }, head);
+    if (p.notifications.length) {
       const all = expanded.has(p.id);
       const list = el("div", { className: "ph-list" }, ...(all ? p.notifications : p.notifications.slice(0, SHOWN)).map(note));
       card.append(list);
       if (p.notifications.length > SHOWN) {
-        const more = el("button", { className: "ph-more", textContent: all ? "Show fewer" : `Show all ${p.notifications.length}` });
+        const more = el("button", { className: "ph-more soft", textContent: all ? "Show fewer" : `Show all ${p.notifications.length}` });
         more.onclick = () => { all ? expanded.delete(p.id) : expanded.add(p.id); last = ""; render(shown); };
         card.append(more);
       }
     } else {
-      card.append(el("p", { className: "ph-empty", textContent: "No notifications from this phone yet." }));
+      card.append(el("p", { className: "dim small", textContent: "No notifications from this phone yet." }));
     }
     return card;
   }
@@ -94,6 +92,7 @@
     if (key === last) return;
     last = key;
     box.replaceChildren(...phones.map(phoneCard));
+    box.hidden = !phones.length;
   }
 
   let busy = false;

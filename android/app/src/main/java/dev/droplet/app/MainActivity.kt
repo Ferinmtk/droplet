@@ -454,17 +454,32 @@ class MainActivity : AppCompatActivity() {
                   if (a) { e.preventDefault(); save(a.href, a.download); }
                 }, true);
               }
+              // app settings button: at the right of the redesigned header's bar,
+              // or inside the <h1> on hubs running the older page
+              var bar = document.querySelector(".appbar-in");
               var h1 = document.querySelector("h1");
-              if (h1 && !document.getElementById("app-settings")) {
+              if ((bar || h1) && !document.getElementById("app-settings")) {
                 var btn = document.createElement("button");
                 btn.id = "app-settings";
                 btn.type = "button";
                 btn.title = "App settings";
                 btn.setAttribute("aria-label", "App settings");
-                btn.textContent = "⚙";
-                btn.style.cssText = "font-size:1.05rem;line-height:1;padding:.35rem .55rem;margin-left:auto";
                 btn.onclick = function () { DropletApp.openSettings(); };
-                h1.appendChild(btn);
+                if (bar) {
+                  btn.className = "icon-btn ghost";
+                  btn.style.marginLeft = "auto";
+                  if (document.getElementById("i-gear")) {
+                    btn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#i-gear"/></svg>';
+                  } else {
+                    btn.textContent = "⚙";
+                  }
+                  var install = document.getElementById("install");
+                  bar.insertBefore(btn, install ? install.nextSibling : null);
+                } else {
+                  btn.textContent = "⚙";
+                  btn.style.cssText = "font-size:1.05rem;line-height:1;padding:.35rem .55rem;margin-left:auto";
+                  h1.appendChild(btn);
+                }
               }
               return getComputedStyle(document.body).backgroundColor;
             })();
