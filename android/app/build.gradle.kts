@@ -58,6 +58,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        // Robolectric runs the app's own code on the JVM (see src/test)
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // the live-connection tests talk to a real hub when one is given
+            it.systemProperty("droplet.testHub", System.getenv("DROPLET_TEST_HUB") ?: "")
+            // screens rendered for review land here when set (see ScreensTest)
+            it.systemProperty("droplet.shots", System.getenv("DROPLET_SHOTS") ?: "")
+        }
+    }
+
     lint {
         // the targetSdk is a deliberate choice (see README), not an oversight
         disable += "OldTargetApi"
@@ -78,4 +89,8 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("androidx.test:core-ktx:1.6.1")
 }
