@@ -80,7 +80,57 @@ func (s *Server) routes() http.Handler {
 			"first_run":   !s.Agent.Store.Exists(),
 			"status":      s.Agent.Status().Tooltip(),
 			"default_hub": config.DefaultHub,
+			"remote":      s.Agent.CurrentRemote(),
+			"live":        liveText(s.Agent.Status()),
 		})
+	})
+	mux.HandleFunc("POST "+p+"/api/remote", func(w http.ResponseWriter, r *http.Request) {
+		var in agent.RemoteSettings
+		if !readJSON(w, r, &in) {
+			return
+		}
+		if err := s.Agent.SetRemote(in); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "remote": s.Agent.CurrentRemote()})
+	})
+	mux.HandleFunc("POST "+p+"/api/link", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			HubURL string `json:"hub_url"`
+			Code   string `json:"code"`
+			PIN    string `json:"pin"`
+		}
+		if !readJSON(w, r, &in) {
+			return
+		}
+		res, err := s.Agent.Link(r.Context(), in.HubURL, in.Code, in.PIN)
+		var fe *agent.FieldError
+		switch {
+		case errors.As(err, &fe):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fe.Msg, "field": fe.Field})
+			return
+		case err != nil:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if s.OnSaved != nil {
+			s.OnSaved()
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "link": res, "hub_url": s.Agent.Store.Get().HubURL})
+	})
+	mux.HandleFunc("POST "+p+"/api/remove-old", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			ID string `json:"id"`
+		}
+		if !readJSON(w, r, &in) {
+			return
+		}
+		if err := s.Agent.RemoveOld(r.Context(), in.ID); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("POST "+p+"/api/probe", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -113,11 +163,39 @@ func (s *Server) routes() http.Handler {
 		cfg := s.Agent.Store.Get()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": cfg.DeviceName, "hub_url": cfg.HubURL})
 	})
+	mux.HandleFunc("POST "+p+"/api/reload", func(w http.ResponseWriter, r *http.Request) {
+		// another droplet.exe (droplet link) changed config.json
+		if err := s.Agent.Store.Reload(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.Agent.Reset()
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
 	mux.HandleFunc("POST "+p+"/api/stop-ring", func(w http.ResponseWriter, r *http.Request) {
 		s.Agent.StopRing()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 	return guard(s.ln.Addr().String(), mux)
+}
+
+// liveText describes the live connection for the settings page.
+func liveText(st agent.Status) map[string]any {
+	r := st.Remote
+	text := "Off: nothing is switched on, or remote control is paused."
+	switch {
+	case !st.Configured:
+		text = "Not connected: set this PC up first."
+	case r.Live && r.Controller != "":
+		text = "Connected. Being controlled by " + r.Controller + "."
+	case r.Live:
+		text = "Connected. Other devices can use what's switched on below."
+	case len(r.Offered) > 0 && r.Problem != "":
+		text = "Not connected: " + r.Problem + ". Retrying…"
+	case len(r.Offered) > 0:
+		text = "Connecting…"
+	}
+	return map[string]any{"live": r.Live, "text": text}
 }
 
 // guard rejects requests whose Host isn't this loopback address (DNS
