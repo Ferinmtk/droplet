@@ -12,10 +12,64 @@ object Prefs {
         sp = context.getSharedPreferences("droplet", Context.MODE_PRIVATE)
     }
 
-    /** Base URL of the hub, without a trailing slash; null until setup is done. */
+    // --- the hub (docs/local-first.md) ------------------------------------------
+    // Versions before 1.2 knew the hub only by one URL, its tailnet address.
+    // That URL stays under the same key; the rest is what makes the LAN work.
+
+    /**
+     * The hub's address with ordinary, verified TLS: its tailnet URL (or,
+     * for testing, the emulator's http://10.0.2.2:port). No trailing slash.
+     */
     var hubUrl: String?
         get() = sp.getString("hub_url", null)
         set(v) = sp.edit { putString("hub_url", v) }
+
+    /** The hub's permanent id (16 hex characters), from /api/hub/info or mDNS. */
+    var hubId: String?
+        get() = sp.getString("hub_id", null)
+        set(v) = sp.edit { putString("hub_id", v) }
+
+    /** SHA-256 of the hub's LAN certificate (DER), lowercase hex: the pin. */
+    var hubFingerprint: String?
+        get() = sp.getString("hub_fp", null)
+        set(v) = sp.edit { putString("hub_fp", v) }
+
+    /** Where the pin came from: [PIN_TAILNET] (verified TLS) or [PIN_TOFU] (first use on the LAN). */
+    var pinSource: String?
+        get() = sp.getString("pin_source", null)
+        set(v) = sp.edit { putString("pin_source", v) }
+
+    /** The hub machine's name, e.g. "t15". */
+    var hubName: String?
+        get() = sp.getString("hub_name", null)
+        set(v) = sp.edit { putString("hub_name", v) }
+
+    /** LAN addresses ("192.168.100.20:8443") that worked, most recent first. Hints only: DHCP moves them. */
+    var lanAddresses: List<String>
+        get() = sp.getString("lan_addrs", null)?.split(',')?.filter { it.isNotBlank() } ?: emptyList()
+        set(v) = sp.edit { putString("lan_addrs", v.distinct().take(MAX_LAN_ADDRESSES).joinToString(",")) }
+
+    /**
+     * This device's token on the hub. The WebView keeps it as the
+     * `droplet_device` cookie per origin; this copy lets it follow the
+     * app from one origin (tailnet, LAN) to the other.
+     */
+    var deviceToken: String?
+        get() = sp.getString("device_token", null)
+        set(v) = sp.edit { putString("device_token", v) }
+
+    /** True once a hub is known in any way. */
+    val hasHub: Boolean get() = hubUrl != null || (hubId != null && hubFingerprint != null)
+
+    /** Forgets everything about the hub (Settings → Forget this hub). */
+    fun forgetHub() = sp.edit {
+        for (k in listOf("hub_url", "hub_id", "hub_fp", "pin_source", "hub_name", "lan_addrs", "device_token",
+            "seen_inbox", "seen_unread", "inbox_primed", "last_target", "remote_target", "silenced_ring")) remove(k)
+    }
+
+    const val PIN_TAILNET = "tailnet"
+    const val PIN_TOFU = "tofu"
+    private const val MAX_LAN_ADDRESSES = 4
 
     var stayConnected: Boolean
         get() = sp.getBoolean("stay_connected", false)

@@ -8,6 +8,7 @@ class DropletApp : Application() {
         super.onCreate()
         Prefs.init(this)
         Notifs.createChannels(this)
+        Router.init(this)
         Live.init(this)
         // Native code reads the WebView's cookies (the device token) to call the
         // hub. Loading the cookie store here, on the main thread, means the

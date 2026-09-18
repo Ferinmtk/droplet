@@ -57,6 +57,16 @@ class SettingsActivity : AppCompatActivity() {
         b.toolbar.setNavigationOnClickListener { finish() }
 
         b.changeHub.setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
+        b.findAgain.setOnClickListener { Router.refresh() }
+        b.repair.setOnClickListener {
+            startActivity(Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_REPAIR, true))
+        }
+        b.forget.setOnClickListener { askForget() }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                Router.state.collect { showRoute(it) }
+            }
+        }
         b.open.setOnClickListener {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
             finish()
@@ -205,14 +215,48 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // keeps the route line live while Settings is open
+        Router.hold(ROUTER_TAG)
         refresh()
         loadDevice()
         // back from a system permission screen: announce what changed
         Live.refresh()
     }
 
+    /** The hub card: how it's reached now, and who it is. */
+    private fun showRoute(s: Router.State) {
+        b.hubName.text = Router.hubLabel()
+        b.routeState.text = Router.describe(this, s)
+        b.routeDot.setBackgroundResource(if (s.route != null) R.drawable.dot_online else R.drawable.dot)
+        b.findAgain.isEnabled = !s.searching
+        b.identityRow.visibility = if (s.identityChanged != null) View.VISIBLE else View.GONE
+        val id = Prefs.hubId
+        val fp = Prefs.hubFingerprint
+        b.hubIdentity.text = if (id != null && fp != null) {
+            getString(R.string.s_hub_identity, SetupActivity.shortId(id), SetupActivity.shortId(fp)) +
+                if (Prefs.pinSource == Prefs.PIN_TOFU) "\n" + getString(R.string.s_pin_tofu) else ""
+        } else getString(R.string.s_hub_identity_none)
+        b.hubTailnet.text = Prefs.hubUrl?.let { getString(R.string.s_hub_tailnet, it.removePrefix("https://")) }
+            ?: getString(R.string.s_hub_tailnet_none)
+    }
+
+    /** Settings → Forget this hub. */
+    private fun askForget() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.s_forget_title, Router.hubLabel()))
+            .setMessage(R.string.s_forget_body)
+            .setPositiveButton(R.string.s_forget) { _, _ ->
+                SetupActivity.forget(this)
+                startActivity(Intent(this, SetupActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                finish()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun refresh() {
-        b.hubUrl.text = Prefs.hubUrl ?: "—"
+        showRoute(Router.state.value)
         b.stay.isChecked = Prefs.stayConnected
         b.inbox.isChecked = Prefs.notifyInbox
         b.inbox.isEnabled = Prefs.stayConnected
@@ -238,9 +282,17 @@ class SettingsActivity : AppCompatActivity() {
                     json.optJSONObject("device")?.optString("name")?.let { getString(R.string.s_named, it) }
                         ?: getString(R.string.s_unnamed)
                 },
-                onFailure = { getString(R.string.s_hub_unreachable) + (it.message?.let { m -> "\n$m" } ?: "") },
+                onFailure = {
+                    if (it is PairingRequired) getString(R.string.share_not_let_in, Router.hubLabel())
+                    else getString(R.string.s_hub_unreachable) + (it.message?.let { m -> "\n$m" } ?: "")
+                },
             )
         }
+    }
+
+    override fun onPause() {
+        Router.release(ROUTER_TAG)
+        super.onPause()
     }
 
     private fun askForNotifications(force: Boolean = false) {
@@ -282,5 +334,9 @@ class SettingsActivity : AppCompatActivity() {
         true
     } catch (e: Exception) {
         false
+    }
+
+    private companion object {
+        const val ROUTER_TAG = "settings"
     }
 }

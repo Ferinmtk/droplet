@@ -35,7 +35,7 @@ class ShareActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Prefs.hubUrl == null) {
+        if (!Prefs.hasHub) {
             Toast.makeText(this, R.string.share_no_hub, Toast.LENGTH_LONG).show()
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
@@ -80,8 +80,18 @@ class ShareActivity : AppCompatActivity() {
                 // text to a device is a chat message, and chat needs a named sender
                 if (!named && devices.isNotEmpty()) status(getString(R.string.share_unnamed))
             }.onFailure {
-                status(getString(R.string.share_unreachable) + "\n" + (it.message ?: ""))
-                b.retry.visibility = View.VISIBLE
+                when (it) {
+                    // a guest may still drop files on the hub itself
+                    is PairingRequired -> status(getString(R.string.share_not_let_in, Router.hubLabel()))
+                    is HubUnreachable -> {
+                        status(it.message.orEmpty())
+                        b.retry.visibility = View.VISIBLE
+                    }
+                    else -> {
+                        status(getString(R.string.share_unreachable) + "\n" + (it.message ?: ""))
+                        b.retry.visibility = View.VISIBLE
+                    }
+                }
             }
         }
     }

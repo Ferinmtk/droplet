@@ -43,9 +43,12 @@ import java.util.concurrent.TimeUnit
  * remote screen while it's open. It reconnects with backoff (1 s, 2, 4 … 30)
  * and straight away when the network comes back. Nothing polls: between
  * messages the only traffic is a WebSocket ping every 25 s.
+ *
+ * It goes wherever [Router] says: `wss://<LAN address>/ws` with the pinned
+ * certificate at home, the tailnet URL away, and it moves when the route does.
  */
 object Live {
-    enum class Status { OFF, NO_HUB, UNNAMED, NO_NETWORK, CONNECTING, CONNECTED, RETRYING }
+    enum class Status { OFF, NO_HUB, UNNAMED, NO_NETWORK, NO_ROUTE, CONNECTING, CONNECTED, RETRYING }
 
     data class Peer(val id: String, val caps: Set<String>)
 
@@ -63,6 +66,7 @@ object Live {
     }
 
     private const val PING_SECONDS = 25L
+    private const val ROUTER_TAG = "live"
     private const val MAX_BACKOFF_S = 30L
     private const val RPC_BUDGET_MS = 28_000L  // the hub gives up after 30 s
 
@@ -83,22 +87,47 @@ object Live {
     private var generation = 0
     private var attempt = 0
     private var retry: Job? = null
-    private var connectedTo: Pair<String, String>? = null  // hub, token of the open socket
+    private var connectedTo: Pair<String, String>? = null  // route base, token of the open socket
     private var rejected: String? = null  // a token the hub turned away (device removed)
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var network: Network? = null
     @Volatile private var networkUp = true
 
     // OkHttp sends no Origin header, which is what the hub wants from helpers
-    private val client: OkHttpClient by lazy {
-        Hub.client.newBuilder()
+    private val clients = HashMap<Router.Route, OkHttpClient>()
+
+    /** The pinned client on the LAN, the normal one on the tailnet; with pings. */
+    private fun clientFor(route: Router.Route): OkHttpClient = clients.getOrPut(route) {
+        Router.clientFor(route).newBuilder()
             .pingInterval(PING_SECONDS, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)  // the handshake; the socket itself has no read timeout
             .build()
     }
 
+    /** Tests: the route base of the open (or opening) socket. */
+    @androidx.annotation.VisibleForTesting
+    @Synchronized
+    fun connectedBase(): String? = connectedTo?.first
+
     fun init(context: Context) {
         app = context.applicationContext
+        // follow the route: home Wi-Fi <-> Tailscale
+        scope.launch {
+            Router.state.collect { s -> routeChanged(s.route) }
+        }
+    }
+
+    @Synchronized
+    private fun routeChanged(route: Router.Route?) {
+        if (holders.isEmpty()) return
+        val st = _state.value.status
+        when {
+            route == null -> if (st == Status.NO_ROUTE || st == Status.RETRYING) publish(Snapshot(Status.NO_ROUTE))
+            route.base != connectedTo?.first || st == Status.NO_ROUTE -> {
+                attempt = 0
+                connect()
+            }
+        }
     }
 
     // --- who wants it up ------------------------------------------------------
@@ -109,6 +138,7 @@ object Live {
         val first = holders.isEmpty()
         if (!holders.add(tag)) return
         if (first) {
+            Router.hold(ROUTER_TAG)
             watchNetwork(true)
             connect()
         }
@@ -118,6 +148,7 @@ object Live {
     fun release(tag: String) {
         if (!holders.remove(tag) || holders.isNotEmpty()) return
         watchNetwork(false)
+        Router.release(ROUTER_TAG)
         disconnect(Status.OFF)
     }
 
@@ -140,7 +171,7 @@ object Live {
     fun refresh() {
         if (holders.isEmpty()) return
         val s = _state.value
-        val target = Prefs.hubUrl?.let { h -> Hub.deviceToken(h)?.let { h to it } }
+        val target = Router.current()?.base?.let { b -> Hub.deviceToken()?.let { b to it } }
         val stale = s.status == Status.CONNECTED && (Caps.current(app) != s.caps || target != connectedTo)
         if (stale || s.status !in setOf(Status.CONNECTED, Status.CONNECTING)) {
             attempt = 0
@@ -166,23 +197,28 @@ object Live {
         retry?.cancel()
         retry = null
         closeSocket()
-        val hub = Prefs.hubUrl
-        val token = hub?.let { Hub.deviceToken(it) }
+        val token = Hub.deviceToken()
+        val route = Router.current()
         when {
             holders.isEmpty() -> return publish(Snapshot(Status.OFF))
-            hub == null -> return publish(Snapshot(Status.NO_HUB))
+            !Prefs.hasHub -> return publish(Snapshot(Status.NO_HUB))
             !networkUp -> return publish(Snapshot(Status.NO_NETWORK))
             token == null || token == rejected -> return publish(Snapshot(Status.UNNAMED))
+            route == null -> {
+                // the router is looking (or found nothing); its next answer brings us back here
+                Router.refresh()
+                return publish(Snapshot(Status.NO_ROUTE))
+            }
         }
         val caps = Caps.current(app)
-        val url = Hub.socketUrl(hub)!!
-        val req = Request.Builder().url(url).header("User-Agent", Hub.userAgent).apply {
-            Hub.authHeaders(hub!!, hub).forEach { (k, v) -> header(k, v) }
+        val base = route!!.base
+        val req = Request.Builder().url(Hub.socketUrl(base)).header("User-Agent", Hub.userAgent).apply {
+            Hub.authHeaders(base).forEach { (k, v) -> header(k, v) }
         }.build()
         val gen = ++generation
-        connectedTo = hub!! to token!!
+        connectedTo = base to token!!
         publish(_state.value.copy(status = Status.CONNECTING, caps = caps, error = null))
-        socket = client.newWebSocket(req, Listener(gen, caps))
+        socket = clientFor(route).newWebSocket(req, Listener(gen, caps))
     }
 
     @Synchronized
@@ -255,12 +291,17 @@ object Live {
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             val why = when {
-                // the PIN gate redirects to /login (OkHttp may have followed it)
+                // the PIN gate of hubs from before local-first redirects to /login (OkHttp may have followed it)
                 response != null && (response.request.url.encodedPath == "/login" ||
                     response.header("Location")?.contains("/login") == true) -> app.getString(R.string.live_err_pin)
+                // 403 {"pair": true}: not let in (any more)
+                response?.code == 403 -> app.getString(R.string.live_err_pair).also { Router.pairingNeeded(true) }
                 response != null -> app.getString(R.string.live_err_http, response.code)
+                Pinning.mismatch(t) != null -> app.getString(R.string.live_err_identity)
                 else -> t.message ?: t.javaClass.simpleName
             }
+            // the hub didn't answer at all: the route may have gone (left the Wi-Fi)
+            if (response == null && gen == generation) Router.refresh()
             dropped(gen, why)
         }
     }
@@ -417,6 +458,7 @@ fun Live.Snapshot.describe(context: Context): String = when (status) {
     Live.Status.NO_HUB -> context.getString(R.string.live_no_hub)
     Live.Status.UNNAMED -> context.getString(R.string.live_unnamed)
     Live.Status.NO_NETWORK -> context.getString(R.string.conn_no_network)
+    Live.Status.NO_ROUTE -> Router.describe(context)
     Live.Status.CONNECTING -> context.getString(R.string.conn_connecting)
     Live.Status.CONNECTED -> if (othersOnline == 0) context.getString(R.string.live_alone)
         else context.resources.getQuantityString(R.plurals.live_online, othersOnline, othersOnline)

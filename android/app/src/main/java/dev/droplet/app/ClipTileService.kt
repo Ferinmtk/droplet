@@ -12,7 +12,7 @@ class ClipTileService : TileService() {
     override fun onStartListening() {
         qsTile?.apply {
             // an action, not a toggle
-            state = if (Prefs.capClipboard && Prefs.hubUrl != null) Tile.STATE_INACTIVE else Tile.STATE_UNAVAILABLE
+            state = if (Prefs.capClipboard && Prefs.hasHub) Tile.STATE_INACTIVE else Tile.STATE_UNAVAILABLE
             updateTile()
         }
     }
