@@ -101,11 +101,11 @@ def write_clipboard(data: bytes) -> str | None:
 
 
 def register(ctx):
+    if not ENABLED:
+        return  # no routes: the page sees a 404 and leaves the card out
     app = ctx.app
 
     def refused() -> str | None:
-        if not ENABLED:
-            return "The shared clipboard is turned off on the hub (DROPLET_CLIPBOARD=0)."
         # clipboards hold passwords, so unlike files this isn't open to anyone
         # who can reach the LAN URL: it takes the tailnet (tailscale serve
         # connects from loopback) or a PIN login
