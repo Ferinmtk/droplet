@@ -219,9 +219,18 @@ def register(ctx):
             return
         conn = Conn(ws, device, hello.get("caps") or [], str(hello.get("platform") or "web"),
                     str(hello.get("app") or "browser"))
-        hub.add(conn)
+        # welcome first, so the client's first frame is always the welcome;
+        # the presence broadcast from add() follows it
+        summary = hub.summary()
+        if conn.caps:
+            summary.setdefault(device["id"], {"caps": [], "apps": []})
+            summary[device["id"]] = {
+                "caps": sorted(set(summary[device["id"]]["caps"]) | conn.caps),
+                "apps": summary[device["id"]]["apps"] + [{"platform": conn.platform, "app": conn.app}],
+            }
         conn.send({"t": "welcome", "conn": conn.id, "device": {"id": device["id"], "name": device["name"]},
-                   "devices": hub.summary(), "state": hub.state})
+                   "devices": summary, "state": hub.state})
+        hub.add(conn)
         try:
             while True:
                 raw = ws.receive()
