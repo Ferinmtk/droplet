@@ -118,6 +118,46 @@ and start at boot:
 sudo loginctl enable-linger "$USER"
 ```
 
+## Local-first: home Wi-Fi first, Tailscale when away
+
+droplet works like KDE Connect: on the home network, devices talk to the hub
+directly. [Tailscale](#tailnet-real-https-from-anywhere) is the extra that
+makes it work from anywhere.
+
+**Who gets in.** Being on the Wi-Fi alone isn't enough, since anyone on it
+could otherwise use remote control, hub commands or SMS. A request is trusted
+when it comes:
+- from the hub machine itself,
+- over your tailnet,
+- with the hub's PIN, or
+- from a device you've already let in.
+
+A **new device on the Wi-Fi** names itself and waits. Your devices show
+"*X wants to join*" with a four-digit code, plus **Allow** / **Deny** (and a
+push notification). Check the code matches the one on the new device. The
+PIN, or a link code from a device you already use, also gets it in. Until
+then it can only drop files on the hub (`DROPLET_LAN_GUESTS=none` blocks that
+too). At most five join requests wait at once, and they expire after a day.
+
+**How the apps find the hub.** The hub announces itself on the LAN as
+`_droplet._tcp` (mDNS) with its permanent id and certificate fingerprint. It
+also serves HTTPS on port 8443 with its own long-lived certificate. The
+Android, Windows and Linux apps:
+- **find the hub by itself,** even when DHCP moves it to a new address;
+- **trust only that certificate,** pinned by fingerprint, so an impostor on
+  the Wi-Fi never gets a request or a login token;
+- **switch between Wi-Fi and Tailscale** as you come and go (the app shows
+  which: "On Wi-Fi" / "Via Tailscale");
+- **can join without Tailscale at all,** through the approval above.
+
+The full contract is in [docs/local-first.md](docs/local-first.md).
+
+**Browsers are the exception.** A browser only allows notifications,
+installing and the clipboard on a certificate it already trusts, and the only
+trusted one is Tailscale's. So the web app is Tailscale-first. On the plain
+LAN address it still works for the basics, as its own device, once let in.
+The native apps are local-first.
+
 ## Tailnet: real HTTPS from anywhere
 
 If the hub is on [Tailscale](https://tailscale.com), droplet can put itself
@@ -518,11 +558,19 @@ ability off.
 
 ### Linux computers (droplet agent)
 
-On the computer, run the command **Set up remote control** shows:
+On the computer, run the command **Set up remote control** shows. At home,
+use the hub's LAN address; no Tailscale needed:
 
 ```sh
-curl -fsSL https://<hub>/agent/install.sh | sh -s -- --code 123456
+curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 123456
 ```
+
+(or `https://<hub's tailnet name>/agent/install.sh` from anywhere on your
+tailnet). Without a link code, leave `--code` out: over the LAN it shows a
+four-digit code and waits for you to allow it (or give the PIN with `--pin`).
+`droplet-agent setup` on its own finds hubs on the network. Like the other
+apps, the agent is local-first. On the hub machine itself it uses loopback,
+and `droplet-agent status` shows the route.
 
 No sudo: it installs into `~/.local/share/droplet-agent` and runs as a
 `systemd --user` service with your desktop. The hub serves both the script
@@ -622,6 +670,8 @@ Redmi's SMS and file access under MIUI; the real TV.
 | `DROPLET_MAX_MB` | `1024` | max upload size |
 | `DROPLET_TAILSCALE` | *(off)* | `1` = also serve at `https://<machine>.<tailnet>.ts.net` with a real certificate, via `tailscale serve` (see [Tailnet](#tailnet-real-https-from-anywhere)) |
 | `DROPLET_TAILNET_TRUST` | `1` | with `DROPLET_PIN` set, tailnet devices skip the PIN. `0` = they enter it like everyone else |
+| `DROPLET_LAN_GUESTS` | `drop` | what a device on the LAN can do before it's let in: `drop` = send files to the hub, `none` = nothing (see [Local-first](#local-first-home-wi-fi-first-tailscale-when-away)) |
+| `DROPLET_LAN_TLS_PORT` | `8443` | LAN HTTPS port for the native apps, with a pinned self-signed certificate. `0` = off |
 | `DROPLET_PUSH` | `1` | `0` = no push notifications (nothing goes through Google/Mozilla); devices see new items while droplet is open. See [Devices](#devices-send-to-one-chat-get-notified) |
 | `DROPLET_COMMANDS` | `~/.config/droplet/commands.json` | preset commands for the Hub tab (see [Hub commands](#hub-commands)) |
 | `DROPLET_CLIPBOARD` | `1` | `0` = no shared hub clipboard (see [Shared clipboard](#shared-clipboard)) |

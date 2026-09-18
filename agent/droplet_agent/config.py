@@ -14,10 +14,26 @@ CAPS = ("input", "media", "lock", "screenshot", "clipboard")
 INPUT_BACKENDS = ("auto", "portal", "uinput", "x11", "log")
 UINPUT_TEXT_MODES = ("auto", "wtype", "ascii")
 
+# who the hub is, so the agent can find it on any network and know it's the
+# same one (docs/local-first.md). Written by setup, or read from the hub the
+# first time a newer agent runs with an older config.
+IDENTITY_DEFAULTS: dict = {
+    "id": "",            # the hub's permanent id
+    "name": "",          # the hub machine's name
+    "fingerprint": "",   # SHA-256 of its LAN certificate: the pin
+    "lan": [],           # LAN addresses that worked last, newest first: hints, never trusted alone
+    "https_port": None,  # its LAN HTTPS port
+    "http_port": None,   # its plain-HTTP port (loopback, on the hub machine)
+    "tailnet": "",       # its tailnet URL, if it has one
+}
+
 DEFAULTS: dict = {
     "hub": "",
     "token": "",
     "device": {"id": "", "name": ""},
+    "hub_identity": IDENTITY_DEFAULTS,
+    # true while a new device waits for one of yours to let it in
+    "pending": False,
     # each capability can be switched off here; the agent then neither
     # advertises it nor acts on it
     "caps": {c: True for c in CAPS},
@@ -88,7 +104,18 @@ def save(cfg: dict, path: Path | None = None) -> Path:
 
 
 def is_set_up(cfg: dict) -> bool:
-    return bool(cfg.get("hub") and cfg.get("token"))
+    return bool(cfg.get("hub") and cfg.get("token")) and not cfg.get("pending")
+
+
+def save_identity(identity: dict, path: Path | None = None) -> Path:
+    """Store what the agent learnt about the hub, and nothing else.
+
+    Read fresh and written back at once, so settings changed by hand while
+    the agent runs survive.
+    """
+    cfg = load(path)
+    cfg["hub_identity"] = identity
+    return save(cfg, path)
 
 
 def enabled(cfg: dict, cap: str) -> bool:

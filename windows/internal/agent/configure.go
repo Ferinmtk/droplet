@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"github.com/Ferinmtk/droplet/windows/internal/config"
 	"github.com/Ferinmtk/droplet/windows/internal/hub"
 	"github.com/Ferinmtk/droplet/windows/internal/platform"
+	"github.com/Ferinmtk/droplet/windows/internal/route"
 )
 
 // Probe is what the settings page learns about a hub before saving.
@@ -32,13 +34,18 @@ func (a *Agent) ProbeHub(ctx context.Context, hubURL, pin string) Probe {
 	if err != nil {
 		return Probe{Error: err.Error()}
 	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	token, session := "", ""
 	if sameHub(u.String(), cfg.HubURL) {
 		token, session = cfg.DeviceToken, cfg.Session
+	} else if cfg.Hub != nil && cfg.DeviceToken != "" {
+		// the paired hub's tailnet URL, typed in after pairing on the LAN?
+		if id := a.identityFromURL(ctx, u.String()); id != nil && id.ID == cfg.Hub.ID {
+			token = cfg.DeviceToken
+		}
 	}
 	c, _ := hub.New(u.String(), token, session)
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
 	if pin != "" {
 		if err := c.Login(ctx, pin); err != nil {
 			return Probe{PINRequired: true, Error: friendly(err, c)}
@@ -150,19 +157,27 @@ func expandPath(p string) string {
 
 // Configure validates and saves settings: it signs in with the PIN if one
 // is given, registers or renames this PC on the hub, and applies autostart.
+//
+// A hub URL that's new (or a PC not set up yet) is used directly, as typed:
+// that's how a PC joins over the tailnet. Otherwise the hub is reached along
+// the current route, the LAN or the tailnet, whichever works; a PC paired on
+// the LAN may have no URL at all.
 func (a *Agent) Configure(ctx context.Context, s Settings) error {
 	cfg := a.Store.Get()
-	u, err := hub.ParseHubURL(s.HubURL)
+	hubURL := ""
+	if strings.TrimSpace(s.HubURL) != "" {
+		u, err := hub.ParseHubURL(s.HubURL)
+		if err != nil {
+			return &FieldError{"hub_url", err.Error()}
+		}
+		hubURL = u.String()
+	}
+	if hubURL == "" && cfg.DeviceToken == "" {
+		return &FieldError{"hub_url", "Choose your hub under \"Hubs on this network\", or enter its Tailscale address."}
+	}
+	name, err := cleanDeviceName(s.Name)
 	if err != nil {
-		return &FieldError{"hub_url", err.Error()}
-	}
-	hubURL := u.String()
-	name := strings.Join(strings.Fields(s.Name), " ")
-	if name == "" {
-		return &FieldError{"name", "Give this PC a name, like \"maryanne\"."}
-	}
-	if len([]rune(name)) > 40 {
-		return &FieldError{"name", "Keep the name under 40 characters."}
+		return err
 	}
 	dir := expandPath(s.DownloadDir)
 	if s.DownloadDir == "" {
@@ -175,15 +190,32 @@ func (a *Agent) Configure(ctx context.Context, s Settings) error {
 		return &FieldError{"download_dir", "Can't use that folder: " + err.Error()}
 	}
 
-	// a device cookie belongs to one hub; a new hub means a new registration
-	token, session := cfg.DeviceToken, cfg.Session
-	moved := !sameHub(hubURL, cfg.HubURL)
-	if moved {
-		token, session = "", ""
-	}
-	c, _ := hub.New(hubURL, token, session)
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	// a device cookie belongs to one hub; a new hub means a new registration
+	moved := hubURL != "" && !sameHub(hubURL, cfg.HubURL)
+	var ident *config.Hub
+	if moved && cfg.Hub != nil && cfg.DeviceToken != "" {
+		// maybe it's the paired hub's own tailnet URL, added now
+		if id := a.identityFromURL(ctx, hubURL); id != nil && id.ID == cfg.Hub.ID {
+			moved = false
+			ident = mergeURLIdentity(*cfg.Hub, *id, hubURL)
+		}
+	}
+	viaURL := hubURL != "" && (moved || cfg.DeviceToken == "")
+	var c *hub.Client
+	if viaURL {
+		token, session := cfg.DeviceToken, cfg.Session
+		if moved {
+			token, session = "", ""
+		}
+		c, _ = hub.New(hubURL, token, session)
+	} else {
+		c, _, err = a.clientFor(ctx)
+		if err != nil {
+			return &FieldError{"hub_url", "Can't reach " + HubName(cfg) + " right now: " + describe(err, HubName(cfg)) + "."}
+		}
+	}
 	if s.PIN != "" {
 		if err := c.Login(ctx, s.PIN); err != nil {
 			return &FieldError{"pin", friendly(err, c)}
@@ -213,6 +245,14 @@ func (a *Agent) Configure(ctx context.Context, s Settings) error {
 	} else {
 		dev = me.Device
 	}
+	// a rename answers without the pending flag; /api/me had it
+	pending, code := dev.Pending, dev.Code
+	if me.Device != nil && me.Device.Pending && c.Token != "" {
+		pending, code = true, me.Device.Code
+	}
+	if viaURL {
+		ident = a.identityFromURL(ctx, hubURL)
+	}
 
 	if err := platform.SetAutostart(a.Exe, s.Autostart); err != nil {
 		return &FieldError{"autostart", "Couldn't change start-with-Windows: " + err.Error()}
@@ -221,9 +261,15 @@ func (a *Agent) Configure(ctx context.Context, s Settings) error {
 		if moved {
 			n.InboxSeen, n.ChatSeen = nil, map[string]float64{}
 		}
-		n.HubURL = hubURL
+		if hubURL != "" && (viaURL || ident != nil) {
+			n.HubURL = hubURL
+		}
+		if ident != nil || moved {
+			n.Hub = ident // nil: a hub that can't say who it is; the URL is used as it is
+		}
 		n.DeviceToken, n.Session = c.Token, c.Session
 		n.DeviceID, n.DeviceName = dev.ID, dev.Name
+		n.PairPending, n.PairCode = pending, code
 		n.DownloadDir = dir
 		n.AutoDownload, n.NotifyFiles, n.NotifyMessages = s.AutoDownload, s.NotifyFiles, s.NotifyMessages
 		n.RingSound, n.Autostart = s.RingSound, s.Autostart
@@ -236,4 +282,41 @@ func (a *Agent) Configure(ctx context.Context, s Settings) error {
 	a.mu.Unlock()
 	a.Reset()
 	return nil
+}
+
+// mergeURLIdentity adds what a paired hub says over its (verified) URL to
+// its stored identity. The pin stays: a different fingerprint is an
+// identity change, which only Re-pair accepts.
+func mergeURLIdentity(stored, fromURL config.Hub, hubURL string) *config.Hub {
+	h := stored
+	h.LAN = append([]string(nil), stored.LAN...)
+	h.Tailnet = hubURL
+	if fromURL.Name != "" {
+		h.Name = fromURL.Name
+	}
+	switch {
+	case h.Fingerprint == "":
+		h.Fingerprint, h.PinSource = fromURL.Fingerprint, fromURL.PinSource
+	case h.Fingerprint == fromURL.Fingerprint:
+		h.PinSource = config.PinFromTailnet // now vouched for by verified TLS too
+	}
+	return &h
+}
+
+// identityFromURL asks a hub URL who the hub is. Only an https answer is
+// trusted with the certificate fingerprint; anything else returns nil and
+// the URL is used as it is (the identity may be found later, see migrate).
+func (a *Agent) identityFromURL(ctx context.Context, hubURL string) *config.Hub {
+	if !route.IsHTTPS(hubURL) {
+		return nil
+	}
+	info, err := a.Routes.Deps.Info(ctx, hubURL, nil)
+	if err != nil {
+		if !errors.Is(err, hub.ErrNotFound) {
+			log.Printf("hub identity from %s: %v", hubURL, err)
+		}
+		return nil
+	}
+	h := route.FromInfo(info, config.PinFromTailnet, hubURL)
+	return &h
 }

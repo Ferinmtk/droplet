@@ -1,121 +1,458 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- First run, "Change" and pairing again: find the hub on the Wi-Fi (or by
+     address), then get this phone let in. Always droplet's dark teal. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
+    android:background="@color/r_bg"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingHorizontal="20dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="24dp">
 
-        <ImageView
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_drop_color" />
-
-        <TextView
+        <!-- header -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/app_name"
-            android:textColor="@color/text"
-            android:textSize="28sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="@string/setup_title"
-            android:textColor="@color/text"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
-        <TextView
-            style="@style/Droplet.Body"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="@string/setup_body" />
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/url_layout"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:hint="@string/setup_hint"
-            app:boxStrokeColor="@color/accent"
-            app:hintTextColor="@color/accent">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/url"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:imeOptions="actionGo"
-                android:importantForAutofill="no"
-                android:inputType="textUri"
-                android:singleLine="true"
-                android:textColor="@color/text" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <LinearLayout
-            style="@style/Droplet.Card"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_drop_color" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="12dp"
-                android:text="🔒"
-                android:textSize="18sp"
-                tools:ignore="HardcodedText"
-                xmlns:tools="http://schemas.android.com/tools" />
-
-            <TextView
-                style="@style/Droplet.Body"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/setup_tailscale" />
+                android:layout_marginStart="10dp"
+                android:text="@string/app_name"
+                android:textColor="@color/r_text"
+                android:textSize="26sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/error"
+        <!-- ============ find the hub ============ -->
+        <LinearLayout
+            android:id="@+id/panel_find"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:textColor="@color/danger"
-            android:textSize="14sp"
-            android:visibility="gone" />
+            android:layout_marginTop="28dp"
+            android:orientation="vertical">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/connect"
+            <TextView
+                android:id="@+id/identity_banner"
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                android:background="@drawable/r_banner"
+                android:padding="14dp"
+                android:text="@string/setup_identity"
+                android:textColor="@color/r_text"
+                android:visibility="gone" />
+
+            <TextView
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_on_wifi" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/find_spinner"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="12dp"
+                    android:indeterminate="true"
+                    app:indicatorColor="@color/r_accent"
+                    app:indicatorSize="20dp"
+                    app:trackThickness="2.5dp" />
+
+                <TextView
+                    android:id="@+id/find_status"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/setup_looking"
+                    android:textColor="@color/r_text"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- discovered hubs (item_hub rows) -->
+            <LinearLayout
+                android:id="@+id/hubs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/find_hint"
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/setup_nothing_yet"
+                android:visibility="gone" />
+
+            <TextView
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/setup_or" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/r_card"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setup_address_title"
+                    android:textColor="@color/r_text"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/setup_address_body" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/url_layout"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="@string/setup_hint"
+                    app:boxCornerRadiusBottomEnd="14dp"
+                    app:boxCornerRadiusBottomStart="14dp"
+                    app:boxCornerRadiusTopEnd="14dp"
+                    app:boxCornerRadiusTopStart="14dp"
+                    app:boxStrokeColor="@color/r_accent"
+                    app:hintTextColor="@color/r_accent">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/url"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:imeOptions="actionGo"
+                        android:importantForAutofill="no"
+                        android:inputType="textUri"
+                        android:singleLine="true"
+                        android:textColor="@color/r_text" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/connect"
+                    style="@style/Droplet.Teal.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/setup_connect" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tailscale"
+                    style="@style/Droplet.Teal.Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginStart="-12dp"
+                    android:textSize="14sp"
+                    tools:text="Use Tailscale · t15.tail7375fe.ts.net" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/find_error"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:textColor="@color/r_coral"
+                android:textSize="14sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- ============ name this phone ============ -->
+        <LinearLayout
+            android:id="@+id/panel_name"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="20dp"
-            android:text="@string/setup_connect"
-            android:textSize="16sp"
-            app:cornerRadius="12dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/anyway"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/setup_anyway"
-            android:visibility="gone" />
+            android:layout_marginTop="28dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/name_hub"
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                tools:text="t15 · on Wi-Fi" />
+
+            <TextView
+                style="@style/Droplet.Teal.Title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/setup_name_title" />
+
+            <TextView
+                android:id="@+id/name_body"
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:hint="@string/setup_name_hint"
+                app:boxCornerRadiusBottomEnd="14dp"
+                app:boxCornerRadiusBottomStart="14dp"
+                app:boxCornerRadiusTopEnd="14dp"
+                app:boxCornerRadiusTopStart="14dp"
+                app:boxStrokeColor="@color/r_accent"
+                app:hintTextColor="@color/r_accent">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:imeOptions="actionGo"
+                    android:importantForAutofill="no"
+                    android:inputType="textCapWords"
+                    android:maxLength="40"
+                    android:singleLine="true"
+                    android:textColor="@color/r_text" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:id="@+id/name_error"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textColor="@color/r_coral"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/join"
+                style="@style/Droplet.Teal.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/setup_join" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/name_back"
+                    style="@style/Droplet.Teal.Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="-12dp"
+                    android:text="@string/setup_back"
+                    android:textColor="@color/r_dim" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/name_link"
+                    style="@style/Droplet.Teal.Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="-12dp"
+                    android:text="@string/setup_link" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ============ waiting to be let in ============ -->
+        <LinearLayout
+            android:id="@+id/panel_code"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_waiting" />
+
+            <TextView
+                android:id="@+id/code"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/r_code"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.35"
+                android:paddingVertical="24dp"
+                android:textColor="@color/r_accent"
+                android:textSize="52sp"
+                android:textStyle="bold"
+                tools:text="7156" />
+
+            <TextView
+                android:id="@+id/code_help"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:gravity="center"
+                android:textColor="@color/r_text"
+                android:textSize="17sp"
+                tools:text="On one of your devices, allow Redmi Note 11E Pro, and check the code matches." />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="10dp"
+                    android:indeterminate="true"
+                    app:indicatorColor="@color/r_accent"
+                    app:indicatorSize="16dp"
+                    app:trackThickness="2dp" />
+
+                <TextView
+                    android:id="@+id/code_status"
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setup_code_status" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/code_error"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:textColor="@color/r_coral"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/pin"
+                style="@style/Droplet.Teal.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/setup_pin"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/code_cancel"
+                    style="@style/Droplet.Teal.Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="-12dp"
+                    android:text="@string/setup_cancel"
+                    android:textColor="@color/r_dim" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/code_link"
+                    style="@style/Droplet.Teal.Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="-12dp"
+                    android:text="@string/setup_link" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ============ not let in ============ -->
+        <LinearLayout
+            android:id="@+id/panel_declined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/Droplet.Teal.Title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_declined_title"
+                android:textColor="@color/r_coral" />
+
+            <TextView
+                android:id="@+id/declined_body"
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ask_again"
+                style="@style/Droplet.Teal.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/setup_ask_again" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/declined_back"
+                style="@style/Droplet.Teal.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="-12dp"
+                android:layout_marginTop="6dp"
+                android:text="@string/setup_back"
+                android:textColor="@color/r_dim" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

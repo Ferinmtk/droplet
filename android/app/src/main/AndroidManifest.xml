@@ -33,8 +33,10 @@
     <!-- SMS is optional: tablets without a SIM still install it -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
-    <!-- the "apps not to mirror" list shows installed apps with a launcher icon -->
+    <!-- the "apps not to mirror" list shows installed apps with a launcher icon;
+         "Open Tailscale" on the offline screen needs to see the Tailscale app -->
     <queries>
+        <package android:name="com.tailscale.ipn" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -70,6 +72,7 @@
         <activity
             android:name=".SetupActivity"
             android:exported="false"
+            android:theme="@style/Theme.Droplet.Teal"
             android:windowSoftInputMode="adjustResize" />
 
         <activity

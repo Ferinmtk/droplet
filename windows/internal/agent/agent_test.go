@@ -7,9 +7,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Ferinmtk/droplet/windows/internal/config"
 	"github.com/Ferinmtk/droplet/windows/internal/hubtest"
+	"github.com/Ferinmtk/droplet/windows/internal/lan"
 	"github.com/Ferinmtk/droplet/windows/internal/platform"
 )
 
@@ -26,6 +28,14 @@ func (c *captured) take() []platform.Notification {
 	return out
 }
 
+// newAgent is an agent whose LAN discovery finds nothing, so tests never
+// touch the real network.
+func newAgent(store *config.Store) *Agent {
+	a := New(store, "droplet.exe")
+	a.Routes.Deps.Browse = func(context.Context, time.Duration, func(lan.Hub) bool) ([]lan.Hub, error) { return nil, nil }
+	return a
+}
+
 func setup(t *testing.T) (*Agent, *hubtest.Hub, *captured, string) {
 	t.Helper()
 	h := hubtest.New()
@@ -34,7 +44,7 @@ func setup(t *testing.T) (*Agent, *hubtest.Hub, *captured, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := New(store, "droplet.exe")
+	a := newAgent(store)
 	cap := &captured{}
 	notify = func(n platform.Notification) { cap.mu.Lock(); cap.n = append(cap.n, n); cap.mu.Unlock() }
 	t.Cleanup(func() { notify = platform.Notify })
@@ -54,7 +64,7 @@ func TestConfigureNameClash(t *testing.T) {
 	defer h.Server.Close()
 	h.AddDevice("maryanne")
 	store, _ := config.OpenPath(filepath.Join(t.TempDir(), "config.json"))
-	a := New(store, "droplet.exe")
+	a := newAgent(store)
 	err := a.Configure(context.Background(), Settings{HubURL: h.Server.URL, Name: "Maryanne", DownloadDir: t.TempDir()})
 	fe, ok := err.(*FieldError)
 	if !ok || fe.Field != "name" || !strings.Contains(fe.Msg, "already a device") {
@@ -74,7 +84,7 @@ func TestConfigurePIN(t *testing.T) {
 	defer h.Server.Close()
 	h.PIN = "1234"
 	store, _ := config.OpenPath(filepath.Join(t.TempDir(), "config.json"))
-	a := New(store, "droplet.exe")
+	a := newAgent(store)
 	s := Settings{HubURL: h.Server.URL, Name: "maryanne", DownloadDir: t.TempDir()}
 	if fe, ok := a.Configure(context.Background(), s).(*FieldError); !ok || fe.Field != "pin" {
 		t.Fatal("expected a PIN field error")
@@ -132,7 +142,7 @@ func TestTickDownloadsAndAnnouncesOnce(t *testing.T) {
 	if ns := cap.take(); len(ns) != 0 {
 		t.Fatalf("no repeats: %+v", ns)
 	}
-	a2 := New(a.Store, "droplet.exe")
+	a2 := newAgent(a.Store)
 	h.Mu.Lock()
 	delete(h.Read, me.ID) // e.g. the hub lost its read markers
 	h.Mu.Unlock()

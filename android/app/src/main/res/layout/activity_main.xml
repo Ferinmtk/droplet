@@ -23,67 +23,86 @@
         app:trackColor="@android:color/transparent"
         app:trackThickness="3dp" />
 
-    <LinearLayout
+    <!-- no way to the hub: droplet's dark teal, like setup -->
+    <ScrollView
         android:id="@+id/offline"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/bg"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="32dp"
+        android:background="@color/r_bg"
+        android:fillViewport="true"
         android:visibility="gone">
 
-        <ImageView
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:alpha="0.9"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_drop_color" />
-
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:gravity="center"
-            android:text="@string/offline_title"
-            android:textColor="@color/text"
-            android:textSize="22sp"
-            android:textStyle="bold" />
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="32dp">
 
-        <TextView
-            style="@style/Droplet.Body"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:gravity="center"
-            android:maxWidth="340dp"
-            android:text="@string/offline_body" />
+            <ImageView
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:alpha="0.9"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_drop_color" />
 
-        <TextView
-            android:id="@+id/offline_detail"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center"
-            android:maxWidth="340dp"
-            android:textColor="@color/dim"
-            android:textSize="12sp"
-            android:alpha="0.8" />
+            <TextView
+                android:id="@+id/offline_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center"
+                android:textColor="@color/r_text"
+                android:textSize="22sp"
+                android:textStyle="bold" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/retry"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:minWidth="160dp"
-            android:text="@string/retry"
-            app:cornerRadius="10dp" />
+            <TextView
+                android:id="@+id/offline_body"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:lineSpacingExtra="2dp"
+                android:maxWidth="340dp"
+                android:textColor="@color/r_text"
+                android:textSize="15sp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/offline_settings"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings" />
-    </LinearLayout>
+            <TextView
+                android:id="@+id/offline_detail"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:maxWidth="340dp"
+                android:textColor="@color/r_dim"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/retry"
+                style="@style/Droplet.Teal.Primary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:minWidth="220dp"
+                android:text="@string/retry" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/open_tailscale"
+                style="@style/Droplet.Teal.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:minWidth="220dp"
+                android:text="@string/offline_open_tailscale" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/offline_settings"
+                style="@style/Droplet.Teal.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/settings" />
+        </LinearLayout>
+    </ScrollView>
 </FrameLayout>

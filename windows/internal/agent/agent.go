@@ -10,7 +10,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,9 +20,13 @@ import (
 	"github.com/Ferinmtk/droplet/windows/internal/config"
 	"github.com/Ferinmtk/droplet/windows/internal/download"
 	"github.com/Ferinmtk/droplet/windows/internal/hub"
+	"github.com/Ferinmtk/droplet/windows/internal/lan"
+	"github.com/Ferinmtk/droplet/windows/internal/pairing"
+	"github.com/Ferinmtk/droplet/windows/internal/pin"
 	"github.com/Ferinmtk/droplet/windows/internal/platform"
 	"github.com/Ferinmtk/droplet/windows/internal/poll"
 	"github.com/Ferinmtk/droplet/windows/internal/remote"
+	"github.com/Ferinmtk/droplet/windows/internal/route"
 	"github.com/Ferinmtk/droplet/windows/internal/sound"
 )
 
@@ -38,23 +44,40 @@ var notify = platform.Notify
 
 // Status is what the tray shows.
 type Status struct {
-	Configured bool   // registered with a hub
+	Configured bool   // registered with a hub and let in
 	Polled     bool   // at least one poll has finished
 	Connected  bool   // last poll worked
 	HubName    string // e.g. "t15"
-	HubURL     string
+	HubURL     string // the route's address
+	Route      string // "on Wi-Fi", "via Tailscale", or "" with no route
 	Problem    string // why not connected, in words
 	Devices    []hub.Device
 	Ringing    bool
 	RingFrom   string
 	Paused     bool
+	// Pending: asked to join over the LAN, waiting to be let in; PairCode
+	// is the code to compare on the device that allows it.
+	Pending  bool
+	PairCode string
+	// NotAllowed: the hub doesn't let this PC in (removed or declined).
+	NotAllowed bool
+	// IdentityChanged: the hub's LAN certificate isn't the pinned one.
+	IdentityChanged bool
 	// Remote is the live connection (remote control), when there is one.
 	Remote remote.Status
 }
 
 // Tooltip is the one-line state for the tray icon.
 func (s Status) Tooltip() string {
+	where := s.HubName
+	if s.Route != "" {
+		where += " " + s.Route
+	}
 	switch {
+	case s.Pending:
+		return "droplet — waiting to be let in to " + s.HubName + " (code " + s.PairCode + ")"
+	case s.NotAllowed:
+		return "droplet — " + s.HubName + " doesn't let this PC in (open Settings)"
 	case !s.Configured:
 		return "droplet — not set up yet (open Settings)"
 	case s.Ringing:
@@ -63,10 +86,12 @@ func (s Status) Tooltip() string {
 		return "droplet — connecting to " + s.HubName + "…"
 	case s.Connected && s.Remote.Controller != "":
 		return "droplet — being controlled by " + s.Remote.Controller
+	case s.Connected && s.IdentityChanged:
+		return "droplet — " + where + "; the hub's identity on Wi-Fi changed (open Settings)"
 	case s.Connected && s.Paused:
-		return "droplet — connected to " + s.HubName + " (notifications paused)"
+		return "droplet — " + where + " (notifications paused)"
 	case s.Connected:
-		return "droplet — connected to " + s.HubName
+		return "droplet — " + where
 	case s.Problem != "":
 		return "droplet — " + s.Problem
 	default:
@@ -82,13 +107,19 @@ type Agent struct {
 	// OnStatus is called (from the poll goroutine) whenever Status changes.
 	OnStatus func(Status)
 	// OnRemoteChange is called when anything the live connection depends
-	// on changes (a new hub or token, a remote-control switch), so it can
-	// reconnect. Set it before Run.
+	// on changes (a new hub, route or token, a remote-control switch), so it
+	// can reconnect. Set it before Run.
 	OnRemoteChange func()
+	// OnNeedPairing is called when the person has to act in Settings: the
+	// hub stopped letting this PC in, or its identity changed. Optional.
+	OnNeedPairing func()
+	// Routes chooses between the LAN and the tailnet.
+	Routes *route.Manager
 
 	mu            sync.Mutex
 	status        Status
 	client        *hub.Client
+	clientRoute   route.Route
 	wake          chan struct{}
 	ringID        string // ring currently sounding
 	ringStarted   time.Time
@@ -98,27 +129,120 @@ type Agent struct {
 	removedWarned bool
 	lastDests     []hub.Device
 	wav           []byte
+
+	// what's been said already, so it's said once
+	pairWarned    bool   // "not allowed in" notified and Settings opened
+	changedWarned string // fingerprint of the identity change notified
+	migratedAt    time.Time
+	discovered    []lan.Hub // from the last Discover, for Join
 }
 
 // New makes an agent over a config store.
 func New(store *config.Store, exe string) *Agent {
-	return &Agent{Store: store, Exe: exe, wake: make(chan struct{}, 1), ringSupported: true, wav: sound.RingWAV()}
+	a := &Agent{Store: store, Exe: exe, wake: make(chan struct{}, 1), ringSupported: true, wav: sound.RingWAV()}
+	a.Routes = route.NewManager(func() route.Identity { return route.IdentityOf(a.Store.Get()) })
+	a.Routes.OnResult = a.rememberRoute
+	a.Routes.OnChange = a.routeChanged
+	return a
 }
 
-// Client returns a hub client for the current config.
+// clientTimeout bounds finding a route for a one-off action.
+const clientTimeout = 20 * time.Second
+
+// Client returns a hub client along the current route, choosing the route
+// first if there's none.
 func (a *Agent) Client() (*hub.Client, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), clientTimeout)
+	defer cancel()
+	c, _, err := a.clientFor(ctx)
+	return c, err
+}
+
+func (a *Agent) clientFor(ctx context.Context) (*hub.Client, route.Route, error) {
+	r, err := a.Routes.Ensure(ctx)
+	if err != nil {
+		return nil, r, err
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.client != nil {
-		return a.client, nil
+	if a.client != nil && a.clientRoute == r {
+		return a.client, r, nil
 	}
 	cfg := a.Store.Get()
-	c, err := hub.New(cfg.HubURL, cfg.DeviceToken, cfg.Session)
+	c, err := r.Client(cfg.DeviceToken, cfg.Session)
 	if err != nil {
-		return nil, err
+		return nil, r, err
 	}
-	a.client = c
-	return c, nil
+	a.client, a.clientRoute = c, r
+	return c, r, nil
+}
+
+// rememberRoute keeps what a route selection learnt about the hub.
+func (a *Agent) rememberRoute(res route.Result) {
+	err := a.Store.Update(func(c *config.Config) {
+		if c.Hub == nil {
+			return
+		}
+		h, changed := route.Remember(*c.Hub, res, c.RemoteURL())
+		if changed {
+			c.Hub = &h
+		}
+	})
+	if err != nil {
+		log.Printf("save config: %v", err)
+	}
+}
+
+// routeChanged drops the client for the old route and reconnects the live
+// connection along the new one.
+func (a *Agent) routeChanged(r route.Route) {
+	a.mu.Lock()
+	a.client = nil
+	a.mu.Unlock()
+	a.setStatus(func(s *Status) {
+		s.Route = r.Label()
+		if !r.IsZero() {
+			s.HubURL = r.Base
+		}
+	})
+	a.remoteChanged()
+}
+
+// HubName is the hub's short name, e.g. "t15".
+func HubName(cfg config.Config) string {
+	if cfg.Hub != nil && cfg.Hub.Name != "" {
+		return cfg.Hub.Name
+	}
+	if u, err := hub.ParseHubURL(cfg.RemoteURL()); err == nil {
+		return (&hub.Client{Base: u}).HubName()
+	}
+	return "the hub"
+}
+
+// WebURL is where to open droplet in a browser, for path (e.g. "/#inbox").
+// A browser can't use the pinned LAN connection, so on the LAN it gets the
+// tailnet URL when this PC is on the tailnet (where its browser is likely
+// signed in already), else the hub's plain-HTTP LAN address.
+func (a *Agent) WebURL(path string) string {
+	cfg := a.Store.Get()
+	remoteURL := cfg.RemoteURL()
+	r, ok := a.Routes.Current()
+	if ok && r.Kind == route.LAN {
+		if remoteURL != "" && (!route.IsTailnetURL(remoteURL) || route.TailscaleUp()) {
+			return strings.TrimRight(remoteURL, "/") + path
+		}
+		port := 8000
+		if cfg.Hub != nil && cfg.Hub.HTTPPort > 0 {
+			port = cfg.Hub.HTTPPort
+		}
+		if host, _, err := net.SplitHostPort(r.Addr); err == nil {
+			return "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + path
+		}
+	}
+	if ok {
+		return strings.TrimRight(r.Base, "/") + path
+	}
+	return strings.TrimRight(remoteURL, "/") + path
 }
 
 // Status returns the current status.
@@ -148,15 +272,19 @@ func (a *Agent) Poke() {
 	}
 }
 
-// Reset drops the cached client so the next poll uses the new config.
+// Reset drops the cached client and route so the next poll uses the new
+// config.
 func (a *Agent) Reset() {
 	a.mu.Lock()
 	a.client = nil
 	a.removedWarned = false
+	a.pairWarned = false
 	a.ringSupported = true
 	a.ringChecked = time.Time{}
 	a.status.Polled, a.status.Connected = false, false
+	a.status.NotAllowed = false
 	a.mu.Unlock()
+	a.Routes.Reset()
 	a.Poke()
 	a.remoteChanged()
 }
@@ -183,6 +311,9 @@ func (a *Agent) Run(ctx context.Context) {
 		if a.Status().Ringing {
 			wait = pollRinging
 		}
+		if a.Store.Get().Pending() {
+			wait = pairing.Every // docs: ask every 2–3 s while waiting to be let in
+		}
 		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -199,28 +330,53 @@ func (a *Agent) Run(ctx context.Context) {
 // tick is one poll of the hub.
 func (a *Agent) tick(ctx context.Context) error {
 	cfg := a.Store.Get()
-	c, err := a.Client()
-	if err != nil {
-		a.setStatus(func(s *Status) { s.Configured = false; s.Problem = err.Error() })
-		return nil
-	}
+	name := HubName(cfg)
 	a.setStatus(func(s *Status) {
 		s.Configured = cfg.Registered()
-		s.HubName = c.HubName()
-		s.HubURL = cfg.HubURL
+		s.Pending, s.PairCode = cfg.Pending(), cfg.PairCode
+		s.HubName = name
 		s.Paused = cfg.Paused
 	})
-	if !cfg.Registered() {
+	if cfg.DeviceToken == "" {
 		return nil // nothing to poll until Settings is saved
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	if cfg.Hub == nil && cfg.Registered() {
+		a.migrate(ctx, cfg)
+	}
 
-	files, err := c.Files(ctx)
+	c, r, err := a.clientFor(ctx)
+	changed := a.Routes.Changed()
+	a.setStatus(func(s *Status) { s.IdentityChanged = changed != nil })
+	if changed != nil {
+		a.warnChanged(changed)
+	}
 	if err != nil {
-		a.setStatus(func(s *Status) { s.Polled, s.Connected, s.Problem = true, false, describe(err, c.HubName()) })
+		a.setStatus(func(s *Status) {
+			s.Polled, s.Connected, s.Route, s.Problem = true, false, "", describe(err, name)
+		})
 		return err
 	}
+	if cfg.Pending() {
+		return a.pollPairing(ctx, c, r, cfg)
+	}
+
+	files, err := c.Files(ctx)
+	if errors.Is(err, hub.ErrNotAllowed) {
+		return a.notAllowed(ctx, c, cfg)
+	}
+	if err != nil {
+		if connectionError(err) {
+			a.Routes.Lost(r) // choose the route again next time
+		}
+		a.setStatus(func(s *Status) { s.Polled, s.Connected, s.Problem = true, false, describe(err, name) })
+		return err
+	}
+	a.mu.Lock()
+	a.pairWarned = false
+	a.mu.Unlock()
+	a.setStatus(func(s *Status) { s.NotAllowed = false })
 	if files.Self() == nil {
 		// the hub no longer knows this device (removed from the Devices list)
 		a.setStatus(func(s *Status) {
@@ -239,6 +395,7 @@ func (a *Agent) tick(ctx context.Context) error {
 				Body:  "Open droplet's Settings to add it again.",
 				Tag:   "removed",
 			})
+			a.needPairing("", "")
 		}
 		return nil
 	}
@@ -256,13 +413,36 @@ func (a *Agent) tick(ctx context.Context) error {
 
 // describe turns a poll error into tooltip words.
 func describe(err error, hubName string) string {
+	var ue *route.UnreachableError
 	switch {
+	case errors.As(err, &ue) && ue.Changed != nil:
+		return "the identity of " + hubName + " changed (open Settings)"
+	case errors.Is(err, route.ErrNotPaired):
+		return "not set up yet (open Settings)"
 	case errors.Is(err, hub.ErrPINRequired):
 		return hubName + " wants a PIN (open Settings)"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "can't reach " + hubName + " (timed out)"
 	}
+	if _, ok := pin.AsMismatch(err); ok {
+		return "the identity of " + hubName + " changed (open Settings)"
+	}
 	return "can't reach " + hubName
+}
+
+// connectionError reports whether err is the route failing (no answer, a
+// broken connection, a certificate that isn't the pinned one) rather than
+// the hub answering with an error.
+func connectionError(err error) bool {
+	var se *hub.StatusError
+	var nt *hub.NameTakenError
+	switch {
+	case err == nil, errors.As(err, &se), errors.As(err, &nt),
+		errors.Is(err, hub.ErrPINRequired), errors.Is(err, hub.ErrNotFound), errors.Is(err, hub.ErrNotAllowed),
+		errors.Is(err, context.Canceled):
+		return false
+	}
+	return true
 }
 
 // syncDestinations refreshes Explorer's Send To entries when the device list changes.
@@ -339,11 +519,11 @@ func (a *Agent) handleInbox(ctx context.Context, c *hub.Client, cfg config.Confi
 		bySender[from] = append(bySender[from], f)
 	}
 	for _, from := range order {
-		notify(fileToast(from, bySender[from], saved, cfg, c))
+		notify(fileToast(from, bySender[from], saved, cfg, a.WebURL))
 	}
 }
 
-func fileToast(from string, fs []hub.File, saved map[string]string, cfg config.Config, c *hub.Client) platform.Notification {
+func fileToast(from string, fs []hub.File, saved map[string]string, cfg config.Config, web func(string) string) platform.Notification {
 	n := platform.Notification{Tag: "files-" + fmt.Sprint(time.Now().UnixNano())}
 	if len(fs) == 1 {
 		n.Title = from + " sent " + fs[0].Name
@@ -382,7 +562,7 @@ func fileToast(from string, fs []hub.File, saved map[string]string, cfg config.C
 			n.Body = humanSize(fs[0].Size)
 		}
 		n.Body += " · in your droplet inbox"
-		n.Click = &platform.Action{Kind: platform.ActOpenURL, Arg: c.URL("/#inbox")}
+		n.Click = &platform.Action{Kind: platform.ActOpenURL, Arg: web("/#inbox")}
 	}
 	return n
 }
@@ -463,7 +643,7 @@ func (a *Agent) handleChat(ctx context.Context, c *hub.Client, cfg config.Config
 		if len(fresh) > 1 {
 			body = fmt.Sprintf("%s\n(+%d earlier)", body, len(fresh)-1)
 		}
-		chat := platform.Action{Label: "Open chat", Kind: platform.ActOpenURL, Arg: c.URL("/#chat-" + from)}
+		chat := platform.Action{Label: "Open chat", Kind: platform.ActOpenURL, Arg: a.WebURL("/#chat-" + from)}
 		n := platform.Notification{Title: name, Body: body, Tag: "chat-" + from, Click: &chat}
 		if u := strings.TrimSpace(last.Text); bareURL.MatchString(u) {
 			// a bare link opens straight away, as it does on the phone
@@ -590,6 +770,7 @@ func (a *Agent) Ring(target, name string) {
 	}
 	if err != nil {
 		notify(platform.Notification{Title: "Couldn't ring " + name, Body: err.Error(), Tag: "ring-out"})
+		a.checkPair(err)
 		return
 	}
 	notify(platform.Notification{Title: "Ringing " + name, Body: "It stops by itself after a minute.", Tag: "ring-out"})
@@ -599,15 +780,22 @@ func (a *Agent) Ring(target, name string) {
 func (a *Agent) SendFiles(to, name string, paths []string) error {
 	c, err := a.Client()
 	if err != nil {
+		a.checkPair(err)
 		return err
 	}
-	return SendFiles(c, to, name, paths, nil, true)
+	err = sendFiles(c, to, name, paths, nil, true, a.WebURL)
+	a.checkPair(err)
+	return err
 }
 
 // SendFiles is the upload used by the tray, Explorer's Send To and the CLI.
 // progress, if set, also gets byte counts (for a console); toasts reports
 // progress and the outcome as notifications.
-func SendFiles(c *hub.Client, to, name string, paths []string, progress hub.Progress, toasts bool) error {
+func (a *Agent) SendFilesWith(c *hub.Client, to, name string, paths []string, progress hub.Progress, toasts bool) error {
+	return sendFiles(c, to, name, paths, progress, toasts, a.WebURL)
+}
+
+func sendFiles(c *hub.Client, to, name string, paths []string, progress hub.Progress, toasts bool, web func(string) string) error {
 	toast := func(n platform.Notification) {
 		if toasts {
 			notify(n)
@@ -634,7 +822,7 @@ func SendFiles(c *hub.Client, to, name string, paths []string, progress hub.Prog
 	}
 	n := platform.Notification{Title: "Sent " + what + " to " + name, Body: humanSize(total), Tag: tag}
 	if to == "hub" {
-		n.Click = &platform.Action{Kind: platform.ActOpenURL, Arg: c.URL("/")}
+		n.Click = &platform.Action{Kind: platform.ActOpenURL, Arg: web("/")}
 	}
 	toast(n)
 	return nil
@@ -656,7 +844,7 @@ func (a *Agent) SendClipboard(to, name string) error {
 	}
 	switch {
 	case len(clip.Files) > 0:
-		return SendFiles(c, to, name, clip.Files, nil, true)
+		return sendFiles(c, to, name, clip.Files, nil, true, a.WebURL)
 	case clip.PNG != nil:
 		dir, err := os.MkdirTemp("", "droplet-clip-")
 		if err != nil {
@@ -667,12 +855,13 @@ func (a *Agent) SendClipboard(to, name string) error {
 		if err := os.WriteFile(p, clip.PNG, 0o600); err != nil {
 			return err
 		}
-		return SendFiles(c, to, name, []string{p}, nil, true)
+		return sendFiles(c, to, name, []string{p}, nil, true, a.WebURL)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err := c.SendText(ctx, to, clip.Text); err != nil {
 		notify(platform.Notification{Title: "Couldn't send the clipboard to " + name, Body: err.Error(), Tag: "clip"})
+		a.checkPair(err)
 		return err
 	}
 	preview := strings.Join(strings.Fields(clip.Text), " ")

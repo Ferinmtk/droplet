@@ -1,16 +1,21 @@
 package settings
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/netip"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Ferinmtk/droplet/windows/internal/agent"
 	"github.com/Ferinmtk/droplet/windows/internal/config"
 	"github.com/Ferinmtk/droplet/windows/internal/hubtest"
+	"github.com/Ferinmtk/droplet/windows/internal/lan"
 )
 
 func TestSettingsPageFlow(t *testing.T) {
@@ -138,5 +143,82 @@ func TestSettingsLinkAndRemote(t *testing.T) {
 	json.NewDecoder(r.Body).Decode(&st)
 	if st["remote"].(map[string]any)["clipboard"] != true || st["live"] == nil {
 		t.Fatalf("settings %v", st)
+	}
+}
+
+func TestSettingsLANJoin(t *testing.T) {
+	h := hubtest.NewTLS()
+	h.LANGate = true
+	defer h.Server.Close()
+	t.Setenv("DROPLET_CONFIG_DIR", t.TempDir())
+	store, _ := config.OpenPath(filepath.Join(t.TempDir(), "config.json"))
+	a := agent.New(store, "droplet.exe")
+	host, port, _ := strings.Cut(h.Addr(), ":")
+	p, _ := strconv.Atoi(port)
+	ann := lan.Hub{Instance: "droplet-a1b2c3", Port: p, Addrs: []netip.Addr{netip.MustParseAddr(host)},
+		TXT: lan.TXT{ID: h.ID, Fingerprint: h.FP, Name: "hubtest", HTTPPort: 8000}}
+	a.Routes.Deps.Browse = func(ctx context.Context, wait time.Duration, found func(lan.Hub) bool) ([]lan.Hub, error) {
+		if found != nil {
+			found(ann)
+		}
+		return []lan.Hub{ann}, nil
+	}
+	s, err := Start(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	get := func(path string) map[string]any {
+		r, err := http.Get(s.URL() + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		json.NewDecoder(r.Body).Decode(&out)
+		return out
+	}
+	post := func(path, body string) (int, map[string]any) {
+		r, err := http.Post(s.URL()+path, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		json.NewDecoder(r.Body).Decode(&out)
+		return r.StatusCode, out
+	}
+	hubs := get("api/discover")["hubs"].([]any)
+	if len(hubs) != 1 || hubs[0].(map[string]any)["id"] != h.ID {
+		t.Fatalf("discover: %v", hubs)
+	}
+	// saving with no hub picked and no address says what to do
+	code, out := post("api/save", `{"hub_url":"","name":"maryanne"}`)
+	if code != 400 || out["field"] != "hub_url" {
+		t.Fatalf("save without a hub: %d %v", code, out)
+	}
+	code, out = post("api/join", `{"hub_id":"`+h.ID+`","name":"maryanne"}`)
+	if code != 200 {
+		t.Fatalf("join: %d %v", code, out)
+	}
+	j := out["join"].(map[string]any)
+	dev := h.Find("maryanne")
+	if j["pending"] != true || j["code"] != dev.Code() || out["hub_url"] != "" {
+		t.Fatalf("join: %v", out)
+	}
+	st := get("api/settings")["hub"].(map[string]any)
+	if st["pending"] != true || st["code"] != dev.Code() || !strings.Contains(st["text"].(string), "Waiting") {
+		t.Fatalf("hub state: %v", st)
+	}
+	// the page then saves the rest of its choices, which must keep the request
+	dl := filepath.Join(t.TempDir(), "dl")
+	code, out = post("api/save", `{"hub_url":"","name":"maryanne","download_dir":"`+dl+`","autostart":false}`)
+	if code != 200 || out["pending"] != true {
+		t.Fatalf("save while waiting: %d %v", code, out)
+	}
+	if cfg := store.Get(); !cfg.Pending() || cfg.DeviceToken != dev.Token {
+		t.Fatalf("save while waiting changed the request: %+v", cfg)
+	}
+	code, out = post("api/pairing/cancel", `{}`)
+	if code != 200 || store.Get().DeviceToken != "" {
+		t.Fatalf("cancel: %d %v", code, out)
 	}
 }

@@ -24,8 +24,8 @@ android {
         applicationId = "dev.droplet.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     signingConfigs {
@@ -64,6 +64,11 @@ android {
         unitTests.all {
             // the live-connection tests talk to a real hub when one is given
             it.systemProperty("droplet.testHub", System.getenv("DROPLET_TEST_HUB") ?: "")
+            // the local-first tests: a second hub with DROPLET_PIN, and a "clone" that
+            // shares the first hub's id with a different certificate (see LocalFirstHubTest)
+            it.systemProperty("droplet.testPinHub", System.getenv("DROPLET_TEST_PIN_HUB") ?: "")
+            it.systemProperty("droplet.testPin", System.getenv("DROPLET_TEST_PIN") ?: "")
+            it.systemProperty("droplet.testCloneHub", System.getenv("DROPLET_TEST_CLONE_HUB") ?: "")
             // screens rendered for review land here when set (see ScreensTest)
             it.systemProperty("droplet.shots", System.getenv("DROPLET_SHOTS") ?: "")
         }

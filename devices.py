@@ -25,6 +25,8 @@ class DeviceStore:
     get tokens of their own ("links"), so one machine shows up once.
     """
 
+    PENDING_TTL = 24 * 3600  # an unanswered join request is dropped after a day
+    PENDING_MAX = 5          # open join requests at once, so the LAN can't flood the list
     LINK_TTL = 600        # seconds a link code stays valid
     LINK_MAX_FAILS = 10   # wrong codes before every open code is cancelled
 
@@ -51,7 +53,7 @@ class DeviceStore:
     def _hash(token: str) -> str:
         return hashlib.sha256(token.encode()).hexdigest()
 
-    def create(self, name: str, node: str | None = None) -> tuple[dict, str]:
+    def create(self, name: str, node: str | None = None, approved: bool = True) -> tuple[dict, str]:
         token = secrets.token_urlsafe(32)
         dev = {
             "id": secrets.token_hex(6),
@@ -60,6 +62,10 @@ class DeviceStore:
             "created": int(time.time()),
             "push": None,
             "node": node,  # tailnet machine name, when it registered over the tailnet
+            # a device that named itself from the LAN waits for one of yours to
+            # allow it (or for the PIN); records from before this have no key
+            # and count as approved
+            "approved": approved,
         }
         with self._lock:
             self._devices[dev["id"]] = dev
@@ -146,10 +152,43 @@ class DeviceStore:
         # only ever called with ids that came out of the store (hex), never raw input
         return self.inbox_root / device_id
 
+    @staticmethod
+    def is_approved(dev: dict | None) -> bool:
+        return bool(dev) and dev.get("approved", True) is not False
+
+    @staticmethod
+    def pair_code(dev: dict) -> str:
+        """Four digits both screens show during a join request, so you allow the right one."""
+        return f"{int(hashlib.sha256((dev['token'] + ':pair').encode()).hexdigest(), 16) % 10000:04d}"
+
+    def pending(self) -> list[dict]:
+        now = time.time()
+        with self._lock:
+            stale = [k for k, d in self._devices.items()
+                     if not self.is_approved(d) and now - d["created"] > self.PENDING_TTL]
+            for k in stale:
+                self._devices.pop(k)
+            if stale:
+                self._save()
+            out = [{"id": d["id"], "name": d["name"], "code": self.pair_code(d), "created": d["created"]}
+                   for d in self._devices.values() if not self.is_approved(d)]
+        for k in stale:
+            shutil.rmtree(self.inbox(k), ignore_errors=True)
+        return sorted(out, key=lambda d: d["created"])
+
+    def approve(self, device_id: str) -> bool:
+        with self._lock:
+            dev = self._devices.get(device_id)
+            if dev is None:
+                return False
+            dev["approved"] = True
+            self._save()
+            return True
+
     def listing(self, self_id: str | None) -> list[dict]:
         now = time.time()
         with self._lock:
-            devices = list(self._devices.values())
+            devices = [d for d in self._devices.values() if self.is_approved(d)]
         out = [
             {
                 "id": d["id"],

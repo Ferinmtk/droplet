@@ -42,18 +42,65 @@
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                         android:layout_weight="1" android:orientation="vertical">
 
-                        <TextView style="@style/Droplet.Title" android:layout_width="wrap_content"
-                            android:layout_height="wrap_content" android:text="@string/s_hub_address" />
+                        <TextView android:id="@+id/hub_name" style="@style/Droplet.Title"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:textStyle="bold" />
 
-                        <TextView android:id="@+id/hub_url" style="@style/Droplet.Body"
-                            android:layout_width="match_parent" android:layout_height="wrap_content"
-                            android:textIsSelectable="true" />
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp" android:gravity="center_vertical" android:orientation="horizontal">
+
+                            <View android:id="@+id/route_dot" android:layout_width="8dp" android:layout_height="8dp"
+                                android:layout_marginEnd="8dp" android:background="@drawable/dot" />
+
+                            <TextView android:id="@+id/route_state" android:layout_width="0dp"
+                                android:layout_height="wrap_content" android:layout_weight="1"
+                                android:textColor="@color/text" android:textSize="14sp" />
+                        </LinearLayout>
                     </LinearLayout>
 
                     <com.google.android.material.button.MaterialButton android:id="@+id/change_hub"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content" android:layout_height="wrap_content"
                         android:text="@string/s_change" />
+                </LinearLayout>
+
+                <TextView android:id="@+id/hub_identity" style="@style/Droplet.Body"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:fontFamily="monospace" android:textSize="12sp"
+                    android:textIsSelectable="true" />
+
+                <TextView android:id="@+id/hub_tailnet" style="@style/Droplet.Body"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp" android:textSize="12sp" android:textIsSelectable="true" />
+
+                <LinearLayout android:id="@+id/identity_row" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                    android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="@string/s_identity"
+                        android:textColor="@color/danger" android:textSize="14sp" />
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/repair"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" android:text="@string/s_repair" />
+                </LinearLayout>
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/find_again"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="@string/s_find_again" />
+
+                    <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/forget"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="@string/s_forget" android:textColor="@color/danger" />
                 </LinearLayout>
 
                 <View android:layout_width="match_parent" android:layout_height="1dp"

@@ -75,3 +75,54 @@ func TestBadFile(t *testing.T) {
 		t.Fatal("expected an error for a corrupt config")
 	}
 }
+
+func TestHubIdentityRoundTripAndCopy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	s, _ := OpenPath(path)
+	err := s.Update(func(c *Config) {
+		c.HubURL = "" // LAN-paired, no tailnet
+		c.Hub = &Hub{ID: "9b16173d305cd15a", Name: "t15", Fingerprint: "ab", PinSource: PinFromLAN,
+			LAN: []string{"192.168.100.20:8443"}, HTTPPort: 8000}
+		c.DeviceToken, c.PairPending, c.PairCode = "tok", true, "0421"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, _ := OpenPath(path)
+	c := s2.Get()
+	if c.HubURL != "" {
+		t.Fatalf("a LAN-paired hub must not get the default URL, got %q", c.HubURL)
+	}
+	if c.Hub == nil || c.Hub.ID != "9b16173d305cd15a" || c.Hub.LAN[0] != "192.168.100.20:8443" || c.Hub.PinSource != PinFromLAN {
+		t.Fatalf("hub identity: %+v", c.Hub)
+	}
+	if c.Registered() || !c.Pending() || c.PairCode != "0421" {
+		t.Fatal("a pending device isn't registered yet")
+	}
+	c.Hub.LAN[0] = "changed"
+	c.Hub.Name = "changed"
+	if got := s2.Get().Hub; got.LAN[0] != "192.168.100.20:8443" || got.Name != "t15" {
+		t.Fatal("Get must not share the hub identity with the store")
+	}
+	if c.RemoteURL() != "" {
+		t.Fatalf("remote URL: %q", c.RemoteURL())
+	}
+	c.Hub.Tailnet = "https://t15.example.ts.net"
+	if c.RemoteURL() != "https://t15.example.ts.net" {
+		t.Fatalf("remote URL should fall back to the hub's tailnet: %q", c.RemoteURL())
+	}
+}
+
+func TestOldConfigLoads(t *testing.T) {
+	// a config from before local-first: a hub URL and a token, no identity
+	path := filepath.Join(t.TempDir(), "config.json")
+	os.WriteFile(path, []byte(`{"hub_url":"https://t15.tail7375fe.ts.net","device_id":"d1","device_token":"tok"}`), 0o600)
+	s, err := OpenPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := s.Get()
+	if !c.Registered() || c.Hub != nil || c.RemoteURL() != "https://t15.tail7375fe.ts.net" {
+		t.Fatalf("old config: %+v", c)
+	}
+}
