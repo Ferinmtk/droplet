@@ -816,3 +816,12 @@ device ingestion with the PIN off.
 
 - Flask's built-in server — fine for home LAN and your tailnet, not for the public internet (don't `tailscale funnel` it).
 - Repeated filenames don't overwrite: `shot.png`, `shot-1.png`, …
+
+## Licence
+
+droplet is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See [LICENSE](LICENSE).
+
+Copyright © 2026 Ferinmtk
