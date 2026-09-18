@@ -404,6 +404,59 @@ against real `playerctl`/`wl-clipboard`, with no sound played and nothing
 changed on the hub. Not yet tried: ringing a real phone, and the hub's ring
 sound.
 
+## Android app
+
+A native companion in `android/` (see [android/README.md](android/README.md)).
+It adds what a web app can't do on a phone:
+
+- **Share → droplet** from any app, with a device picker and the original
+  file names (Xiaomi Gallery otherwise hands over bare numbers).
+- **A loud "find my phone" ring.** It plays on the alarm channel at full
+  volume, so silent mode doesn't mute it, then puts the volume back.
+- **Notification mirroring:** the phone's notifications appear on a **Phone**
+  card in the Hub tab on your other devices, with its battery level.
+- **Notifications for files and messages** sent to the phone, even with the
+  app closed.
+
+Everything else is the normal web app inside it.
+
+**Install:** open droplet on the phone, tap **droplet.apk** under Shared, and
+allow installs from your browser when Android asks. Open the droplet app,
+keep the default hub address (Tailscale must be on), and name the phone in
+the page. Then open ⚙ (top right) for settings:
+
+- **Stay connected** lets other devices ring the phone and notifies you about
+  files and messages. It shows a quiet "droplet connected" notification.
+- **Notification access** turns on mirroring. Leave apps out under **Apps not
+  to mirror**.
+
+Permissions: notifications, notification access (you grant it), a
+foreground service, exact alarms, and run at startup. No Google services,
+nothing outside your tailnet.
+
+**Xiaomi / Redmi (MIUI, HyperOS):** MIUI kills background apps. For rings to
+arrive, turn on **Autostart** for droplet, set its battery saver to **No
+restrictions**, and lock it in Recents. The app's settings have buttons for
+the first two.
+
+**Build:** `cd android && ./gradlew assembleRelease` (JDK 17+, Android SDK).
+Release builds are signed with `~/.android/droplet-release.jks` when
+`~/.android/droplet-release.properties` exists, otherwise with the debug key.
+Keep that keystore backed up: updates must be signed with the same key.
+
+Hub side (`phone.py`): `POST /api/phone/notifications` (`posted` / `removed`
+/ `sync`), `GET /api/phone/notifications`, `POST /api/phone/status`
+(battery), `POST /api/phone/<id>/clear`. The latest 50 per phone are kept in
+`phone.json` (owner-only permissions, git-ignored).
+
+**Verified** on an Android 16 emulator against a local hub: setup, the
+WebView, downloads and zip, the file chooser, a share from the Files app
+with the original name kept, sharing text into a chat, a ring picked up by
+Stay connected (alarm volume raised and restored, Stop from the notification
+and the full-screen screen, auto-stop, waking a locked screen), and
+mirroring a posted and removed notification to the Phone card. Not yet
+tried on the Redmi itself (MIUI autostart and battery rules, real Doze).
+
 ## Config (env vars)
 
 | Var | Default | Meaning |
