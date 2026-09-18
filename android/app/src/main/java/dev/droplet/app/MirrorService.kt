@@ -47,10 +47,13 @@ class MirrorService : NotificationListenerService() {
             now.sortedBy { it.postTime }.forEach { sbn -> describe(sbn)?.let { posted[sbn.key] = it } }
         }
         scheduleFlush(0)
+        // media control rides on this access: announce it
+        Live.refresh()
     }
 
     override fun onListenerDisconnected() {
         connected = false
+        Live.refresh()
     }
 
     override fun onDestroy() {

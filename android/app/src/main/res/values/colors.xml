@@ -12,4 +12,17 @@
     <color name="danger">#DC2626</color>
     <color name="online">#16A34A</color>
     <color name="drop">#38BDF8</color>
+
+    <!-- the web app's redesigned dark palette, for the presentation remote
+         (always dark: it's used in a dimmed room) -->
+    <color name="r_bg">#061419</color>
+    <color name="r_card">#0B1F26</color>
+    <color name="r_card_2">#11292F</color>
+    <color name="r_line">#173640</color>
+    <color name="r_line_2">#22474F</color>
+    <color name="r_text">#E3F1EF</color>
+    <color name="r_dim">#7D9DA0</color>
+    <color name="r_accent">#4DE8D4</color>
+    <color name="r_on_accent">#032824</color>
+    <color name="r_coral">#FF8468</color>
 </resources>

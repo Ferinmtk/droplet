@@ -65,4 +65,39 @@ object Prefs {
     var inboxPrimed: Boolean
         get() = sp.getBoolean("inbox_primed", false)
         set(v) = sp.edit { putBoolean("inbox_primed", v) }
+
+    // --- remote control (see Live) ---------------------------------------------
+    // Each capability is also gated by its Android permission; these are the
+    // owner's switches on top, so a granted permission can still be turned off.
+
+    var capMedia: Boolean
+        get() = sp.getBoolean("cap_media", true)
+        set(v) = sp.edit { putBoolean("cap_media", v) }
+
+    var capSms: Boolean
+        get() = sp.getBoolean("cap_sms", true)
+        set(v) = sp.edit { putBoolean("cap_sms", v) }
+
+    var capFiles: Boolean
+        get() = sp.getBoolean("cap_files", true)
+        set(v) = sp.edit { putBoolean("cap_files", v) }
+
+    var capClipboard: Boolean
+        get() = sp.getBoolean("cap_clipboard", true)
+        set(v) = sp.edit { putBoolean("cap_clipboard", v) }
+
+    /** Fingerprint of the clipboard text last synced either way, so it isn't sent back. */
+    var clipLast: String?
+        get() = sp.getString("clip_last", null)
+        set(v) = sp.edit { putString("clip_last", v) }
+
+    /** The clipboard's timestamp when it was last looked at, so an unchanged clipboard isn't read again. */
+    var clipSeenAt: Long
+        get() = sp.getLong("clip_seen_at", 0L)
+        set(v) = sp.edit { putLong("clip_seen_at", v) }
+
+    /** The device the presentation remote drove last time. */
+    var remoteTarget: String?
+        get() = sp.getString("remote_target", null)
+        set(v) = sp.edit { putString("remote_target", v) }
 }
