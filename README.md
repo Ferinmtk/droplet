@@ -118,6 +118,45 @@ and start at boot:
 sudo loginctl enable-linger "$USER"
 ```
 
+## Tailnet: real HTTPS from anywhere
+
+If the hub is on [Tailscale](https://tailscale.com), droplet can put itself
+behind `tailscale serve`. Every device on your tailnet then reaches it at
+`https://<machine>.<tailnet>.ts.net` (for example
+`https://t15.tail7375fe.ts.net`) from anywhere, not just from home Wi-Fi. The
+certificate is a real Let's Encrypt one that Tailscale renews itself, so
+there's no browser warning. The LAN URL keeps working for guests.
+
+One-time setup:
+
+1. In the [admin console → DNS](https://login.tailscale.com/admin/dns), turn
+   on **MagicDNS** and **HTTPS Certificates**.
+2. Let your user drive Tailscale without sudo:
+   `sudo tailscale set --operator=$USER`
+3. Set `DROPLET_TAILSCALE=1` (in `~/.config/droplet/droplet.env` for the
+   service) and start droplet.
+
+On startup droplet runs `tailscale serve --bg --https=443
+http://127.0.0.1:<port>`, prints the `ts.net` URL, and puts it in the QR
+code. If something's missing it says what, and carries on LAN-only. It won't
+take over `:443` if something else on the machine is already served there.
+
+The `serve` setting lives in `tailscaled`, so it outlives droplet: while
+droplet is stopped, the URL returns a 502. Remove it with
+`tailscale serve --https=443 off`.
+
+**PIN and the tailnet:** devices on your tailnet are already approved by
+you, so with `DROPLET_PIN` set they skip it, and the page shows who they're
+signed in as. droplet only believes the `Tailscale-User-Login` header on
+requests coming from loopback (where `tailscale serve` connects from) after it
+has set serve up itself. LAN clients can't fake it. Tagged devices carry no
+user, so they get the PIN. `DROPLET_TAILNET_TRUST=0` makes everyone enter it.
+
+**Docker:** the container has no `tailscale` CLI. Run
+`tailscale serve --bg 8000` on the host yourself. The PIN then applies to
+tailnet devices too, because droplet didn't set serve up and doesn't trust
+the header.
+
 ## Config (env vars)
 
 | Var | Default | Meaning |
@@ -130,6 +169,8 @@ sudo loginctl enable-linger "$USER"
 | `DROPLET_NAME` | `droplet` | mDNS hostname (`<name>.local`) |
 | `DROPLET_HOME` | app dir | where `received/`, `shared/`, `certs/` live |
 | `DROPLET_MAX_MB` | `1024` | max upload size |
+| `DROPLET_TAILSCALE` | *(off)* | `1` = also serve at `https://<machine>.<tailnet>.ts.net` with a real certificate, via `tailscale serve` (see [Tailnet](#tailnet-real-https-from-anywhere)) |
+| `DROPLET_TAILNET_TRUST` | `1` | with `DROPLET_PIN` set, tailnet devices skip the PIN. `0` = they enter it like everyone else |
 
 ## How files flow
 
@@ -269,5 +310,5 @@ device ingestion with the PIN off.
 
 ## Notes
 
-- Flask's built-in server — fine for home LAN, not for the internet.
+- Flask's built-in server — fine for home LAN and your tailnet, not for the public internet (don't `tailscale funnel` it).
 - Repeated filenames don't overwrite: `shot.png`, `shot-1.png`, …

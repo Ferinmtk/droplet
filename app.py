@@ -1,10 +1,12 @@
 """droplet — LAN file drop. Any browser on the network can send/fetch files."""
 
 import atexit
+import json
 import os
 import secrets
 import signal
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -39,6 +41,11 @@ PIN = os.environ.get("DROPLET_PIN", "")
 USE_HTTPS = os.environ.get("DROPLET_HTTPS", "") not in ("", "0", "false")
 MDNS_NAME = os.environ.get("DROPLET_NAME", "droplet")
 MAX_UPLOAD_MB = int(os.environ.get("DROPLET_MAX_MB", "1024"))
+USE_TAILSCALE = os.environ.get("DROPLET_TAILSCALE", "") not in ("", "0", "false")
+# tailnet devices are already approved by the tailnet admin, so by default
+# they skip the PIN; set to 0 to make them enter it like LAN guests
+TAILNET_TRUST = os.environ.get("DROPLET_TAILNET_TRUST", "1") not in ("", "0", "false")
+TAILNET_URL: str | None = None  # set at startup once `tailscale serve` is confirmed
 
 FOLDERS = {"received": RECEIVED_DIR, "shared": SHARED_DIR}
 
@@ -113,11 +120,25 @@ def resolve_in(directory: Path, name: str) -> Path:
     return p
 
 
+def tailnet_user() -> str | None:
+    """Tailnet login of the visitor, when the request came through `tailscale serve`.
+
+    serve proxies from loopback and sets Tailscale-User-Login itself, dropping
+    any copy the client sent. LAN clients never arrive from loopback, so they
+    can't forge it. Tagged devices carry no user and get None.
+    """
+    if not TAILNET_URL or request.remote_addr not in ("127.0.0.1", "::1"):
+        return None
+    return request.headers.get("Tailscale-User-Login") or None
+
+
 # --- PIN gate ----------------------------------------------------------------
 
 @app.before_request
 def require_pin():
     if not PIN or session.get("authed") or request.endpoint in ("login", "static"):
+        return None
+    if TAILNET_TRUST and tailnet_user():
         return None
     return redirect(url_for("login"))
 
@@ -139,7 +160,7 @@ def login():
 
 @app.route("/")
 def home():
-    return render_template("index.html", host=socket.gethostname())
+    return render_template("index.html", host=socket.gethostname(), tailnet_user=tailnet_user())
 
 
 @app.route("/api/files")
@@ -270,6 +291,64 @@ def ensure_cert(lan_ip: str) -> tuple[str, str]:
     return str(cert_file), str(key_file)
 
 
+# --- tailnet: real HTTPS via `tailscale serve` -------------------------------
+
+def _tailscale(*args: str) -> subprocess.CompletedProcess | None:
+    try:
+        return subprocess.run(["tailscale", *args], capture_output=True, text=True, timeout=20)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+
+def setup_tailnet() -> str | None:
+    """Put droplet behind `tailscale serve` on :443 and return its https URL.
+
+    Tailscale terminates TLS with a real Let's Encrypt cert for
+    <machine>.<tailnet>.ts.net and renews it itself. Returns None (LAN-only)
+    when anything is missing, after saying what to fix.
+    """
+    r = _tailscale("status", "--json")
+    if r is None:
+        print("  tailnet: tailscale CLI not found — LAN only")
+        return None
+    try:
+        status = json.loads(r.stdout)
+    except ValueError:
+        print(f"  tailnet: can't read tailscale status ({r.stderr.strip()}) — LAN only")
+        return None
+    if status.get("BackendState") != "Running":
+        print("  tailnet: tailscale isn't connected (run `tailscale up`) — LAN only")
+        return None
+
+    domain = (status.get("Self") or {}).get("DNSName", "").rstrip(".")
+    if not domain or domain not in (status.get("CertDomains") or []):
+        print("  tailnet: HTTPS certificates are off for this tailnet — LAN only.")
+        print("           Turn on MagicDNS + HTTPS Certificates at")
+        print("           https://login.tailscale.com/admin/dns, then restart droplet.")
+        return None
+
+    target = f"{'https+insecure' if USE_HTTPS else 'http'}://127.0.0.1:{PORT}"
+    r = _tailscale("serve", "status", "--json")
+    config = json.loads(r.stdout or "{}") if r and r.returncode == 0 else {}
+    handlers = ((config.get("Web") or {}).get(f"{domain}:443") or {}).get("Handlers") or {}
+    current = (handlers.get("/") or {}).get("Proxy")
+    if current and current != target:
+        # :443 already serves something else on this machine; don't clobber it
+        print(f"  tailnet: https://{domain} already proxies to {current} — leaving it alone.")
+        print(f"           Free it with `tailscale serve --https=443 off`, then restart droplet.")
+        return None
+    if current != target:
+        # --bg persists in tailscaled, so the URL survives droplet restarts
+        r = _tailscale("serve", "--bg", "--yes", "--https=443", target)
+        if r is None or r.returncode != 0:
+            err = (r.stderr or r.stdout).strip() if r else "timed out"
+            print(f"  tailnet: `tailscale serve` failed: {err}")
+            if "access denied" in err.lower() or "permission" in err.lower():
+                print(f"           Allow your user once: sudo tailscale set --operator=$USER")
+            return None
+    return f"https://{domain}"
+
+
 # --- mDNS: announce this machine as <name>.local -----------------------------
 
 def register_mdns(lan_ip: str):
@@ -304,19 +383,24 @@ def register_mdns(lan_ip: str):
 
 # --- startup banner ----------------------------------------------------------
 
-def banner(url: str):
+def banner(url: str, tailnet_url: str | None = None):
     print()
     print("  💧 droplet — LAN file drop")
-    print(f"     {url}")
+    if tailnet_url:
+        print(f"     {tailnet_url}  (any device on your tailnet, from anywhere)")
+    print(f"     {url}  (LAN)")
     print(f"     http{'s' if USE_HTTPS else ''}://{MDNS_NAME}.local:{PORT}  (mDNS-capable devices)")
-    print(f"     PIN: {'required' if PIN else 'off (set DROPLET_PIN to enable)'}")
+    pin = "required" if PIN else "off (set DROPLET_PIN to enable)"
+    if PIN and tailnet_url and TAILNET_TRUST:
+        pin += " — tailnet devices skip it"
+    print(f"     PIN: {pin}")
     print(f"     folders: {RECEIVED_DIR}  |  {SHARED_DIR}")
     print()
     try:
         import qrcode
 
         qr = qrcode.QRCode(border=1)
-        qr.add_data(url)
+        qr.add_data(tailnet_url or url)
         qr.print_ascii(invert=True)
     except ImportError:
         print("  (qrcode not installed — skipping QR)")
@@ -332,7 +416,8 @@ if __name__ == "__main__":
 
     lan_ip = get_lan_ip()
     scheme = "https" if USE_HTTPS else "http"
-    banner(f"{scheme}://{lan_ip}:{PORT}")
+    TAILNET_URL = setup_tailnet() if USE_TAILSCALE else None
+    banner(f"{scheme}://{lan_ip}:{PORT}", TAILNET_URL)
     register_mdns(lan_ip)
 
     ssl_context = ensure_cert(lan_ip) if USE_HTTPS else None
