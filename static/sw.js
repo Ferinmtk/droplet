@@ -103,13 +103,34 @@ async function stash(req) {
 }
 
 function offline() {
+  // same look as the app: a dry, outlined drop instead of the filled one
   const html = `<!doctype html><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>droplet — offline</title>
-<style>*{box-sizing:border-box}body{background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif;display:grid;place-items:center;
-min-height:100vh;margin:0;padding:1rem;text-align:center}p{color:#94a3b8;max-width:22rem;line-height:1.5}
-button{margin-top:1rem;font:inherit;padding:.6rem 1.2rem;border-radius:8px;border:none;background:#38bdf8;color:#0f172a;font-weight:600}</style>
-<div><h1>💧 Can't reach the hub</h1>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f2ec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#061419" media="(prefers-color-scheme: dark)">
+<title>droplet · offline</title>
+<style>
+:root{color-scheme:dark;--bg:#061419;--text:#e3f1ef;--dim:#7d9da0;--accent:#4de8d4;--coral:#ff8468;--on:#032824;
+--tide:linear-gradient(140deg,#6af2dc,#40c6ec 55%,#3a9ff5)}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f5f2ec;--text:#0c2a30;--dim:#5e7478;--accent:#0a7d84;
+--coral:#e2563f;--on:#fff;--tide:linear-gradient(140deg,#12a5a0,#127fa8 55%,#1a62ad)}}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:grid;
+place-items:center;min-height:100vh;min-height:100dvh;padding:24px;text-align:center;-webkit-font-smoothing:antialiased}
+svg{width:64px;height:76px;margin-bottom:18px}
+.drop{fill:none;stroke:var(--dim);stroke-width:1.6;stroke-dasharray:4 4}
+.ring{fill:none;stroke:var(--coral);stroke-width:1.4;opacity:.7;transform-origin:30px 70px;animation:r 2.8s ease-out infinite}
+@keyframes r{0%{transform:scale(.4);opacity:.8}100%{transform:scale(1.4);opacity:0}}
+h1{font-family:ui-rounded,system-ui,sans-serif;font-size:24px;font-weight:800;letter-spacing:-.035em}
+p{color:var(--dim);max-width:21rem;margin:8px auto 0}
+button{margin-top:24px;font:inherit;font-weight:700;min-height:48px;padding:0 26px;border-radius:16px;border:none;
+background:var(--tide);color:var(--on);cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media (prefers-reduced-motion: reduce){.ring{animation:none}}
+</style>
+<div><svg viewBox="0 0 60 76" aria-hidden="true"><path class="drop" d="M30 4C24 13 11 27 11 40a19 19 0 0 0 38 0C49 27 36 13 30 4Z"/>
+<ellipse class="ring" cx="30" cy="70" rx="16" ry="3.5"/></svg>
+<h1>Can't reach the hub</h1>
 <p>Is Tailscale switched on, and is the hub machine awake? Anything you shared is kept and will send once it's back.</p>
 <button onclick="location.reload()">Try again</button></div>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
