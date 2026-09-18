@@ -778,6 +778,7 @@ def banner(url: str, tailnet_url: str | None = None):
 
 from types import SimpleNamespace  # noqa: E402
 
+import agent_dist  # noqa: E402
 import clipboard  # noqa: E402
 import commands  # noqa: E402
 import media  # noqa: E402
@@ -786,7 +787,8 @@ import remote  # noqa: E402
 import ring  # noqa: E402
 import tv  # noqa: E402
 
-FEATURES: list = [clipboard, commands, media, phone, remote, ring, tv]
+FEATURES: list = [agent_dist, clipboard, commands, media, phone, remote, ring, tv]
+
 
 
 
