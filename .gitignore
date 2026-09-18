@@ -26,3 +26,6 @@ data/
 
 # phone notifications mirrored by the Android app (holds message text)
 phone.json
+
+# TV remote: the hub's client certificate and paired TVs
+/tv/
