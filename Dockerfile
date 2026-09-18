@@ -6,6 +6,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
 COPY templates/ templates/
 COPY static/ static/
+COPY agent/ agent/
 
 # all runtime state (received/, shared/, certs/, .secret_key) lives here
 ENV DROPLET_HOME=/data
