@@ -3,7 +3,6 @@ package remote
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"image"
 	"image/jpeg"
@@ -15,47 +14,20 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// SMTCLine is one line from the Windows now-playing helper (a PowerShell
-// loop over GlobalSystemMediaTransportControlsSessionManager): either the
-// sessions, or the album art for one of them.
-type SMTCLine struct {
-	Current string          `json:"current"`
-	Players json.RawMessage `json:"players"`
-	ArtKey  string          `json:"art_key"`
-	Art     string          `json:"art"` // base64 image, only on art lines
-	Error   string          `json:"error"`
-}
-
-// SMTCSession is one session as the helper reports it.
+// SMTCSession is one Windows media session
+// (GlobalSystemMediaTransportControlsSession) as the platform reads it.
 type SMTCSession struct {
-	ID          string  `json:"id"`
-	Status      string  `json:"status"`
-	Title       string  `json:"title"`
-	Artist      string  `json:"artist"`
-	Album       string  `json:"album"`
-	Position    float64 `json:"position"`
-	Length      float64 `json:"length"`
-	CanSeek     bool    `json:"can_seek"`
-	CanNext     bool    `json:"can_next"`
-	CanPrevious bool    `json:"can_previous"`
-	ArtKey      string  `json:"art_key"`
-}
-
-// Sessions decodes the players field, which PowerShell may write as a
-// single object instead of a one-element array.
-func (l SMTCLine) Sessions() ([]SMTCSession, error) {
-	raw := bytes.TrimSpace(l.Players)
-	if len(raw) == 0 || string(raw) == "null" {
-		return nil, nil
-	}
-	if raw[0] == '{' {
-		var one SMTCSession
-		err := json.Unmarshal(raw, &one)
-		return []SMTCSession{one}, err
-	}
-	var many []SMTCSession
-	err := json.Unmarshal(raw, &many)
-	return many, err
+	ID          string // the app's AppUserModelID
+	Status      string // "Playing", "Paused", "Stopped", …
+	Title       string
+	Artist      string
+	Album       string
+	Position    float64 // seconds
+	Length      float64 // seconds; 0 when unknown
+	CanSeek     bool
+	CanNext     bool
+	CanPrevious bool
+	ArtKey      string // names its album art in the art map, if it has any
 }
 
 // ToPlayers converts sessions to protocol players, the current one first.
@@ -131,12 +103,9 @@ func PlayerName(aumid string) string {
 // maxArt is the protocol's cap on an art data: URL.
 const maxArt = 64 * 1024
 
-// ArtDataURL shrinks album art to a JPEG data: URL of at most 64 KB.
-func ArtDataURL(b64 string) (string, error) {
-	raw, err := base64.StdEncoding.DecodeString(b64)
-	if err != nil {
-		return "", err
-	}
+// ArtDataURL shrinks album art (JPEG, PNG, BMP or WebP) to a JPEG data:
+// URL of at most 64 KB.
+func ArtDataURL(raw []byte) (string, error) {
 	src, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return "", err

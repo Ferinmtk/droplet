@@ -131,12 +131,11 @@ at once, and a drag in progress is released.
 - If Core Audio isn't available, volume falls back to the volume keys
   (down to zero, then up in 2 % steps), and mute to the mute key (a toggle).
 - What's playing comes from Windows' media sessions (the same source as the
-  volume flyout: Spotify, browsers, Media Player…). It's read by a hidden
-  PowerShell loop, because that WinRT API isn't reachable from Go without
-  cgo. The loop runs only while the live connection is up with Media on, and
-  it's tied to droplet with a kill-on-close job object. If it fails
-  repeatedly, droplet stops trying and reports the volume with an empty
-  player list. Seeking isn't supported (`can_seek` is always false), and
+  volume flyout: Spotify, browsers, Media Player…). droplet reads it once a
+  second through the WinRT API itself, called directly from Go, with no cgo
+  and no helper process. It's read only while the live connection is up with
+  Media on. If reading fails repeatedly, droplet stops trying and reports the
+  volume with an empty player list. Seeking isn't supported (`can_seek` is always false), and
   media keys act on Windows' current session, not a chosen player.
 - The connection pings every 25 s and reconnects after any drop, waiting 1,
   2, 4 … up to 30 s. It authenticates with the device token as a bearer
@@ -237,8 +236,9 @@ This follows [`docs/local-first.md`](../docs/local-first.md).
   from the internet" mark a browser adds.
 - Each file and message is announced once, including across restarts: the
   markers are kept in the config.
-- Notifications go through Windows PowerShell 5.1 and the built-in WinRT
-  toast API. Notification buttons are `droplet:` links that start a short-lived
+- Notifications use Windows' own toast API (WinRT), called directly from
+  droplet.exe. If they can't be shown, the failure is logged and droplet
+  carries on. Notification buttons are `droplet:` links that start a short-lived
   `droplet.exe`. Each link carries a random key from the config, so a web
   page can't trigger them.
 - Hubs without ringing are handled: the ring options report "ring not
