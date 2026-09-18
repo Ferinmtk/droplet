@@ -457,6 +457,157 @@ and the full-screen screen, auto-stop, waking a locked screen), and
 mirroring a posted and removed notification to the Phone card. Not yet
 tried on the Redmi itself (MIUI autostart and battery rules, real Doze).
 
+## Remote control: drive your other devices
+
+Like KDE Connect's remote input and multimedia control, for every machine
+you own. A device becomes controllable once a small **helper** runs on it:
+the [Linux agent](#linux-computers-droplet-agent), the
+[Windows app](#windows-app) or the [Android app](#android-app). The helper
+and the browser on that machine are **one device**, so each machine appears
+once.
+
+Controllable devices get a **Control** button: in the **Remote control** card
+on the Hub tab, on their row under **Devices**, and in the chat header. It
+opens a full-screen remote on a phone and a large panel on a desktop, with a
+section for each thing that device's helper can do:
+
+- **Touchpad.** Slide to move (with acceleration), tap to click, two-finger
+  tap to right-click, three-finger tap to middle-click, two fingers to
+  scroll (natural direction, optional glide), double-tap and hold to drag.
+  Left and Right buttons sit under the pad, and ⚙ sets the speed. On a
+  desktop, drag with the mouse or use the wheel. **Capture mouse** hands this
+  computer's mouse and keyboard over until you press Esc.
+- **Keyboard.** Type in the box and it types on the other device as you go:
+  emoji, accents and phone autocorrect included. There are special keys
+  (Esc, Tab, arrows, Home/End, PgUp/PgDn, F1–F12), sticky Ctrl/Alt/Shift/Super
+  (tap for the next key, double-tap to hold), common shortcuts and
+  media/volume keys.
+- **Slides.** A presentation remote with big Next and Previous, Start, Black
+  screen, End and a timer. It sends the standard keys, so it works in any
+  slide app. **Hold to point** turns the phone into a laser pointer through
+  its motion sensors. The screen stays on while it's open. The Android app
+  has a native version too, where the **volume keys change slides**.
+- **Media.** What's playing on that device, with art, seek,
+  play/pause/next/previous, volume, mute and a player picker. That includes
+  **your phone's music**, controlled from a computer.
+- **More.** **Lock** the screen, or take a **Screenshot**. It arrives in this
+  device's **For this device** list, and is shown right away.
+- **Messages and Files** (the Android app). Read and answer the phone's SMS,
+  and browse its Downloads, Camera, Pictures, Documents, Music and Movies.
+  **Get** sends a file to the device you're on.
+
+**Clipboard sync.** Helpers can share the clipboard automatically: copy on
+one computer, paste on another. The Linux agent and the Android app can have
+it on; the Windows app has it off by default, because it sends *everything*
+you copy, passwords included. Android only lets the app on screen read the
+clipboard, so the phone's clipboard goes out when you open droplet, or with
+**Send clipboard** in its notification or quick-settings tile.
+
+**Setting a machine up:** on it, open droplet in the browser, name the
+device, and choose **This device → Set up remote control**. It shows a
+six-digit code that works once, for 10 minutes, and the steps for that
+system. The page notices when the helper links.
+
+Everything goes over one live connection per device (`/ws`, a WebSocket
+through the hub; the format is in [docs/remote.md](docs/remote.md)). The hub
+only relays and the helpers do the acting, so if a helper isn't running its
+controls say so and come back when it reconnects. Anyone who can open
+droplet can control a device whose helper allows it: the same trust as the
+rest of droplet (your tailnet, or the PIN). Each helper lets you switch every
+ability off.
+
+### Linux computers (droplet agent)
+
+On the computer, run the command **Set up remote control** shows:
+
+```sh
+curl -fsSL https://<hub>/agent/install.sh | sh -s -- --code 123456
+```
+
+No sudo: it installs into `~/.local/share/droplet-agent` and runs as a
+`systemd --user` service with your desktop. The hub serves both the script
+and the agent itself. For a machine with no browser (like the hub), use
+`--name NAME` instead of `--code`.
+
+- **Input.** On KDE and GNOME it goes through the desktop's remote-control
+  portal, which asks you once to allow it. On niri, sway and other
+  compositors it needs `/dev/uinput`, which takes a one-time root step:
+  `droplet-agent doctor` prints the exact commands.
+- **Media and volume** use `playerctl` and `wpctl`, and **lock** runs
+  `loginctl lock-session` or your locker (gtklock, swaylock).
+- **Screenshots** use the portal, then niri, spectacle, gnome-screenshot or
+  grim, whichever works. **Clipboard** uses wl-clipboard (xclip on X11).
+- `droplet-agent status` shows what works and why the rest doesn't. Switch
+  abilities off in `~/.config/droplet-agent/config.json`. Details:
+  [agent/README.md](agent/README.md).
+
+### Windows app
+
+`windows/` holds **droplet.exe**, a tray app for Windows 10/11. It's in
+droplet's **Shared** folder on the hub.
+
+- Received files save to `Downloads\droplet`, with a notification. Messages
+  show as notifications too.
+- It rings loudly (with a Stop button) when another device rings the PC.
+- Explorer's right-click gets **Send to → droplet → …**. The tray menu sends
+  files, the clipboard (text, screenshots, copied files) or a ring to any
+  device.
+- **Remote control:** mouse and keyboard, slides, media with exact volume,
+  lock, screenshots of all monitors, and optional clipboard sync. Link it
+  with **Link with code** in its settings (or `droplet link --code 123456`).
+  **Pause remote control** in the tray switches it all off, and the tray
+  icon turns amber while the PC is being controlled.
+
+It isn't code-signed, so SmartScreen warns the first time: **More info → Run
+anyway**. Input can't reach apps running as administrator unless droplet
+does too. Build it on any OS with Go 1.26+ (`cd windows && ./build.sh`).
+Details: [windows/README.md](windows/README.md).
+
+### TV remote
+
+Control an Android TV or Google TV from any droplet device. The hub talks to
+the TV directly, over the same protocol as the Google TV phone app.
+
+**Pair it once:** turn the TV on, open **Hub → TV remote**, and pick your TV
+(or add it by IP: on the TV, Settings → Network & Internet). The TV shows a
+six-character code: type it in. Every droplet device can use the TV from then
+on.
+
+**Open remote** gives:
+- a D-pad with OK, Back / Home / Menu, volume and channel, mute, input and
+  media keys;
+- **touchpad mode** (swipe to move, tap for OK, hold for options);
+- **keyboard** (type into the TV's search box);
+- **apps** (YouTube, Netflix, Prime Video, Spotify, Showmax, Disney+, Plex),
+  or any https:// link.
+
+Hold a key to repeat it or long-press. On a computer, the keyboard drives it
+(arrows, Enter = OK, Backspace = Back, +/- = volume, Space = play/pause).
+**Turn on** works while the TV is in network standby (most Google TVs keep
+it on). From deep standby, droplet also tries Wake-on-LAN.
+
+It needs `androidtvremote2` (in requirements.txt). The hub's client
+certificate and paired TVs live in `tv/` under DROPLET_HOME (owner-only,
+git-ignored); deleting it un-pairs everything. Keys come from a fixed list,
+and links must be https://.
+
+**Verified:**
+- The TV code against `tests/fake_tv.py`, a pretend TV that speaks the real
+  protocol over TLS: pairing (including a wrong code), keys, text, apps,
+  power, state, and the TV going away and coming back.
+- The Linux agent: installed on the T15 with the one-liner, it reported its
+  abilities, published what was playing, and took a real screenshot that
+  arrived as a PNG.
+- The web remote: its touchpad, keyboard, slides and media events were
+  checked one by one against the protocol with a fake helper, and the
+  control sheet was shown with the T15's real playing track.
+- Windows: 33 end-to-end checks against a real hub, plus a Wine smoke test.
+- Android: JVM tests against a live hub (linking, media, SMS, files,
+  clipboard, volume-key slides).
+
+**Not yet tried on real hardware:** input on slim, the T15 or maryanne; the
+Redmi's SMS and file access under MIUI; the real TV.
+
 ## Config (env vars)
 
 | Var | Default | Meaning |
