@@ -114,7 +114,8 @@ type Settings struct {
 	NotifyFiles    bool   `json:"notify_files"`
 	NotifyMessages bool   `json:"notify_messages"`
 	RingSound      bool   `json:"ring_sound"`
-	Autostart      bool   `json:"autostart"`
+	Autostart      bool   `json:"autostart"` // start at sign-in
+	SendTo         bool   `json:"send_to"`   // Explorer's Send to entries
 }
 
 // FieldError points the settings page at the field to fix.
@@ -131,7 +132,7 @@ func (a *Agent) CurrentSettings() Settings {
 	return Settings{
 		HubURL: c.HubURL, Name: c.DeviceName, DownloadDir: c.DownloadDir,
 		AutoDownload: c.AutoDownload, NotifyFiles: c.NotifyFiles, NotifyMessages: c.NotifyMessages,
-		RingSound: c.RingSound, Autostart: c.Autostart,
+		RingSound: c.RingSound, Autostart: c.Autostart, SendTo: c.SendTo,
 	}
 }
 
@@ -156,7 +157,8 @@ func expandPath(p string) string {
 }
 
 // Configure validates and saves settings: it signs in with the PIN if one
-// is given, registers or renames this PC on the hub, and applies autostart.
+// is given, registers or renames this PC on the hub, and applies autostart
+// and Send To.
 //
 // A hub URL that's new (or a PC not set up yet) is used directly, as typed:
 // that's how a PC joins over the tailnet. Otherwise the hub is reached along
@@ -257,6 +259,12 @@ func (a *Agent) Configure(ctx context.Context, s Settings) error {
 	if err := platform.SetAutostart(a.Exe, s.Autostart); err != nil {
 		return &FieldError{"autostart", "Couldn't change start-with-Windows: " + err.Error()}
 	}
+	if !s.SendTo {
+		// at once, not at the next poll: the hub may be out of reach
+		if err := syncSendTo("", nil); err != nil {
+			return &FieldError{"send_to", "Couldn't remove the Send to entries: " + err.Error()}
+		}
+	}
 	err = a.Store.Update(func(n *config.Config) {
 		if moved {
 			n.InboxSeen, n.ChatSeen = nil, map[string]float64{}
@@ -272,7 +280,7 @@ func (a *Agent) Configure(ctx context.Context, s Settings) error {
 		n.PairPending, n.PairCode = pending, code
 		n.DownloadDir = dir
 		n.AutoDownload, n.NotifyFiles, n.NotifyMessages = s.AutoDownload, s.NotifyFiles, s.NotifyMessages
-		n.RingSound, n.Autostart = s.RingSound, s.Autostart
+		n.RingSound, n.Autostart, n.SendTo = s.RingSound, s.Autostart, s.SendTo
 	})
 	if err != nil {
 		return err

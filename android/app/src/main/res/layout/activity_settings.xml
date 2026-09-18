@@ -205,6 +205,37 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- the phone as a Bluetooth mouse and keyboard -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/s_bt" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <View android:id="@+id/bt_dot" android:layout_width="8dp" android:layout_height="8dp"
+                        android:layout_marginEnd="10dp" android:background="@drawable/dot" />
+
+                    <TextView android:id="@+id/bt_state" style="@style/Droplet.Title"
+                        android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <TextView android:id="@+id/bt_support" style="@style/Droplet.Body"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp" android:layout_marginStart="18dp" android:textSize="13sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                    android:text="@string/s_bt_desc" />
+
+                <com.google.android.material.button.MaterialButton android:id="@+id/open_bt"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:text="@string/s_bt_open"
+                    app:cornerRadius="10dp" app:icon="@drawable/ic_bluetooth" />
+            </LinearLayout>
+
             <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:text="@string/s_caps" />
 

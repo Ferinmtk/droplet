@@ -42,6 +42,9 @@ const (
 // notify shows a toast; tests swap it to capture notifications.
 var notify = platform.Notify
 
+// syncSendTo writes Explorer's Send To entries; tests swap it too.
+var syncSendTo = platform.SyncSendTo
+
 // Status is what the tray shows.
 type Status struct {
 	Configured bool   // registered with a hub and let in
@@ -128,6 +131,7 @@ type Agent struct {
 	ringSupported bool
 	removedWarned bool
 	lastDests     []hub.Device
+	lastSendTo    bool // whether lastDests went to Send To, or Send To was cleared
 	wav           []byte
 
 	// what's been said already, so it's said once
@@ -403,7 +407,7 @@ func (a *Agent) tick(ctx context.Context) error {
 		s.Polled, s.Connected, s.Problem, s.Configured = true, true, "", true
 		s.Devices = files.Devices
 	})
-	a.syncDestinations(files.Devices)
+	a.syncDestinations(files.Devices, cfg.SendTo)
 
 	a.handleInbox(ctx, c, cfg, files)
 	a.handleChat(ctx, c, cfg, files)
@@ -445,18 +449,27 @@ func connectionError(err error) bool {
 	return true
 }
 
-// syncDestinations refreshes Explorer's Send To entries when the device list changes.
-func (a *Agent) syncDestinations(devices []hub.Device) {
+// syncDestinations refreshes Explorer's Send To entries when the device
+// list changes, or removes them all when Send To is off.
+func (a *Agent) syncDestinations(devices []hub.Device, on bool) {
 	a.mu.Lock()
-	same := poll.SameDevices(a.lastDests, devices)
+	// lastDests is nil until the first sync (and after anything that
+	// needs a fresh one); after that it's non-nil, even if empty
+	same := a.lastDests != nil && a.lastSendTo == on && poll.SameDevices(a.lastDests, devices)
 	if !same {
-		a.lastDests = append([]hub.Device(nil), devices...)
+		a.lastDests, a.lastSendTo = append([]hub.Device{}, devices...), on
 	}
 	a.mu.Unlock()
 	if same {
 		return
 	}
-	if err := platform.SyncSendTo(a.Exe, Destinations(devices)); err != nil {
+	var err error
+	if on {
+		err = syncSendTo(a.Exe, Destinations(devices))
+	} else {
+		err = syncSendTo("", nil)
+	}
+	if err != nil {
 		log.Printf("send-to shortcuts: %v", err)
 	}
 }

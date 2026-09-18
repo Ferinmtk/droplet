@@ -1,5 +1,6 @@
 package dev.droplet.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -28,6 +29,9 @@ import org.json.JSONObject
  * (up = next, down = previous) while it's open. Each press is an `input`
  * key event over the live connection (docs/remote.md §3.1), so it works in
  * any slide app on a computer running droplet's helper.
+ *
+ * Or, aimed at "Bluetooth: <computer>", the same keys go out as a Bluetooth
+ * keyboard (BtHid): nothing on the computer, and no hub or Wi-Fi needed.
  */
 class RemoteActivity : AppCompatActivity() {
     private lateinit var b: ActivityRemoteBinding
@@ -36,7 +40,9 @@ class RemoteActivity : AppCompatActivity() {
     private var names: Map<String, String> = emptyMap()
     private var loadingNames = false
     private var candidates: List<String> = emptyList()
+    /** A droplet device id, or [Prefs.BT_TARGET] and a Bluetooth address. */
     private var target: String? = Prefs.remoteTarget
+    private var live = Live.Snapshot()
 
     // elapsed-time timer: running since `timerBase`, or stopped showing `timerHeld` ms
     private var timerRunning = false
@@ -66,6 +72,7 @@ class RemoteActivity : AppCompatActivity() {
         }
 
         b.back.setOnClickListener { finish() }
+        b.bluetooth.setOnClickListener { startActivity(Intent(this, BluetoothActivity::class.java)) }
         b.targetRow.setOnClickListener { pickTarget() }
         b.next.setOnClickListener { next(it) }
         b.prev.setOnClickListener { previous(it) }
@@ -88,7 +95,8 @@ class RemoteActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch { Live.state.collect { render(it) } }
+                launch { Live.state.collect { live = it; render() } }
+                launch { BtHid.state.collect { render() } }
                 launch {
                     Live.events.collect { e ->
                         if (e.optString("re") == "input") showStatus(e.optString("error"), bad = true)
@@ -102,12 +110,14 @@ class RemoteActivity : AppCompatActivity() {
         super.onStart()
         // brings the connection up even when Stay connected is off
         Live.hold(TAG)
+        btHost()?.let { useBluetooth(it) }
         if (timerRunning) main.post(tick)
     }
 
     override fun onStop() {
         main.removeCallbacks(tick)
         Live.release(TAG)
+        BtHid.release(BT_TAG)
         super.onStop()
     }
 
@@ -148,6 +158,7 @@ class RemoteActivity : AppCompatActivity() {
     /** Sends one key press to the chosen computer; false if it couldn't go. */
     private fun press(v: View, key: String): Boolean {
         v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        btHost()?.let { return pressBluetooth(it, key) }
         val to = target?.takeIf { it in candidates }
         if (to == null) {
             showStatus(getString(if (Live.state.value.connected) R.string.remote_no_target else R.string.remote_offline), bad = true)
@@ -161,12 +172,46 @@ class RemoteActivity : AppCompatActivity() {
         return true
     }
 
+    /** The key as a Bluetooth keyboard press, once [host] is connected; until then, why not. */
+    private fun pressBluetooth(host: HidHost, key: String): Boolean {
+        val s = BtHid.state.value
+        if (s.connected && s.host?.address == host.address) {
+            if (BtHid.controller.keyboard.key(key)) return true
+        }
+        useBluetooth(host)
+        val now = BtHid.state.value
+        showStatus(if (now.phase in BT_TROUBLE) getString(R.string.remote_bt_problem)
+            else getString(R.string.remote_bt_connecting, host.name), bad = true)
+        return false
+    }
+
+    /** Keeps the phone a Bluetooth keyboard while this is open, connected to [host]. */
+    private fun useBluetooth(host: HidHost) {
+        BtHid.hold(BT_TAG)
+        BtHid.controller.connect(host)
+    }
+
+    /** The Bluetooth host the remote is aimed at, if it's aimed at one. */
+    private fun btHost(): HidHost? {
+        val addr = target?.takeIf { it.startsWith(Prefs.BT_TARGET) }?.removePrefix(Prefs.BT_TARGET) ?: return null
+        val name = BtHid.state.value.host?.takeIf { it.address == addr }?.name
+            ?: Prefs.btLastHostName?.takeIf { Prefs.btLastHost == addr }
+            ?: BtHid.controller.bonded().firstOrNull { it.address == addr }?.name
+            ?: addr
+        return HidHost(addr, name)
+    }
+
     // --- target ---------------------------------------------------------------------
 
-    private fun render(s: Live.Snapshot) {
+    private fun render() {
+        val s = live
         candidates = s.peers.values.filter { it.id != s.deviceId && "input" in it.caps }.map { it.id }.sorted()
-        if (target !in candidates) target = candidates.firstOrNull { it == Prefs.remoteTarget } ?: candidates.firstOrNull()
+        val bt = btHost()
+        if (bt == null && target !in candidates) {
+            target = candidates.firstOrNull { it == Prefs.remoteTarget } ?: candidates.firstOrNull()
+        }
         if (candidates.any { it !in names }) loadNames()
+        if (bt != null) return renderBluetooth(bt)
 
         b.liveDot.setBackgroundResource(when {
             s.connected -> R.drawable.r_dot_on
@@ -182,7 +227,24 @@ class RemoteActivity : AppCompatActivity() {
             else -> getString(R.string.remote_none)
         }
         b.target.setTextColor(ContextCompat.getColor(this, if (t != null) R.color.r_text else R.color.r_coral))
-        val ready = t != null
+        showReady(t != null)
+    }
+
+    private fun renderBluetooth(host: HidHost) {
+        val hid = BtHid.state.value
+        val connected = hid.connected && hid.host?.address == host.address
+        b.liveDot.setBackgroundResource(when {
+            connected -> R.drawable.r_dot_on
+            hid.phase in BT_TROUBLE -> R.drawable.r_dot_bad
+            else -> R.drawable.r_dot
+        })
+        b.live.text = if (connected) getString(R.string.remote_bt_live) else getString(hid.phase.label())
+        b.target.text = getString(R.string.remote_bt_target, host.name)
+        b.target.setTextColor(ContextCompat.getColor(this, if (hid.phase in BT_TROUBLE) R.color.r_coral else R.color.r_text))
+        showReady(connected)
+    }
+
+    private fun showReady(ready: Boolean) {
         listOf(b.next, b.prev, b.start, b.black, b.end).forEach { it.alpha = if (ready) 1f else 0.45f }
     }
 
@@ -194,24 +256,37 @@ class RemoteActivity : AppCompatActivity() {
             loadingNames = false
             if (found != null) {
                 names = found.associate { it.id to it.name }
-                render(Live.state.value)
+                render()
             }
         }
     }
 
+    /**
+     * Computers running droplet's helper, then paired Bluetooth devices, then
+     * the way to set Bluetooth up (or pair another computer).
+     */
     private fun pickTarget() {
         if (candidates.isEmpty()) {
             showStatus(getString(if (Live.state.value.connected) R.string.remote_none_help else R.string.remote_offline), bad = true)
-            return
         }
-        val labels = candidates.map { names[it] ?: it }.toTypedArray()
+        val bonded = BtHid.controller.bonded()
+        val ids = candidates + bonded.map { Prefs.BT_TARGET + it.address }
+        val labels = candidates.map { names[it] ?: it } +
+            bonded.map { getString(R.string.remote_bt_target, it.name) } +
+            getString(if (bonded.isEmpty()) R.string.remote_bt_setup else R.string.remote_bt_pair)
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.remote_pick)
-            .setSingleChoiceItems(labels, candidates.indexOf(target)) { d, i ->
-                target = candidates[i]
-                Prefs.remoteTarget = target
-                render(Live.state.value)
+            .setSingleChoiceItems(labels.toTypedArray(), ids.indexOf(target)) { d, i ->
                 d.dismiss()
+                if (i >= ids.size) {
+                    startActivity(Intent(this, BluetoothActivity::class.java))
+                    return@setSingleChoiceItems
+                }
+                target = ids[i]
+                Prefs.remoteTarget = target
+                val bt = btHost()
+                if (bt != null) useBluetooth(bt) else BtHid.release(BT_TAG)
+                render()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -258,5 +333,10 @@ class RemoteActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "remote"
+        private const val BT_TAG = "remote-bt"
+        private val BT_TROUBLE = setOf(
+            HidController.Phase.NO_PERMISSION, HidController.Phase.BLUETOOTH_OFF, HidController.Phase.UNSUPPORTED,
+            HidController.Phase.REFUSED, HidController.Phase.OLD_ANDROID, HidController.Phase.NO_ADAPTER,
+        )
     }
 }
