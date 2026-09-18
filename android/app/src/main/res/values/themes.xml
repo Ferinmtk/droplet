@@ -36,6 +36,34 @@
         <item name="android:windowAnimationStyle">@null</item>
     </style>
 
+    <!-- the presentation remote: droplet's dark teal, whatever the system theme -->
+    <style name="Theme.Droplet.Remote" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/r_accent</item>
+        <item name="colorOnPrimary">@color/r_on_accent</item>
+        <item name="colorPrimaryContainer">@color/r_card</item>
+        <item name="colorOnPrimaryContainer">@color/r_text</item>
+        <item name="colorSecondary">@color/r_accent</item>
+        <item name="colorOnSecondary">@color/r_on_accent</item>
+        <item name="colorSecondaryContainer">@color/r_card_2</item>
+        <item name="colorOnSecondaryContainer">@color/r_text</item>
+        <item name="android:colorBackground">@color/r_bg</item>
+        <item name="colorOnBackground">@color/r_text</item>
+        <item name="colorSurface">@color/r_card</item>
+        <item name="colorOnSurface">@color/r_text</item>
+        <item name="colorOnSurfaceVariant">@color/r_dim</item>
+        <item name="colorSurfaceContainerLowest">@color/r_bg</item>
+        <item name="colorSurfaceContainerLow">@color/r_card</item>
+        <item name="colorSurfaceContainer">@color/r_card</item>
+        <item name="colorSurfaceContainerHigh">@color/r_card</item>
+        <item name="colorSurfaceContainerHighest">@color/r_card_2</item>
+        <item name="colorOutline">@color/r_line_2</item>
+        <item name="colorOutlineVariant">@color/r_line</item>
+        <item name="colorError">@color/r_coral</item>
+        <item name="android:windowBackground">@color/r_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
     <style name="Droplet.Section" parent="">
         <item name="android:textSize">12sp</item>
         <item name="android:textAllCaps">true</item>

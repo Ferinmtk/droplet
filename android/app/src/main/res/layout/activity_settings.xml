@@ -110,6 +110,148 @@
                     android:layout_height="wrap_content" android:text="@string/s_inbox_desc" />
             </LinearLayout>
 
+            <!-- remote control -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/s_remote" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <View android:id="@+id/live_dot" android:layout_width="8dp" android:layout_height="8dp"
+                        android:layout_marginEnd="10dp" android:background="@drawable/dot" />
+
+                    <TextView android:id="@+id/live_state" style="@style/Droplet.Title"
+                        android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="6dp"
+                    android:text="@string/s_remote_desc" />
+
+                <com.google.android.material.button.MaterialButton android:id="@+id/open_remote"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:text="@string/s_open_remote"
+                    app:cornerRadius="10dp" app:icon="@drawable/ic_remote" />
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
+                <LinearLayout android:id="@+id/link_row" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:background="?attr/selectableItemBackground"
+                    android:gravity="center_vertical" android:minHeight="48dp" android:orientation="horizontal">
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical">
+
+                        <TextView style="@style/Droplet.Title" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:text="@string/s_link" />
+
+                        <TextView style="@style/Droplet.Body" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:text="@string/s_link_desc" />
+                    </LinearLayout>
+
+                    <ImageView android:layout_width="24dp" android:layout_height="24dp"
+                        android:contentDescription="@null" android:src="@drawable/ic_chevron" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/s_caps" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/cap_media"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_cap_media" android:textColor="@color/text" android:textSize="16sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_cap_media_desc" />
+
+                <LinearLayout android:id="@+id/media_perm_row" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                    android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <View android:id="@+id/media_dot" android:layout_width="8dp" android:layout_height="8dp"
+                        android:layout_marginEnd="10dp" android:background="@drawable/dot" />
+
+                    <TextView android:id="@+id/media_perm" android:layout_width="0dp"
+                        android:layout_height="wrap_content" android:layout_weight="1"
+                        android:textColor="@color/text" android:textSize="14sp" />
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/media_grant"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" android:text="@string/s_mirror_button" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/cap_sms"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_cap_sms" android:textColor="@color/text" android:textSize="16sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_cap_sms_desc" />
+
+                <LinearLayout android:id="@+id/sms_perm_row" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                    android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <View android:id="@+id/sms_dot" android:layout_width="8dp" android:layout_height="8dp"
+                        android:layout_marginEnd="10dp" android:background="@drawable/dot" />
+
+                    <TextView android:id="@+id/sms_perm" android:layout_width="0dp"
+                        android:layout_height="wrap_content" android:layout_weight="1"
+                        android:textColor="@color/text" android:textSize="14sp" />
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/sms_grant"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" android:text="@string/s_sms_grant" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/cap_files"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_cap_files" android:textColor="@color/text" android:textSize="16sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_cap_files_desc" />
+
+                <LinearLayout android:id="@+id/files_perm_row" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                    android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <View android:id="@+id/files_dot" android:layout_width="8dp" android:layout_height="8dp"
+                        android:layout_marginEnd="10dp" android:background="@drawable/dot" />
+
+                    <TextView android:id="@+id/files_perm" android:layout_width="0dp"
+                        android:layout_height="wrap_content" android:layout_weight="1"
+                        android:textColor="@color/text" android:textSize="14sp" />
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/files_grant"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" android:text="@string/s_files_grant" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/cap_clipboard"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_cap_clip" android:textColor="@color/text" android:textSize="16sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_cap_clip_desc" />
+            </LinearLayout>
+
             <!-- mirroring -->
             <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:text="@string/s_mirror" />

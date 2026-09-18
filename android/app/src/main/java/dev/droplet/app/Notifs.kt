@@ -65,6 +65,14 @@ object Notifs {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
+    fun openRemote(context: Context): PendingIntent =
+        PendingIntent.getActivity(context, 2, Intent(context, RemoteActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE)
+
+    fun sendClipboard(context: Context): PendingIntent =
+        PendingIntent.getActivity(context, 3, Intent(context, ClipSendActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE)
+
     fun openSettings(context: Context): PendingIntent =
         PendingIntent.getActivity(context, 1, Intent(context, SettingsActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE)

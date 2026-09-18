@@ -53,6 +53,8 @@ class MainActivity : AppCompatActivity() {
     private var loadFailed = false
     private var failedUrl: String? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    /** The device token the page was loaded with; Link with code swaps it. */
+    private var loadedToken: String? = null
 
     private val pickFiles = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         val data = res.data
@@ -118,6 +120,8 @@ class MainActivity : AppCompatActivity() {
         web.onResume()
         // MIUI and force-stop kill the service; opening the app brings it back
         if (Prefs.stayConnected && !ConnectionService.running) runCatching { ConnectionService.start(this) }
+        // the page may have just named this phone (a new device token)
+        Live.refresh()
         watchNetwork(true)
         // the hub address may have changed in settings
         if (Prefs.hubUrl != null && Prefs.hubUrl != hub) {
@@ -125,6 +129,16 @@ class MainActivity : AppCompatActivity() {
             web.clearHistory()
             web.loadUrl("$hub/")
         }
+        // linked to another device in Settings: show the page as that device
+        val token = Hub.deviceToken()
+        if (loadedToken != null && token != null && token != loadedToken) web.reload()
+        loadedToken = token
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // the only moment Android lets droplet read the clipboard: send it if it changed
+        if (hasFocus && ::b.isInitialized) runCatching { ClipBridge.onForeground(this) }
     }
 
     override fun onPause() {

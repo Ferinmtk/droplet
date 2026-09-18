@@ -71,17 +71,57 @@ object Hub {
         runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
 
     /** True once this phone has been named in the web app (the hub gave it a device cookie). */
-    fun hasDevice(): Boolean {
-        val b = base ?: return false
-        return cookies(b)?.split(';')?.any { it.trim().startsWith("$DEVICE_COOKIE=") } == true
+    fun hasDevice(): Boolean = deviceToken() != null
+
+    /**
+     * This device's token: the WebView's `droplet_device` cookie. Native code
+     * sends it as a bearer too, which is what the live connection needs.
+     */
+    fun deviceToken(hub: String? = base): String? {
+        val b = hub ?: return null
+        return cookies(b)?.split(';')?.map { it.trim() }
+            ?.firstOrNull { it.startsWith("$DEVICE_COOKIE=") }
+            ?.substringAfter('=')?.takeIf { it.isNotEmpty() }
+    }
+
+    /** wss://host/ws for an https hub, ws:// for the emulator's plain-http one. */
+    fun socketUrl(hub: String? = base): String? =
+        hub?.let { (if (it.startsWith("https://")) "wss://" + it.removePrefix("https://") else "ws://" + it.removePrefix("http://")) + "/ws" }
+
+    /** Cookies (the PIN session) and the device token, for a request to [url] on the hub. */
+    fun authHeaders(url: String, hub: String? = base): List<Pair<String, String>> = buildList {
+        cookies(url)?.let { add("Cookie" to it) }
+        deviceToken(hub)?.let { add("Authorization" to "Bearer $it") }
     }
 
     private fun request(path: String, hub: String? = base): Request.Builder {
         val b = hub ?: throw HubException("No hub set up")
         val url = b + path
         return Request.Builder().url(url).header("User-Agent", userAgent).apply {
-            cookies(url)?.let { header("Cookie", it) }
+            authHeaders(url, b).forEach { (k, v) -> header(k, v) }
         }
+    }
+
+    /**
+     * Trades a six-digit link code (made on another browser's droplet page)
+     * for that device's identity, and stores the token as the WebView's
+     * cookie, so the page and the native parts all become that device.
+     * Returns the device's name.
+     */
+    fun link(code: String): String {
+        val b = base ?: throw HubException("No hub set up")
+        val body = JSONObject().put("code", code).put("client", "droplet-android on ${android.os.Build.MODEL}")
+        // no Authorization here: the code alone says which device this becomes
+        val req = Request.Builder().url("$b/api/device/link").header("User-Agent", userAgent).apply {
+            cookies(b)?.let { header("Cookie", it) }
+        }.post(body.toString().toRequestBody("application/json".toMediaType())).build()
+        val res = client.newCall(req).execute().json()
+        val token = res.optString("token").takeIf { it.isNotEmpty() } ?: throw HubException("The hub sent no token")
+        val secure = if (b.startsWith("https://")) "; Secure" else ""
+        val cm = CookieManager.getInstance()
+        cm.setCookie(b, "$DEVICE_COOKIE=$token; Max-Age=${5 * 365 * 24 * 3600}; Path=/; HttpOnly; SameSite=Lax$secure")
+        cm.flush()
+        return res.optString("name", "that device")
     }
 
     private fun Response.json(): JSONObject {
