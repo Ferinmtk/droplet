@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>droplet settings</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C16 3 6 14.5 6 20.5a10 10 0 0 0 20 0C26 14.5 16 3 16 3z' fill='%2338bdf8'/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --dim:#94a3b8; --accent:#38bdf8; --ok:#4ade80; --danger:#f87171; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:system-ui,"Segoe UI",sans-serif; max-width:600px;
+         margin:0 auto; padding:2rem 1rem 4rem; line-height:1.45; }
+  header { display:flex; align-items:center; gap:.75rem; margin-bottom:.35rem; }
+  header svg { width:34px; height:34px; flex:0 0 auto; }
+  h1 { font-size:1.5rem; font-weight:650; letter-spacing:-.01em; }
+  .sub { color:var(--dim); font-size:.9rem; margin-bottom:1.5rem; }
+  h2 { font-size:.75rem; text-transform:uppercase; letter-spacing:.09em; color:var(--dim); margin:1.6rem 0 .5rem; font-weight:600; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.2rem 1rem; }
+  .field { padding:.8rem 0; border-bottom:1px solid var(--line); }
+  .field:last-child { border-bottom:none; }
+  label.name { display:block; font-size:.9rem; font-weight:550; margin-bottom:.4rem; }
+  .row { display:flex; gap:.5rem; align-items:center; }
+  input[type=text], input[type=url], input[type=password] {
+    flex:1; width:100%; font:inherit; font-size:.92rem; background:var(--bg); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:.5rem .65rem; outline:none; transition:border-color .15s; }
+  input:focus { border-color:var(--accent); }
+  .bad input { border-color:var(--danger); }
+  .help { color:var(--dim); font-size:.8rem; margin-top:.35rem; }
+  .err { color:var(--danger); font-size:.82rem; margin-top:.35rem; display:none; }
+  .bad .err { display:block; }
+  .hint { color:#fbbf24; font-size:.82rem; margin-top:.35rem; }
+  button { font:inherit; font-size:.88rem; cursor:pointer; border-radius:8px; border:1px solid var(--line);
+           background:var(--card); color:var(--text); padding:.5rem .9rem; white-space:nowrap; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--bg); font-weight:650; padding:.6rem 1.4rem; }
+  button:disabled { opacity:.55; cursor:default; }
+  .status { display:flex; align-items:center; gap:.45rem; font-size:.85rem; color:var(--dim); margin-top:.45rem; min-height:1.3em; }
+  .dot { width:.55rem; height:.55rem; border-radius:50%; background:var(--line); flex:0 0 auto; }
+  .dot.ok { background:var(--ok); } .dot.bad { background:var(--danger); } .dot.wait { background:var(--accent); animation:pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  .toggle { display:flex; align-items:center; justify-content:space-between; gap:1rem; cursor:pointer; }
+  .toggle .t { font-size:.9rem; } .toggle .d { color:var(--dim); font-size:.8rem; }
+  .switch { position:relative; flex:0 0 auto; width:2.5rem; height:1.4rem; }
+  .switch input { opacity:0; width:0; height:0; position:absolute; }
+  .switch span { position:absolute; inset:0; background:var(--line); border-radius:999px; transition:background .15s; }
+  .switch span::after { content:""; position:absolute; left:.2rem; top:.2rem; width:1rem; height:1rem; border-radius:50%;
+                        background:var(--text); transition:transform .15s; }
+  .switch input:checked + span { background:var(--accent); }
+  .switch input:checked + span::after { transform:translateX(1.1rem); background:var(--bg); }
+  .switch input:focus-visible + span { outline:2px solid var(--accent); outline-offset:2px; }
+  footer { display:flex; align-items:center; gap:1rem; margin-top:1.6rem; }
+  #saved { font-size:.88rem; color:var(--ok); }
+  #saveErr { font-size:.88rem; color:var(--danger); }
+  .done { display:none; background:rgba(56,189,248,.08); border:1px solid var(--accent); border-radius:12px; padding:1rem; margin-top:1.4rem; font-size:.9rem; }
+  .done b { color:var(--accent); }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:.85em; background:var(--bg); padding:.05rem .3rem; border-radius:4px; }
+  #pinField { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3C16 3 6 14.5 6 20.5a10 10 0 0 0 20 0C26 14.5 16 3 16 3z" fill="#38bdf8"/><path d="M11.5 20.5a4.5 4.5 0 0 0 4.5 4.5" stroke="#0f172a" stroke-width="2" fill="none" stroke-linecap="round" opacity=".55"/></svg>
+  <h1>droplet</h1>
+</header>
+<p class="sub" id="intro">The companion that lives in your tray: it picks up files and messages sent to this PC, rings when you're looking for it, and puts droplet in Explorer's <i>Send to</i> menu.</p>
+
+<h2>Hub</h2>
+<div class="card">
+  <div class="field" id="f-hub_url">
+    <label class="name" for="hub_url">Hub address</label>
+    <div class="row">
+      <input type="url" id="hub_url" spellcheck="false" autocomplete="off">
+      <button type="button" id="check">Check</button>
+    </div>
+    <div class="status"><span class="dot" id="hubDot"></span><span id="hubStatus">…</span></div>
+    <div class="err"></div>
+  </div>
+  <div class="field" id="pinField">
+    <div id="f-pin">
+      <label class="name" for="pin">PIN</label>
+      <input type="password" id="pin" autocomplete="off" inputmode="numeric">
+      <div class="help">This hub asks for its PIN. It's only used once, to sign this PC in.</div>
+      <div class="err"></div>
+    </div>
+  </div>
+  <div class="field" id="f-name">
+    <label class="name" for="name">This PC's name</label>
+    <input type="text" id="name" maxlength="40" spellcheck="false" autocomplete="off">
+    <div class="help">How it shows up on your other devices.</div>
+    <div class="hint" id="nameHint" hidden></div>
+    <div class="err"></div>
+  </div>
+</div>
+
+<h2>Receiving</h2>
+<div class="card">
+  <div class="field" id="f-download_dir">
+    <label class="name" for="download_dir">Download folder</label>
+    <input type="text" id="download_dir" spellcheck="false" autocomplete="off">
+    <div class="err"></div>
+  </div>
+  <div class="field">
+    <label class="toggle"><span><span class="t">Download files automatically</span><br><span class="d">Saves each file as it arrives, then clears it from the hub.</span></span>
+      <span class="switch"><input type="checkbox" id="auto_download"><span></span></span></label>
+  </div>
+</div>
+
+<h2>Notifications</h2>
+<div class="card">
+  <div class="field">
+    <label class="toggle"><span class="t">When a file arrives</span>
+      <span class="switch"><input type="checkbox" id="notify_files"><span></span></span></label>
+  </div>
+  <div class="field">
+    <label class="toggle"><span><span class="t">When a message arrives</span><br><span class="d">Showing one marks it read in droplet.</span></span>
+      <span class="switch"><input type="checkbox" id="notify_messages"><span></span></span></label>
+  </div>
+  <div class="field">
+    <label class="toggle"><span><span class="t">Ring out loud</span><br><span class="d">When another device rings this PC. Off shows a notification only.</span></span>
+      <span class="switch"><input type="checkbox" id="ring_sound"><span></span></span></label>
+  </div>
+</div>
+
+<h2>Windows</h2>
+<div class="card">
+  <div class="field" id="f-autostart">
+    <label class="toggle"><span class="t">Start droplet when I sign in</span>
+      <span class="switch"><input type="checkbox" id="autostart"><span></span></span></label>
+    <div class="err"></div>
+  </div>
+</div>
+
+<footer>
+  <button class="primary" id="save">Save</button>
+  <span id="saved"></span><span id="saveErr"></span>
+</footer>
+
+<div class="done" id="done">
+  <b>All set.</b> droplet is running in the tray (look by the clock, under <code>^</code> if it's hidden).
+  Right-click it to send files, send the clipboard or ring a device. In Explorer, right-click any file →
+  <i>Send to</i> → <i>droplet → …</i>. You can close this tab.
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const api = (path, body) => fetch("api/" + path, body === undefined ? {} :
+  { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }));
+
+let taken = [];
+let registered = false;
+let probeSeq = 0;
+
+function clearErrors() {
+  document.querySelectorAll(".bad").forEach((el) => el.classList.remove("bad"));
+  $("saveErr").textContent = "";
+}
+function fieldError(field, msg) {
+  const el = $("f-" + field);
+  if (!el) { $("saveErr").textContent = msg; return; }
+  if (field === "pin") $("pinField").style.display = "block";
+  el.classList.add("bad");
+  el.querySelector(".err").textContent = msg;
+  const input = el.querySelector("input"); if (input) input.focus();
+}
+function hubState(kind, text) {
+  $("hubDot").className = "dot " + kind;
+  $("hubStatus").textContent = text;
+}
+function checkName() {
+  const n = $("name").value.trim().toLowerCase();
+  const clash = !registered && n && taken.some((t) => t.toLowerCase() === n);
+  $("nameHint").hidden = !clash;
+  if (clash) $("nameHint").textContent = `"${$("name").value.trim()}" is already a device on this hub — perhaps this PC's browser. ` +
+    "Pick another name, or remove that one under Devices in droplet first.";
+}
+
+async function probe(fillName) {
+  const seq = ++probeSeq;
+  hubState("wait", "Checking…");
+  const { data } = await api("probe", { hub_url: $("hub_url").value, pin: $("pin").value });
+  if (seq !== probeSeq) return;
+  $("pinField").style.display = data.pin_required ? "block" : "none";
+  if (data.ok) {
+    registered = data.registered;
+    taken = data.taken || [];
+    hubState("ok", registered ? `Connected — this PC is "${data.name}" on the hub` : "Reachable — save to add this PC");
+    if (data.name && (!$("name").value || (fillName && registered))) $("name").value = data.name;
+  } else {
+    hubState("bad", data.error || "Can't reach the hub");
+  }
+  checkName();
+}
+
+async function load() {
+  const { data } = await api("settings");
+  const s = data.settings;
+  registered = data.registered;
+  for (const k of ["hub_url", "name", "download_dir"]) $(k).value = s[k] || "";
+  for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart"]) $(k).checked = !!s[k];
+  if (data.first_run) {
+    $("autostart").checked = true;
+    $("intro").textContent = "Welcome! Check the hub, give this PC a name and save. droplet then keeps running in your tray.";
+  }
+  probe(true);
+}
+
+$("check").onclick = () => probe(true);
+$("hub_url").addEventListener("change", () => probe(true));
+$("name").addEventListener("input", checkName);
+$("pin").addEventListener("keydown", (e) => { if (e.key === "Enter") $("save").click(); });
+
+$("save").onclick = async () => {
+  clearErrors();
+  $("saved").textContent = "";
+  $("save").disabled = true;
+  $("save").textContent = "Saving…";
+  const body = { pin: $("pin").value };
+  for (const k of ["hub_url", "name", "download_dir"]) body[k] = $(k).value;
+  for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart"]) body[k] = $(k).checked;
+  const { ok, data } = await api("save", body).catch(() => ({ ok: false, data: { error: "droplet stopped running — start it again" } }));
+  $("save").disabled = false;
+  $("save").textContent = "Save";
+  if (!ok) { fieldError(data.field || "", data.error || "Couldn't save"); return; }
+  $("pin").value = "";
+  $("pinField").style.display = "none";
+  $("name").value = data.name;
+  $("hub_url").value = data.hub_url;
+  $("saved").textContent = "Saved ✓";
+  $("done").style.display = "block";
+  registered = true;
+  probe(false);
+};
+
+load();
+</script>
+</body>
+</html>
