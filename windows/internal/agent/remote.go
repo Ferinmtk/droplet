@@ -48,11 +48,17 @@ func (a *Agent) SetRemotePaused(p bool) error {
 	return err
 }
 
-// RemoteParams is what the live connection needs, from the saved settings.
+// RemoteParams is what the live connection needs: the saved settings, and
+// the current route. With no route yet (or while waiting to be let in)
+// there's nothing to connect to; a new route reloads the connection.
 func (a *Agent) RemoteParams() remote.Params {
 	c := a.Store.Get()
-	return remote.Params{
-		HubURL: c.HubURL, Token: c.DeviceToken, Session: c.Session, Name: c.DeviceName,
+	token := c.DeviceToken
+	if !c.Registered() {
+		token = ""
+	}
+	p := remote.Params{
+		Token: token, Session: c.Session, Name: c.DeviceName,
 		Paused: c.RemotePaused,
 		Caps: map[string]bool{
 			remote.CapInput:      c.RemoteInput,
@@ -62,6 +68,10 @@ func (a *Agent) RemoteParams() remote.Params {
 			remote.CapClipboard:  c.ClipboardSync,
 		},
 	}
+	if r, ok := a.Routes.Current(); ok {
+		p.HubURL, p.Transport = r.Base, r.Transport()
+	}
+	return p
 }
 
 // SetRemoteStatus records the live connection's state for the tray.
@@ -91,13 +101,51 @@ func LinkClient() string {
 // browser), using the six-digit code droplet shows under "Set up remote
 // control of this device". Files, messages and rings for that device then
 // arrive here too, and the PC is listed once.
-func (a *Agent) Link(ctx context.Context, hubURL, code, pin string) (*LinkResult, error) {
+//
+// hubURL is the hub to link on; empty (or the hub already set up) means the
+// current route, LAN or tailnet. For a hub found on the LAN, see LinkLAN.
+func (a *Agent) Link(ctx context.Context, hubURL, code, pinCode string) (*LinkResult, error) {
 	cfg := a.Store.Get()
-	u, err := hub.ParseHubURL(hubURL)
+	digits, err := linkDigits(code)
 	if err != nil {
-		return nil, &FieldError{"hub_url", err.Error()}
+		return nil, err
 	}
-	hubURL = u.String()
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	current := strings.TrimSpace(hubURL) == ""
+	if !current {
+		u, err := hub.ParseHubURL(hubURL)
+		if err != nil {
+			return nil, &FieldError{"hub_url", err.Error()}
+		}
+		hubURL = u.String()
+		current = sameHub(hubURL, cfg.HubURL) && cfg.Hub != nil
+	}
+	if current {
+		if cfg.Hub == nil && cfg.RemoteURL() == "" {
+			return nil, &FieldError{"hub_url", "Choose your hub first."}
+		}
+		r, err := a.Routes.Ensure(ctx)
+		if err != nil {
+			return nil, &FieldError{"link_code", "Can't reach " + HubName(cfg) + ": " + describe(err, HubName(cfg)) + "."}
+		}
+		session := cfg.Session
+		c, err := r.Client("", session)
+		if err != nil {
+			return nil, err
+		}
+		return a.link(ctx, c, digits, pinCode, cfg.Hub, "")
+	}
+	session := ""
+	if sameHub(hubURL, cfg.HubURL) {
+		session = cfg.Session
+	}
+	c, _ := hub.New(hubURL, "", session)
+	return a.link(ctx, c, digits, pinCode, a.identityFromURL(ctx, hubURL), hubURL)
+}
+
+// linkDigits checks a six-digit link code.
+func linkDigits(code string) (string, error) {
 	digits := strings.Map(func(r rune) rune {
 		if r >= '0' && r <= '9' {
 			return r
@@ -105,18 +153,18 @@ func (a *Agent) Link(ctx context.Context, hubURL, code, pin string) (*LinkResult
 		return -1
 	}, code)
 	if len(digits) != 6 {
-		return nil, &FieldError{"link_code", "The code is six digits, like 123456."}
+		return "", &FieldError{"link_code", "The code is six digits, like 123456."}
 	}
-	session := ""
-	moved := !sameHub(hubURL, cfg.HubURL)
-	if !moved {
-		session = cfg.Session
-	}
-	c, _ := hub.New(hubURL, "", session)
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	if pin != "" {
-		if err := c.Login(ctx, pin); err != nil {
+	return digits, nil
+}
+
+// link trades the code along c and saves the result. ident is the hub's
+// identity (nil if unknown); hubURL is the URL c uses, when it's one typed
+// in rather than a route.
+func (a *Agent) link(ctx context.Context, c *hub.Client, digits, pinCode string, ident *config.Hub, hubURL string) (*LinkResult, error) {
+	cfg := a.Store.Get()
+	if pinCode != "" {
+		if err := c.Login(ctx, pinCode); err != nil {
 			return nil, &FieldError{"pin", friendly(err, c)}
 		}
 	}
@@ -129,8 +177,17 @@ func (a *Agent) Link(ctx context.Context, hubURL, code, pin string) (*LinkResult
 	case err != nil:
 		return nil, &FieldError{"link_code", friendly(err, c)}
 	}
+	var moved bool
+	switch {
+	case ident != nil && cfg.Hub != nil:
+		moved = ident.ID != cfg.Hub.ID
+	case hubURL != "":
+		moved = !sameHub(hubURL, cfg.HubURL)
+	default:
+		moved = cfg.Hub == nil && ident != nil
+	}
 	res := &LinkResult{ID: linked.ID, Name: linked.Name}
-	if !moved && cfg.Registered() && cfg.DeviceID != "" && cfg.DeviceID != linked.ID {
+	if !moved && cfg.DeviceToken != "" && cfg.DeviceID != "" && cfg.DeviceID != linked.ID {
 		res.Replaced = &hub.Device{ID: cfg.DeviceID, Name: cfg.DeviceName}
 	}
 	err = a.Store.Update(func(n *config.Config) {
@@ -138,9 +195,18 @@ func (a *Agent) Link(ctx context.Context, hubURL, code, pin string) (*LinkResult
 			// a different device: its inbox and chats are new to us
 			n.InboxSeen, n.ChatSeen = nil, map[string]float64{}
 		}
-		n.HubURL = hubURL
+		switch {
+		case hubURL != "":
+			n.HubURL = hubURL
+		case moved && ident != nil:
+			n.HubURL = ident.Tailnet
+		}
+		if ident != nil || moved {
+			n.Hub = ident
+		}
 		n.DeviceToken, n.Session = linked.Token, c.Session
 		n.DeviceID, n.DeviceName = linked.ID, linked.Name
+		n.PairPending, n.PairCode = false, ""
 	})
 	if err != nil {
 		return nil, fmt.Errorf("saving settings: %w", err)

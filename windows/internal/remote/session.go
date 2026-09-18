@@ -61,7 +61,10 @@ func (b Backend) Has(capability string) bool {
 // Params is what a connection needs from the settings. The session reads
 // it again at every (re)connect and on Reload.
 type Params struct {
-	HubURL  string
+	HubURL string
+	// Transport connects to HubURL: the pinned LAN transport, or nil for
+	// normal TLS (docs/local-first.md).
+	Transport http.RoundTripper
 	Token   string // the device token (droplet_device), sent as a bearer
 	Session string // the hub's session cookie after a PIN login, if any
 	Name    string // this device's name, for screenshot file names
@@ -181,7 +184,8 @@ func (s *Session) offered(p Params) []string {
 }
 
 func paramsKey(p Params, caps []string) string {
-	return strings.Join([]string{p.HubURL, p.Token, p.Session, strings.Join(caps, ",")}, "\x00")
+	// the transport's identity matters too: a new pin means a new transport
+	return strings.Join([]string{p.HubURL, fmt.Sprintf("%p", p.Transport), p.Token, p.Session, strings.Join(caps, ",")}, "\x00")
 }
 
 // Run keeps connecting until ctx ends.
@@ -248,6 +252,8 @@ func describe(err error, p Params) string {
 		return "disconnected"
 	case errors.As(err, &de) && de.status >= 300 && de.status < 400 && strings.Contains(de.location, "/login"):
 		return "the hub wants a PIN (open Settings)"
+	case errors.As(err, &de) && de.status == http.StatusForbidden:
+		return "this PC hasn't been let in to the hub (open Settings)"
 	case errors.As(err, &de) && de.status == http.StatusNotFound:
 		return "this hub has no live connections (update the hub)"
 	case errors.As(err, &de) && de.status != 0:
@@ -303,7 +309,8 @@ func (s *Session) connect(ctx context.Context, p Params, caps []string) (connect
 	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	// don't follow redirects: a PIN hub redirects to /login, which is an
 	// answer ("sign in first"), not somewhere to open a socket
-	hc := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	hc := &http.Client{Transport: p.Transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	conn, resp, err := websocket.Dial(dctx, addr, &websocket.DialOptions{HTTPHeader: h, HTTPClient: hc})
 	cancel()
 	if err != nil {
@@ -620,7 +627,7 @@ func (s *Session) screenshot(ctx context.Context, p Params, to Peer) {
 		return
 	}
 	name := ScreenshotName(s.machineName(), time.Now())
-	c, err := hub.New(p.HubURL, p.Token, p.Session)
+	c, err := hub.NewWithTransport(p.HubURL, p.Token, p.Session, p.Transport)
 	if err != nil {
 		s.o.Logf("live: screenshot: %v", err)
 		return

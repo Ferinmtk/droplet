@@ -56,6 +56,18 @@
   .done b { color:var(--accent); }
   code { font-family:ui-monospace,Consolas,monospace; font-size:.85em; background:var(--bg); padding:.05rem .3rem; border-radius:4px; }
   #pinField { display:none; }
+  .alert { border:1px solid var(--danger); background:rgba(248,113,113,.08); border-radius:10px; padding:.75rem .9rem; margin-top:.7rem; font-size:.88rem; }
+  .alert b { color:var(--danger); }
+  .pairbox { border:1px solid var(--accent); background:rgba(56,189,248,.08); border-radius:10px; padding:.9rem; margin-top:.7rem; font-size:.9rem; }
+  .pairbox .code { font-size:2.4rem; font-weight:700; letter-spacing:.35em; color:var(--accent); font-variant-numeric:tabular-nums; margin:.1rem 0 .35rem; }
+  .pairbox p { margin-bottom:.6rem; }
+  .hubs { margin-top:.5rem; display:flex; flex-direction:column; gap:.4rem; }
+  .hubrow { display:flex; align-items:center; justify-content:space-between; gap:.75rem; border:1px solid var(--line);
+            border-radius:8px; padding:.5rem .65rem; cursor:pointer; }
+  .hubrow.sel { border-color:var(--accent); }
+  .hubrow .where { color:var(--dim); font-size:.8rem; overflow-wrap:anywhere; }
+  .badge { font-size:.72rem; border:1px solid var(--ok); color:var(--ok); border-radius:999px; padding:.05rem .45rem; margin-left:.35rem; white-space:nowrap; }
+  .badge.bad { border-color:var(--danger); color:var(--danger); }
 </style>
 </head>
 <body>
@@ -67,13 +79,44 @@
 
 <h2>Hub</h2>
 <div class="card">
+  <div class="field" id="f-hub">
+    <div class="status" style="margin-top:0"><span class="dot" id="hubDot"></span><span id="hubText">…</span></div>
+    <div class="alert" id="changedBox" hidden>
+      <b>The hub's identity changed.</b> <span id="changedText"></span>
+      <div class="row" style="margin-top:.6rem"><button type="button" id="repair">Re-pair</button></div>
+      <div class="help" id="repairStatus"></div>
+    </div>
+    <div class="pairbox" id="pairBox" hidden>
+      <div class="code" id="pairCode" aria-live="polite"></div>
+      <p>On one of your devices, allow <b id="pairName"></b>, and check the code matches.</p>
+      <div id="f-pairpin">
+        <div class="row">
+          <input type="password" id="pairPin" autocomplete="off" inputmode="numeric" placeholder="Or type the hub's PIN">
+          <button type="button" id="pairPinGo">Use PIN</button>
+          <button type="button" id="pairCancel">Cancel request</button>
+        </div>
+        <div class="err"></div>
+      </div>
+    </div>
+    <div class="err"></div>
+  </div>
+  <div class="field" id="f-lan">
+    <div class="row" style="justify-content:space-between">
+      <label class="name" style="margin:0">Hubs on this network</label>
+      <button type="button" id="scan">Scan again</button>
+    </div>
+    <div id="hubList" class="hubs"></div>
+    <div class="help">Choose <i>Join</i> to ask your other devices to let this PC in. At home this needs no Tailscale:
+      droplet talks to the hub directly, and checks it's really your hub by its certificate.</div>
+  </div>
   <div class="field" id="f-hub_url">
-    <label class="name" for="hub_url">Hub address</label>
+    <label class="name" for="hub_url">Tailscale address</label>
     <div class="row">
-      <input type="url" id="hub_url" spellcheck="false" autocomplete="off">
+      <input type="url" id="hub_url" spellcheck="false" autocomplete="off" placeholder="https://yourhub.tailnet.ts.net">
       <button type="button" id="check">Check</button>
     </div>
-    <div class="status"><span class="dot" id="hubDot"></span><span id="hubStatus">…</span></div>
+    <div class="status"><span class="dot" id="urlDot"></span><span id="urlStatus"></span></div>
+    <div class="help">Used when this PC is away from home, or to set it up over Tailscale. Empty is fine if you don't use Tailscale.</div>
     <div class="err"></div>
   </div>
   <div class="field" id="pinField">
@@ -90,9 +133,9 @@
       <input type="text" id="link_code" inputmode="numeric" maxlength="7" placeholder="123456" spellcheck="false" autocomplete="off">
       <button type="button" id="link">Link</button>
     </div>
-    <div class="help">Recommended. Open droplet in this PC's browser, choose <i>Set up remote control of this device</i>,
+    <div class="help">Open droplet in this PC's browser, choose <i>Set up remote control of this device</i>,
       and type the six-digit code here. The app then joins that browser as one device, so this PC is listed once.
-      Or skip this: give the app a name below and Save to add it as a device of its own.</div>
+      It links on the hub you picked above, or else the one you're set up with.</div>
     <div class="status" id="linkStatus"></div>
     <div class="err"></div>
   </div>
@@ -193,10 +236,16 @@ const $ = (id) => document.getElementById(id);
 const api = (path, body) => fetch("api/" + path, body === undefined ? {} :
   { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
   .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }));
+const gone = { ok: false, data: { error: "droplet stopped running — start it again" } };
 
 let taken = [];
 let registered = false;
 let probeSeq = 0;
+let hubs = [];          // hubs found on the LAN
+let selectedHub = "";   // the one picked (for Link)
+let repairMode = false; // Re-pair couldn't confirm over Tailscale: joining again trusts the new certificate
+let state = {};         // the last api/settings "hub"
+let wasPending = false;
 
 function clearErrors() {
   document.querySelectorAll(".bad").forEach((el) => el.classList.remove("bad"));
@@ -210,9 +259,9 @@ function fieldError(field, msg) {
   el.querySelector(".err").textContent = msg;
   const input = el.querySelector("input"); if (input) input.focus();
 }
-function hubState(kind, text) {
-  $("hubDot").className = "dot " + kind;
-  $("hubStatus").textContent = text;
+function urlState(kind, text) {
+  $("urlDot").className = "dot " + kind;
+  $("urlStatus").textContent = text;
 }
 function checkName() {
   const n = $("name").value.trim().toLowerCase();
@@ -222,22 +271,163 @@ function checkName() {
     "Pick another name, or remove that one under Devices in droplet first.";
 }
 
+// --- the Tailscale address ------------------------------------------------------------
+
 async function probe(fillName) {
   const seq = ++probeSeq;
-  hubState("wait", "Checking…");
-  const { data } = await api("probe", { hub_url: $("hub_url").value, pin: $("pin").value });
+  if (!$("hub_url").value.trim()) {
+    urlState("", state.paired ? "Not set: this PC reaches the hub at home only." : "");
+    $("pinField").style.display = "none";
+    return;
+  }
+  urlState("wait", "Checking…");
+  const { data } = await api("probe", { hub_url: $("hub_url").value, pin: $("pin").value }).catch(() => gone);
   if (seq !== probeSeq) return;
   $("pinField").style.display = data.pin_required ? "block" : "none";
   if (data.ok) {
-    registered = data.registered;
     taken = data.taken || [];
-    hubState("ok", registered ? `Connected — this PC is "${data.name}" on the hub` : "Reachable — save to add this PC");
-    if (data.name && (!$("name").value || (fillName && registered))) $("name").value = data.name;
+    urlState("ok", data.registered ? `Reachable — this PC is "${data.name}" there` : "Reachable — save to add this PC over Tailscale");
+    if (data.name && !$("name").value) $("name").value = data.name;
   } else {
-    hubState("bad", data.error || "Can't reach the hub");
+    urlState("bad", data.error || "Can't reach the hub");
   }
   checkName();
 }
+
+// --- the hub, the route, pairing ------------------------------------------------------
+
+function showHub(h) {
+  state = h || {};
+  const pending = !!state.pending;
+  $("hubText").textContent = state.text || "";
+  $("hubDot").className = "dot " + (pending ? "wait" : state.connected && registered ? "ok" : state.not_allowed || state.changed ? "bad" : "");
+  $("pairBox").hidden = !pending;
+  if (pending) {
+    $("pairCode").textContent = state.code || "····";
+    $("pairName").textContent = state.device || "this PC";
+  }
+  if (wasPending && !pending) {
+    $("hubText").textContent = registered ? "You're in ✓ " + (state.text || "") :
+      "The request was declined, or it expired. You can ask again.";
+    scan();
+  }
+  wasPending = pending;
+  const ch = state.changed;
+  $("changedBox").hidden = !ch;
+  if (ch) {
+    $("changedText").textContent = ch.verified ?
+      `${state.name} has a new certificate (${ch.got}…), and Tailscale confirms it's the hub's. Re-pair to use it on Wi-Fi again.` :
+      `Something at ${ch.addr} says it's ${state.name}, but its certificate (${ch.got}…) isn't the one this PC paired with (${ch.want}…). ` +
+      "droplet won't use it. If you reset the hub (for example, deleted its certs folder), choose Re-pair. Otherwise, leave it: something may be pretending to be your hub.";
+  }
+}
+
+function renderHubs(list, error) {
+  hubs = list || [];
+  const box = $("hubList");
+  box.textContent = "";
+  if (!hubs.length) {
+    const d = document.createElement("div");
+    d.className = "help";
+    d.textContent = error ? "Couldn't search: " + error : "No hubs found. Is this PC on the same Wi-Fi as the hub?";
+    box.append(d);
+    return;
+  }
+  for (const h of hubs) {
+    const row = document.createElement("div");
+    row.className = "hubrow" + (selectedHub === h.id ? " sel" : "");
+    row.title = `id ${h.id}, certificate ${h.fingerprint}…`;
+    const info = document.createElement("div");
+    const b = document.createElement("b");
+    b.textContent = h.name;
+    info.append(b);
+    if (h.paired) {
+      const badge = document.createElement("span");
+      badge.className = "badge" + (h.changed ? " bad" : "");
+      badge.textContent = h.changed ? "certificate changed" : "this PC's hub";
+      info.append(badge);
+    }
+    const where = document.createElement("div");
+    where.className = "where";
+    where.textContent = h.addrs.join(", ") + (h.tailnet ? " · " + h.tailnet : "");
+    info.append(where);
+    row.append(info);
+    const inAlready = h.paired && !h.changed && (registered || state.pending);
+    const canJoin = !inAlready && (!h.changed || repairMode);
+    if (canJoin) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = h.changed ? "Join again" : "Join";
+      btn.onclick = (e) => { e.stopPropagation(); join(h); };
+      row.append(btn);
+    }
+    row.onclick = () => { selectedHub = selectedHub === h.id ? "" : h.id; renderHubs(hubs); };
+    box.append(row);
+  }
+}
+
+async function scan() {
+  $("scan").disabled = true;
+  $("scan").textContent = "Scanning…";
+  const { data } = await api("discover").catch(() => gone);
+  $("scan").disabled = false;
+  $("scan").textContent = "Scan again";
+  renderHubs(data.hubs, data.error);
+}
+
+async function join(h) {
+  clearErrors();
+  if (!$("name").value.trim()) { fieldError("name", "Give this PC a name first, like \"maryanne\"."); return; }
+  $("hubText").textContent = `Asking ${h.name}…`;
+  const { ok, data } = await api("join", { hub_id: h.id, name: $("name").value, pin: $("pin").value, repair: repairMode })
+    .catch(() => gone);
+  if (!ok) { fieldError(data.field || "hub", data.error || "Couldn't join"); refresh(); return; }
+  repairMode = false;
+  registered = !data.join.pending;
+  $("hub_url").value = data.hub_url || "";
+  $("pin").value = "";
+  $("pinField").style.display = "none";
+  await refresh();
+  await save(); // keep the rest of the page's choices too
+  scan();
+}
+
+$("pairPinGo").onclick = async () => {
+  clearErrors();
+  const { ok, data } = await api("pairing/pin", { pin: $("pairPin").value }).catch(() => gone);
+  if (!ok) { fieldError(data.field === "pin" ? "pairpin" : "hub", data.error || "Couldn't sign in"); return; }
+  $("pairPin").value = "";
+  setTimeout(refresh, 800);
+};
+$("pairPin").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pairPinGo").click(); });
+$("pairCancel").onclick = async () => {
+  await api("pairing/cancel", {}).catch(() => gone);
+  wasPending = false;
+  registered = false;
+  await refresh();
+  $("hubText").textContent = "Request cancelled.";
+  scan();
+};
+
+$("repair").onclick = async () => {
+  $("repair").disabled = true;
+  $("repairStatus").textContent = "Asking the hub over Tailscale…";
+  const { ok, data } = await api("repair", {}).catch(() => gone);
+  $("repair").disabled = false;
+  if (!ok) { $("repairStatus").textContent = data.error || "Couldn't re-pair"; return; }
+  if (data.repair.done) {
+    $("repairStatus").textContent = "Done: the new certificate is pinned, confirmed over Tailscale.";
+    setTimeout(refresh, 1500);
+    return;
+  }
+  repairMode = true;
+  $("repairStatus").textContent = data.repair.reason + " To trust the new certificate, ask to join again as a new device: " +
+    "choose Join again next to the hub below, then allow it on one of your devices and check the code. " +
+    "Only do this if you know the hub was reset.";
+  scan();
+};
+
+// --- remote control ------------------------------------------------------------
 
 const remoteBoxes = () => document.querySelectorAll("input[data-remote]");
 function showLive(live) {
@@ -251,28 +441,34 @@ function showRemote(r) {
 async function saveRemote() {
   const body = {};
   remoteBoxes().forEach((el) => { body[el.dataset.remote] = el.checked; });
-  const { ok, data } = await api("remote", body).catch(() => ({ ok: false, data: {} }));
+  const { ok, data } = await api("remote", body).catch(() => gone);
   if (ok) showRemote(data.remote);
-  setTimeout(refreshLive, 700);
+  setTimeout(refresh, 700);
 }
-async function refreshLive() {
-  const { ok, data } = await api("settings").catch(() => ({ ok: false }));
-  if (ok) showLive(data.live);
+async function refresh() {
+  const { ok, data } = await api("settings").catch(() => gone);
+  if (!ok) return;
+  registered = data.registered;
+  showLive(data.live);
+  showHub(data.hub);
 }
 remoteBoxes().forEach((el) => el.addEventListener("change", saveRemote));
-setInterval(refreshLive, 3000);
+setInterval(refresh, 2500);
+
+// --- linking ------------------------------------------------------------------
 
 $("link").onclick = async () => {
   clearErrors();
   $("linkStatus").textContent = "Linking…";
   $("link").disabled = true;
-  const { ok, data } = await api("link", { hub_url: $("hub_url").value, code: $("link_code").value, pin: $("pin").value })
-    .catch(() => ({ ok: false, data: { error: "droplet stopped running — start it again" } }));
+  const body = { code: $("link_code").value, pin: $("pin").value };
+  if (selectedHub) body.hub_id = selectedHub; else body.hub_url = $("hub_url").value;
+  const { ok, data } = await api("link", body).catch(() => gone);
   $("link").disabled = false;
   $("linkStatus").textContent = "";
   if (!ok) { fieldError(data.field || "link_code", data.error || "Couldn't link"); return; }
   $("link_code").value = "";
-  $("hub_url").value = data.hub_url;
+  $("hub_url").value = data.hub_url || "";
   $("name").value = data.link.name;
   registered = true;
   $("linkStatus").textContent = `Linked: this app is now part of "${data.link.name}".`;
@@ -289,9 +485,12 @@ $("link").onclick = async () => {
     };
     $("linkStatus").append(" ", b);
   }
-  $("save").click(); // keep the rest of the page's choices too
+  save(); // keep the rest of the page's choices too
+  scan();
 };
 $("link_code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("link").click(); });
+
+// --- load and save ---------------------------------------------------------------
 
 async function load() {
   const { data } = await api("settings");
@@ -299,21 +498,26 @@ async function load() {
   showRemote(data.remote || {});
   showLive(data.live);
   registered = data.registered;
+  showHub(data.hub);
   for (const k of ["hub_url", "name", "download_dir"]) $(k).value = s[k] || "";
+  if (!$("name").value) $("name").value = data.suggested_name || "";
   for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart"]) $(k).checked = !!s[k];
   if (data.first_run) {
     $("autostart").checked = true;
-    $("intro").textContent = "Welcome! Check the hub, give this PC a name and save. droplet then keeps running in your tray.";
+    $("intro").textContent = "Welcome! Pick your hub under \"Hubs on this network\" and choose Join (or enter its Tailscale address), " +
+      "then save. droplet then keeps running in your tray.";
   }
+  scan();
   probe(true);
 }
 
 $("check").onclick = () => probe(true);
+$("scan").onclick = scan;
 $("hub_url").addEventListener("change", () => probe(true));
 $("name").addEventListener("input", checkName);
 $("pin").addEventListener("keydown", (e) => { if (e.key === "Enter") $("save").click(); });
 
-$("save").onclick = async () => {
+async function save() {
   clearErrors();
   $("saved").textContent = "";
   $("save").disabled = true;
@@ -321,20 +525,21 @@ $("save").onclick = async () => {
   const body = { pin: $("pin").value };
   for (const k of ["hub_url", "name", "download_dir"]) body[k] = $(k).value;
   for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart"]) body[k] = $(k).checked;
-  const { ok, data } = await api("save", body).catch(() => ({ ok: false, data: { error: "droplet stopped running — start it again" } }));
+  const { ok, data } = await api("save", body).catch(() => gone);
   $("save").disabled = false;
   $("save").textContent = "Save";
-  if (!ok) { fieldError(data.field || "", data.error || "Couldn't save"); return; }
+  if (!ok) { fieldError(data.field || "", data.error || "Couldn't save"); return false; }
   $("pin").value = "";
   $("pinField").style.display = "none";
   $("name").value = data.name;
-  $("hub_url").value = data.hub_url;
+  $("hub_url").value = data.hub_url || "";
   $("saved").textContent = "Saved ✓";
-  refreshLive();
-  $("done").style.display = "block";
-  registered = true;
+  await refresh();
+  if (!data.pending) $("done").style.display = "block";
   probe(false);
-};
+  return true;
+}
+$("save").onclick = () => save();
 
 load();
 </script>

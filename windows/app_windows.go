@@ -82,16 +82,20 @@ func runApp() {
 			log.Printf("open settings: %v", err)
 		}
 	}
+	// the hub stopped letting this PC in, or its identity changed
+	a.OnNeedPairing = openSettings
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	liveDone := make(chan struct{})
+	routesDone := make(chan struct{})
 	tray.Run(tray.Options{
 		Agent:        a,
 		OpenSettings: openSettings,
 		OnReady: func() {
 			go func() { a.Run(ctx); close(done) }()
 			go func() { sess.Run(ctx); close(liveDone) }()
+			go func() { a.Routes.Run(ctx); close(routesDone) }()
 			if !cfg.Registered() {
 				openSettings() // first run: straight to setup
 			}
@@ -100,6 +104,7 @@ func runApp() {
 			cancel()
 			<-done     // silences a ring in progress
 			<-liveDone // lets go of any held mouse button
+			<-routesDone
 			srv.Close()
 			settings.Unpublish()
 			log.Printf("droplet stopped")
