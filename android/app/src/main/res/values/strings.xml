@@ -59,7 +59,6 @@
     <string name="offline_identity_title">The hub\'s identity changed</string>
     <string name="offline_identity_body">Something at %1$s says it\'s %2$s, but its certificate isn\'t the one this phone paired with. droplet won\'t use it. If you remade the hub\'s certificate, pair again.</string>
     <string name="offline_repair">Pair again</string>
-    <string name="offline_looking">Looking for %1$s…</string>
     <string name="offline_not_running">The hub machine answered, but droplet isn\'t running on it (%1$d).</string>
     <string name="offline_err_name">The hub\'s name didn\'t resolve: Tailscale is probably off.</string>
     <string name="offline_err_refused">The hub refused the connection. Is droplet running?</string>
@@ -146,7 +145,6 @@
 
     <!-- settings -->
     <string name="s_hub">Hub</string>
-    <string name="s_hub_address">Hub address</string>
     <string name="s_change">Change</string>
     <string name="s_hub_identity">id %1$s · certificate %2$s</string>
     <string name="s_hub_identity_none">Not paired on the LAN yet: reached over Tailscale only.</string>
