@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -618,4 +619,48 @@ func TestLabels(t *testing.T) {
 			t.Errorf("%s: %q, want %q", base, got, want)
 		}
 	}
+}
+
+// TestLiveT15 checks migration and route choice against a real hub, read
+// only: Migrate and Select send nothing but GET /api/hub/info (without
+// credentials) and mDNS queries. DROPLET_LIVE_HUB=https://<tailnet URL>
+// to run.
+func TestLiveT15(t *testing.T) {
+	remote := os.Getenv("DROPLET_LIVE_HUB")
+	if remote == "" {
+		t.Skip("set DROPLET_LIVE_HUB to a real hub's tailnet URL")
+	}
+	h, err := Migrate(context.Background(), remote, DefaultDeps(), DefaultOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("migrated over %s: %+v", remote, *h)
+	if h.PinSource != config.PinFromTailnet || h.Fingerprint == "" {
+		t.Fatalf("identity: %+v", h)
+	}
+	id := Identity{ID: h.ID, Fingerprint: h.Fingerprint, LAN: h.LAN, Remote: remote}
+	start := time.Now()
+	res, err := Select(context.Background(), id, DefaultDeps(), DefaultOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("route: %s %s in %s", res.Route.Label(), res.Route.Base, time.Since(start).Round(time.Millisecond))
+	if res.Route.Kind != LAN {
+		t.Fatal("the hub is on this LAN; it should be reached directly")
+	}
+	// the stored address is stale (DHCP): mDNS finds the hub anyway
+	id.LAN = []string{"192.0.2.1:8443"}
+	start = time.Now()
+	res, err = Select(context.Background(), id, DefaultDeps(), DefaultOptions)
+	if err != nil || res.Route.Kind != LAN {
+		t.Fatalf("with a stale address: %+v %v", res.Route, err)
+	}
+	t.Logf("with a stale address: %s %s in %s", res.Route.Label(), res.Route.Base, time.Since(start).Round(time.Millisecond))
+	// pinned to the wrong certificate: never used, and reported
+	id.Fingerprint = strings.Repeat("0", 64)
+	res, err = Select(context.Background(), id, DefaultDeps(), DefaultOptions)
+	if err != nil || res.Route.Kind != Remote || res.Changed == nil || !res.Changed.Verified {
+		t.Fatalf("wrong pin: %+v %+v %v", res.Route, res.Changed, err)
+	}
+	t.Logf("wrong pin: fell back %s, identity change reported (verified by the tailnet: %v)", res.Route.Label(), res.Changed.Verified)
 }
