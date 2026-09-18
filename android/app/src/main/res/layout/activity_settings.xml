@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/bg"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationContentDescription="Back"
+        app:title="@string/settings"
+        app:titleTextColor="@color/text" />
+
+    <ScrollView
+        android:id="@+id/scroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="32dp">
+
+            <!-- hub -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:text="@string/s_hub" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical">
+
+                        <TextView style="@style/Droplet.Title" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:text="@string/s_hub_address" />
+
+                        <TextView android:id="@+id/hub_url" style="@style/Droplet.Body"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:textIsSelectable="true" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/change_hub"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="@string/s_change" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
+                <TextView style="@style/Droplet.Title" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="@string/s_this_phone" />
+
+                <TextView android:id="@+id/device" style="@style/Droplet.Body"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_checking" />
+
+                <com.google.android.material.button.MaterialButton android:id="@+id/open"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:text="@string/open_droplet"
+                    app:cornerRadius="10dp" />
+            </LinearLayout>
+
+            <!-- stay connected -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/ch_ring" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/stay"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_connected" android:textColor="@color/text" android:textSize="16sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_connected_desc" />
+
+                <LinearLayout android:id="@+id/perm_row" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="12dp"
+                    android:gravity="center_vertical" android:orientation="horizontal" android:visibility="gone">
+
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="@string/s_notif_perm_off"
+                        android:textColor="@color/danger" android:textSize="14sp" />
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/allow_notifs"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" android:text="@string/s_allow" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/inbox"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_inbox" android:textColor="@color/text" android:textSize="16sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_inbox_desc" />
+            </LinearLayout>
+
+            <!-- mirroring -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/s_mirror" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_mirror_desc" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:gravity="center_vertical" android:orientation="horizontal">
+
+                    <View android:id="@+id/mirror_dot" android:layout_width="8dp" android:layout_height="8dp"
+                        android:layout_marginEnd="10dp" android:background="@drawable/dot" />
+
+                    <TextView android:id="@+id/mirror_state" style="@style/Droplet.Title"
+                        android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                        android:textSize="14sp" />
+
+                    <com.google.android.material.button.MaterialButton android:id="@+id/mirror_button"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="@string/s_mirror_button" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
+                <LinearLayout android:id="@+id/excluded_row" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:background="?attr/selectableItemBackground"
+                    android:gravity="center_vertical" android:minHeight="48dp" android:orientation="horizontal">
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical">
+
+                        <TextView style="@style/Droplet.Title" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:text="@string/s_excluded" />
+
+                        <TextView android:id="@+id/excluded_count" style="@style/Droplet.Body"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                    </LinearLayout>
+
+                    <ImageView android:layout_width="24dp" android:layout_height="24dp"
+                        android:contentDescription="@null" android:src="@drawable/ic_chevron" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- battery -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/s_battery" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_battery_desc" />
+
+                <TextView android:id="@+id/battery_steps" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                    android:lineSpacingMultiplier="1.2" android:textColor="@color/text" android:textSize="14sp" />
+
+                <TextView android:id="@+id/battery_state" style="@style/Droplet.Body"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp" />
+
+                <com.google.android.material.button.MaterialButton android:id="@+id/battery_button"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp" android:text="@string/s_battery_button" />
+
+                <com.google.android.material.button.MaterialButton android:id="@+id/autostart_button"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_autostart_button" />
+            </LinearLayout>
+
+            <TextView android:id="@+id/about" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginTop="24dp"
+                android:gravity="center" android:textColor="@color/dim" android:textSize="12sp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
