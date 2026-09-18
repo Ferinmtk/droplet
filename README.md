@@ -152,6 +152,20 @@ requests coming from loopback (where `tailscale serve` connects from) after it
 has set serve up itself. LAN clients can't fake it. Tagged devices carry no
 user, so they get the PIN. `DROPLET_TAILNET_TRUST=0` makes everyone enter it.
 
+**Verified** on a Fedora Kinoite hub (Tailscale 1.x, droplet as the
+systemd user service), tested from another tailnet machine:
+
+- `https://t15.<tailnet>.ts.net` serves a Let's Encrypt certificate that
+  curl verifies. The page shows "via tailnet as <login>".
+- A 50 MB upload and download over the tailnet came back byte-identical
+  (~10 MB/s upload).
+- With `DROPLET_PIN` set: tailnet → `200`; LAN → `302` to `/login`; LAN
+  sending a forged `Tailscale-User-Login` header → `302`.
+- Restarting droplet leaves the existing serve config alone instead of
+  re-adding it.
+- Before HTTPS Certificates were enabled, droplet printed the fix and ran
+  LAN-only.
+
 **Docker:** the container has no `tailscale` CLI. Run
 `tailscale serve --bg 8000` on the host yourself. The PIN then applies to
 tailnet devices too, because droplet didn't set serve up and doesn't trust
