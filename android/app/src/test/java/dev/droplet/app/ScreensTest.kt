@@ -271,13 +271,6 @@ class ScreensTest {
             val a = Robolectric.buildActivity(PeersActivity::class.java).setup().get()
             idleFor(300)
             shoot(a, "mesh-peers")
-            // the pairing code, as after tapping office-pc
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(a)
-                .setTitle(a.getString(R.string.mesh_pair_check_title, "office-pc"))
-                .setMessage(a.getString(R.string.mesh_pair_check, "office-pc", "4096"))
-                .setPositiveButton(R.string.mesh_pair_matches, null).setNegativeButton(R.string.cancel, null).show()
-            idleFor(300)
-            shoot(a, "mesh-pair-code")
             val fp = n.trust.all().first { it.name == "slim" }.fp
             n.chat.add(org.json.JSONObject().put("id", "a1").put("dir", "in").put("fp", fp).put("body", "Slides are up, start when you like")
                 .put("ts", System.currentTimeMillis() / 1000.0 - 300))

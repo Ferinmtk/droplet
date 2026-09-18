@@ -96,13 +96,21 @@ class ChatActivity : AppCompatActivity() {
         }
         box.addView(TextView(this).apply {
             this.text = text
+            // wrapped to its text, at most 80 % of the width, on its own side
+            maxWidth = resources.displayMetrics.widthPixels * 4 / 5
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             setTextIsSelectable(true)
             setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
-            setBackgroundResource(R.drawable.card_bg)
-            setTextColor(ContextCompat.getColor(this@ChatActivity, if (dim) R.color.dim else R.color.text))
+            setBackgroundResource(if (mine) R.drawable.bubble_mine else R.drawable.card_bg)
+            setTextColor(ContextCompat.getColor(this@ChatActivity, when {
+                dim -> R.color.dim
+                mine -> android.R.color.white
+                else -> R.color.text
+            }))
             textSize = 15f
         })
         if (meta != null) box.addView(TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             this.text = meta
             textSize = 11f
             setTextColor(ContextCompat.getColor(this@ChatActivity, R.color.dim))
