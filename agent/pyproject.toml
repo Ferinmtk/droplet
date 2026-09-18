@@ -1,8 +1,9 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
+license = "GPL-3.0-or-later"
 name = "droplet-agent"
 dynamic = ["version"]
 description = "Lets your other devices control this Linux computer through droplet"
