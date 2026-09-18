@@ -311,6 +311,7 @@ function showHub(h) {
       "The request was declined, or it expired. You can ask again.";
     scan();
   }
+  if (pending !== wasPending && hubs.length) renderHubs(hubs);
   wasPending = pending;
   const ch = state.changed;
   $("changedBox").hidden = !ch;
@@ -353,7 +354,8 @@ function renderHubs(list, error) {
     info.append(where);
     row.append(info);
     const inAlready = h.paired && !h.changed && (registered || state.pending);
-    const canJoin = !inAlready && (!h.changed || repairMode);
+    // while a request waits, answer or cancel it before asking another hub
+    const canJoin = !inAlready && !state.pending && (!h.changed || repairMode);
     if (canJoin) {
       const btn = document.createElement("button");
       btn.type = "button";
