@@ -212,6 +212,60 @@ name the app gives it.
 The share sheet is Android-only. iOS Safari can add droplet to the home
 screen, but it doesn't offer web apps as share targets.
 
+## Devices: send to one, chat, get notified
+
+Every browser can **name itself as a device** in the box at the top of the
+page. Over the tailnet the name is filled in from the machine's Tailscale name
+(for example `redmi-note-11e-pro`). Names are unique, so there's never two
+"slim"s to choose between.
+
+Once two or more devices are named:
+
+- **Send to** picks where drops go: the **Hub** (`received/`, as before) or
+  a device. Items sent to a device wait in its **For this device** list,
+  labelled with who sent them. If the device is off they stay on the hub
+  until it comes back, which KDE Connect can't do.
+- **Chat.** With a device picked, the text box becomes a chat with it:
+  bubbles, clickable links, tap a message to copy it. Unread counts show on
+  the device buttons. Links shared from Android's share sheet to a device
+  land in the chat. Text sent to the Hub is still saved as a file. Chatting
+  needs a named device on both ends, so replies have somewhere to go.
+- **Notifications.** Tap **Turn on notifications** on a device and it gets
+  one for every file or message sent to it, even with droplet closed on a
+  phone. Tapping opens the chat or the inbox. A message that's only a link
+  opens the link directly. **Test** sends one to yourself.
+- **Devices** (at the bottom) lists every device with an online dot, and
+  lets you remove old ones. Removing a device deletes what was waiting for
+  it and its chats. Over the tailnet it also lists **Tailscale machines that
+  haven't opened droplet yet**, so you know what's missing.
+
+**How notifications travel:** a web app can only wake a closed phone app
+through the browser's push service (Google's for Chrome, Mozilla's for
+Firefox). droplet encrypts each notification to the browser before handing it
+over, so the push service sees only that *a* message arrived, never the
+filename or text. Files and chats never leave your hub. The hub needs
+internet access for this. `DROPLET_PUSH=0` turns push off for a fully local
+hub: new items then show up while droplet is open.
+
+Good to know:
+
+- A device is a browser + address pair. The same phone on the LAN URL and on
+  the tailnet URL counts as two devices (different cookies), so stick to one
+  URL per device, ideally the tailnet one.
+- On desktop, notifications arrive while that browser is running (it can be
+  in the background). On Android they arrive with the app closed.
+- A device's identity is a random token in a long-lived cookie. Only its
+  hash is stored on the hub (`devices.json`, owner-only permissions).
+  Clearing site data in the browser makes it a new device; remove the old
+  one under Devices.
+
+**Verified** with the T15 hub, a Redmi Note 11E Pro (installed app, Chrome)
+and slim: files both ways land in the right inbox with the sender's name, a
+push notification rang the phone with the app closed, and the chat works
+both ways. Tested in two desktop browsers: unread counts, opening a chat
+from a notification link, duplicate names refused, an unnamed browser can't
+chat, and one device can't read another's inbox.
+
 ## Config (env vars)
 
 | Var | Default | Meaning |
@@ -226,6 +280,7 @@ screen, but it doesn't offer web apps as share targets.
 | `DROPLET_MAX_MB` | `1024` | max upload size |
 | `DROPLET_TAILSCALE` | *(off)* | `1` = also serve at `https://<machine>.<tailnet>.ts.net` with a real certificate, via `tailscale serve` (see [Tailnet](#tailnet-real-https-from-anywhere)) |
 | `DROPLET_TAILNET_TRUST` | `1` | with `DROPLET_PIN` set, tailnet devices skip the PIN. `0` = they enter it like everyone else |
+| `DROPLET_PUSH` | `1` | `0` = no push notifications (nothing goes through Google/Mozilla); devices see new items while droplet is open. See [Devices](#devices-send-to-one-chat-get-notified) |
 
 ## How files flow
 
