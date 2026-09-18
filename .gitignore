@@ -23,3 +23,6 @@ chats/
 
 # Docker Compose bind-mount target (DROPLET_HOME inside the container)
 data/
+
+# phone notifications mirrored by the Android app (holds message text)
+phone.json

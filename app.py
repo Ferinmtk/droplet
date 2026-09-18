@@ -747,9 +747,11 @@ from types import SimpleNamespace  # noqa: E402
 import clipboard  # noqa: E402
 import commands  # noqa: E402
 import media  # noqa: E402
+import phone  # noqa: E402
 import ring  # noqa: E402
 
-FEATURES: list = [clipboard, commands, media, ring]
+FEATURES: list = [clipboard, commands, media, phone, ring]
+
 
 
 feature_ctx = SimpleNamespace(
