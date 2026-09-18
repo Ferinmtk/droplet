@@ -1,6 +1,6 @@
 # droplet for Android
 
-A native companion app for the droplet hub. It does five things that the web
+A native companion app for the droplet hub. It does six things that the web
 app can't do as a browser tab or PWA:
 
 - **Share → droplet from any app.** A native sheet lists the hub and your
@@ -19,6 +19,10 @@ app can't do as a browser tab or PWA:
   music, read and send its SMS, browse its files and share its clipboard.
   The phone becomes a presentation remote for a computer: the volume keys
   change slides. See [Remote control](#remote-control).
+- **A Bluetooth mouse and keyboard.** The phone pairs with a computer or TV
+  as an ordinary Bluetooth keyboard and mouse: touchpad, keyboard, media keys
+  and slides, with nothing installed on the other side and no Wi-Fi or hub.
+  See [Bluetooth mouse & keyboard](#bluetooth-mouse--keyboard).
 
 Everything else is the droplet web app, full screen in a WebView. It uses the
 same device token as the page, so the app is the same device the page named.
@@ -103,10 +107,13 @@ time it reaches the hub, the app learns what it needs for the Wi-Fi. See
 | Ignore battery optimisations | The Battery settings button asks for it directly |
 | Read SMS, send SMS, read contacts (asked for only from Settings) | The SMS capability: listing conversations, sending, and showing contact names instead of numbers |
 | All files access (Android 11+, a system setting granted by you), or storage (Android 8–10) | The Files capability: browsing Downloads, Camera, Pictures, Documents, Music and Movies |
+| Nearby devices: Bluetooth connect and advertise (Android 12+), or Bluetooth (Android 8–11) | The Bluetooth mouse and keyboard: registering as one, connecting to a paired computer or TV, and making the phone visible for pairing |
 
 Nothing here is asked for when the app starts. SMS and files access are
 requested only when you tap their buttons under Settings → What other devices
-can do.
+can do; Nearby devices only when you open Mouse & keyboard and tap Allow.
+droplet doesn't ask to scan for Bluetooth devices: the computer or TV does the
+searching.
 
 ## Stay connected, and battery
 
@@ -224,6 +231,12 @@ input). Then:
 - The screen stays on while it's open. It works without Stay connected: the
   screen connects by itself while it's open.
 
+**Over Bluetooth, without the hub.** The **Presenting on** picker also lists
+the phone's paired Bluetooth devices as **Bluetooth: <name>**. Aimed at one,
+the same buttons and volume keys go out as a Bluetooth keyboard (ArrowRight,
+ArrowLeft, F5, Esc, b): no droplet helper on the computer, no hub, no Wi-Fi.
+See [Bluetooth mouse & keyboard](#bluetooth-mouse--keyboard).
+
 ### Link with code
 
 The app is normally the same device as the droplet page you named in it,
@@ -245,6 +258,89 @@ after you allow it:
 When MIUI blocks sending, the app returns a clear error saying so instead of
 pretending it worked. A send counts as done only once the radio reports it
 sent.
+
+## Bluetooth mouse & keyboard
+
+Settings → **Bluetooth mouse & keyboard**, the touchpad icon on the
+presentation remote, or its **Presenting on** picker. The phone registers
+with Android's `BluetoothHidDevice` (Android 9+) as a combined keyboard,
+mouse and media remote, so any computer or TV that takes a Bluetooth keyboard
+works with nothing installed: Windows, Linux, macOS, Google TV and Android TV.
+
+**Pairing.** Open Mouse & keyboard, tap **Make this phone visible** (two
+minutes), then on the other device:
+
+- **Windows:** Settings → Bluetooth & devices → Add device → Bluetooth.
+- **KDE Plasma:** System Settings → Bluetooth → Add New Device.
+- **Google TV:** Settings → Remotes & Accessories → Pair remote or accessory.
+
+It connects by itself once paired. Next time, **Reconnect to <name>**, or tap
+any paired device in the list. Keep the screen open while pairing: a computer
+learns the phone is a keyboard only if it pairs while the phone is registered.
+A computer or TV that was paired with the phone before (for music or calls)
+may not know it can be a keyboard: remove the phone on that device and pair
+again.
+
+**What's on the screen, once connected:**
+
+- **Touchpad:** slide to move (with the web touchpad's acceleration), tap to
+  click, two-finger tap to right-click, three fingers for middle, double-tap
+  to double-click, double-tap and hold (or slide) to drag, two fingers to
+  scroll in the natural direction, sideways too. Left and Right below it
+  press while held, so holding Left and sliding also drags.
+- **Keyboard:** a text field that types what you type; Esc, Tab, Backspace,
+  Enter, arrows, Home/End, PgUp/PgDn, Delete, F1–F12; sticky Ctrl, Alt, Shift
+  and Win (tap for the next key, double-tap to hold); Copy, Paste, Cut, Undo,
+  Select all, Alt+Tab, Alt+F4 and Start.
+- **Media:** play/pause, previous, next, stop, volume and mute, and Home and
+  Back for the TV.
+
+**Typing, honestly.** A Bluetooth keyboard sends key positions, not letters,
+and the computer turns them into characters with its own layout. droplet
+types with the **US layout**: every printable ASCII character works when the
+computer uses US (or UK, for letters and digits). Characters the US layout
+has no key for (é, ñ, €, emoji) are skipped, with a note saying which; a
+computer set to another layout may show other symbols for some keys.
+
+**While it's on.** The phone is a Bluetooth keyboard only while Mouse &
+keyboard is open, or the presentation remote is aimed at a Bluetooth device.
+A couple of seconds after the last of them closes (not at once, so turning
+the phone doesn't drop the connection), it disconnects and unregisters.
+Android also ends the registration by itself when droplet leaves the screen.
+While a computer is connected, the screen stays on.
+
+**Under the hood.** One report descriptor, three reports:
+
+| id | report | layout |
+|---|---|---|
+| 1 | keyboard | modifiers, reserved, six keys: the boot keyboard layout; LED output report |
+| 2 | mouse | five buttons, X and Y (−127…127, the boot mouse layout), wheel, AC Pan |
+| 3 | consumer | one 16-bit consumer usage: media keys, volume, AC Home, AC Back |
+
+Report ids 1 and 2 with the boot layouts in front are what the Bluetooth HID
+spec asks of a keyboard and mouse, so hosts that switch to boot protocol (a
+PC's firmware setup, simple TVs) still read them. X and Y are 8 bits for the
+same reason; bigger moves are split into several reports, and fractions are
+carried to the next move rather than rounded away. QoS is best effort with
+an 11.25 ms latency, the usual setting for keyboards and mice.
+
+**If the phone can't.** Some phone makers leave the HID device service out
+of their firmware. droplet then says "This phone can't be a Bluetooth
+keyboard" instead of failing, and Settings shows what the phone did the
+last time: works, not offered by the firmware, or refused (usually because
+another app is using the phone as a keyboard).
+
+### What only the real phone can confirm
+
+The JVM tests cover the descriptor (parsed and decoded back like a host
+would), the key map, packing, the gestures and the registration and
+connection state machine against a fake stack. They can't show:
+
+- whether MIUI/HyperOS on the Redmi Note 11E Pro offers `HID_DEVICE`
+  (that is up to the firmware, and nothing here can tell in advance);
+- pairing and connecting with Windows, KDE and a Google TV, and how each
+  treats the consumer and pan reports;
+- latency and how the pointer feels on each host.
 
 ## Local-first: home Wi-Fi first, Tailscale away
 
@@ -364,8 +460,24 @@ adb shell cmd notification post -t 'Title' tag 'Some text'
   code; the WebSocket over the pinned connection, following the route; and
   upgrading from a tailnet-only install, with and without Tailscale. mDNS is
   stubbed with the hub's own announcement.
-- **`ScreensTest`** renders the remote, Settings, setup, the pairing code and
-  the offline screen to PNGs for review.
+- **`HidReportsTest`** (always runs): a small HID descriptor parser reads
+  the report descriptor like a host: balanced collections, report sizes that
+  match the packers, the boot layouts first, logical ranges that cover every
+  usage sent, and each packer's output decoded back through the descriptor.
+- **`HidKeysTest`**, **`HidMotionTest`** (always run): the US key map for
+  every printable ASCII character, skipped characters, key names and
+  consumer usages; mouse packing (clamping, splitting big moves, carrying
+  fractions, buttons, wheel and pan), typing and sticky modifiers.
+- **`TouchpadTest`** (always runs): the gestures with synthetic touch
+  events: tap, two- and three-finger taps, double-tap, drag, moving with
+  acceleration, and natural scrolling.
+- **`BtHidTest`** (always runs): the registration and connection state
+  machine against a fake Bluetooth stack (permission, Bluetooth off,
+  firmware without the service, a refused or unanswered registration,
+  connecting, switching hosts, letting go), and the real backend under
+  Robolectric's Bluetooth shadows.
+- **`ScreensTest`** renders the remote, Settings, setup, the pairing code,
+  the offline screen and the Bluetooth screens to PNGs for review.
 
 ```bash
 # the hub, a second one with a PIN, and a "clone" with the first one's id but its own certificate

@@ -556,6 +556,30 @@ droplet can control a device whose helper allows it: the same trust as the
 rest of droplet (your tailnet, or the PIN). Each helper lets you switch every
 ability off.
 
+### Bluetooth mouse & keyboard (Android)
+
+The phone can pair with **any computer or TV as an ordinary Bluetooth
+keyboard, mouse and media remote**:
+- a touchpad (tap, two-finger right-click, drag, natural scrolling);
+- a keyboard with special keys and shortcuts;
+- media and volume keys, plus Home and Back for TVs;
+- the presentation remote's slide keys (the volume buttons change slides).
+
+**Nothing is installed on the other side, and it needs no hub and no
+Wi-Fi.** That covers the TV, a friend's laptop, a projector PC, even a
+computer's boot menu.
+
+Open it from **Settings → Bluetooth mouse & keyboard** in the Android app, or
+pick **Bluetooth: <device>** in the presentation remote. The first time, tap
+**Make this phone visible** and pair from the computer or TV (the app shows
+the steps for Windows, KDE and Google TV). After that, it's one tap to
+reconnect.
+
+It types by key position with a US layout, so characters a US keyboard can't
+produce are skipped, and the app names them. It needs Android 9+ and a phone
+whose firmware allows Bluetooth HID device mode. If yours doesn't, the app
+says so. Details: [android/README.md](android/README.md#bluetooth-mouse--keyboard).
+
 ### Linux computers (droplet agent)
 
 On the computer, run the command **Set up remote control** shows. At home,
