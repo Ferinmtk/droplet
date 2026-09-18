@@ -116,4 +116,111 @@ class ScreensTest {
         scroll.scrollTo(0, y + 900)
         shoot(a, "settings-caps")
     }
+
+    // --- the Bluetooth mouse and keyboard ------------------------------------------------
+
+    private val tv = HidHost("F4:6B:8C:21:0A:3E", "TCL 43 Google TV")
+    private val pc = HidHost("5C:BA:EF:77:10:02", "maryanne")
+
+    /** A fake Bluetooth stack behind BtHid, so the screens show each state. */
+    private fun fakeBluetooth(configure: BtHidTest.FakeBackend.() -> Unit = {}): BtHidTest.FakeBackend {
+        Prefs.init(ApplicationProvider.getApplicationContext())
+        val fake = BtHidTest.FakeBackend().apply {
+            hosts = listOf(tv, pc)
+            configure()
+        }
+        BtHid.controller = HidController(fake, android.os.Handler(Looper.getMainLooper())) { it.run() }
+        return fake
+    }
+
+    private fun registered(fake: BtHidTest.FakeBackend) {
+        shadowOf(Looper.getMainLooper()).idle()
+        fake.proxy.events?.onAppStatus(true)
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun connected(fake: BtHidTest.FakeBackend, host: HidHost = tv) {
+        registered(fake)
+        BtHid.controller.connect(host)
+        fake.proxy.events!!.onConnection(host, android.bluetooth.BluetoothProfile.STATE_CONNECTED)
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun bluetoothScreen() = Robolectric.buildActivity(BluetoothActivity::class.java).setup()
+
+    @Test
+    fun bluetooth() {
+        assumeTrue(out.isNotEmpty())
+        Prefs.init(ApplicationProvider.getApplicationContext())
+        Prefs.btLastHost = tv.address
+        Prefs.btLastHostName = tv.name
+        val fake = fakeBluetooth()
+        val c = bluetoothScreen()
+        registered(fake)
+        shoot(c.get(), "bt-ready")
+        c.get().findViewById<android.widget.ScrollView>(R.id.setup).scrollTo(0, 2000)
+        shoot(c.get(), "bt-ready-pairing")
+
+        // a first time: nothing used before
+        Prefs.btLastHost = null
+        val fresh = fakeBluetooth { hosts = emptyList() }
+        val f = bluetoothScreen()
+        registered(fresh)
+        shoot(f.get(), "bt-first")
+
+        Prefs.btLastHost = tv.address
+        val live = fakeBluetooth()
+        val a = bluetoothScreen()
+        connected(live)
+        shoot(a.get(), "bt-touchpad")
+        a.get().findViewById<android.view.View>(R.id.tab_keys).performClick()
+        shoot(a.get(), "bt-keyboard")
+        a.get().findViewById<android.view.View>(R.id.tab_media).performClick()
+        shoot(a.get(), "bt-media")
+    }
+
+    @Test
+    fun bluetoothProblems() {
+        assumeTrue(out.isNotEmpty())
+        fakeBluetooth { openResult = false }
+        shoot(bluetoothScreen().get(), "bt-unsupported")
+        fakeBluetooth { permit = false }
+        shoot(bluetoothScreen().get(), "bt-permission")
+        fakeBluetooth { on = false }
+        shoot(bluetoothScreen().get(), "bt-off")
+        val fake = fakeBluetooth()
+        val c = bluetoothScreen()
+        registered(fake)
+        BtHid.controller.connect(pc)
+        idleFor(HidController.CONNECT_TIMEOUT_MS + 100)
+        shoot(c.get(), "bt-no-answer")
+    }
+
+    @Test
+    fun remoteOverBluetooth() {
+        assumeTrue(out.isNotEmpty())
+        val fake = fakeBluetooth()
+        Prefs.remoteTarget = Prefs.BT_TARGET + pc.address
+        val a = Robolectric.buildActivity(RemoteActivity::class.java).setup().get()
+        connected(fake, pc)
+        shoot(a, "remote-bt")
+        Prefs.remoteTarget = null
+    }
+
+    @Test
+    fun settingsBluetooth() {
+        assumeTrue(out.isNotEmpty())
+        fakeBluetooth()
+        Prefs.btLastHost = pc.address
+        Prefs.btLastHostName = pc.name
+        Prefs.btSupport = Prefs.BT_SUPPORTED
+        val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        val scroll = a.findViewById<android.widget.ScrollView>(R.id.scroll)
+        val section = a.findViewById<android.view.View>(R.id.bt_state)
+        var y = 0
+        var v: android.view.View? = section
+        while (v != null && v !== scroll) { y += v.top; v = v.parent as? android.view.View }
+        scroll.scrollTo(0, y - 400)
+        shoot(a, "settings-bt")
+    }
 }
