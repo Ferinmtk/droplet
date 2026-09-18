@@ -109,6 +109,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setUpRemote() {
         b.openRemote.setOnClickListener { startActivity(Intent(this, RemoteActivity::class.java)) }
+        b.openBt.setOnClickListener { startActivity(Intent(this, BluetoothActivity::class.java)) }
         b.linkRow.setOnClickListener { askLinkCode() }
 
         b.capMedia.setOnCheckedChangeListener { _, on -> if (on != Prefs.capMedia) { Prefs.capMedia = on; capsChanged() } }
@@ -129,12 +130,33 @@ class SettingsActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                Live.state.collect { s ->
-                    b.liveState.text = s.describe(this@SettingsActivity)
-                    b.liveDot.setBackgroundResource(if (s.connected) R.drawable.dot_online else R.drawable.dot)
+                launch {
+                    Live.state.collect { s ->
+                        b.liveState.text = s.describe(this@SettingsActivity)
+                        b.liveDot.setBackgroundResource(if (s.connected) R.drawable.dot_online else R.drawable.dot)
+                    }
                 }
+                launch { BtHid.state.collect { showBluetooth(it) } }
             }
         }
+    }
+
+    /** The Bluetooth mouse and keyboard: in use or not, with what, and whether this phone can do it at all. */
+    private fun showBluetooth(s: HidController.State) {
+        val last = Prefs.btLastHostName
+        b.btState.text = when {
+            s.connected -> getString(R.string.s_bt_state_connected, s.host?.name)
+            last != null -> getString(R.string.s_bt_state_last, last)
+            else -> getString(R.string.s_bt_state_off)
+        }
+        b.btDot.setBackgroundResource(if (s.connected) R.drawable.dot_online else R.drawable.dot)
+        b.btSupport.setText(when {
+            !BtHid.apiAvailable -> R.string.s_bt_support_old
+            Prefs.btSupport == Prefs.BT_SUPPORTED -> R.string.s_bt_support_yes
+            Prefs.btSupport == Prefs.BT_UNSUPPORTED -> R.string.s_bt_support_no
+            Prefs.btSupport == Prefs.BT_REFUSED -> R.string.s_bt_support_refused
+            else -> R.string.s_bt_support_unknown
+        })
     }
 
     private fun capsChanged() {
@@ -271,6 +293,7 @@ class SettingsActivity : AppCompatActivity() {
         val pm = getSystemService(PowerManager::class.java)
         b.batteryState.setText(if (pm.isIgnoringBatteryOptimizations(packageName)) R.string.s_battery_ok else R.string.s_battery_on)
         refreshCaps()
+        showBluetooth(BtHid.state.value)
     }
 
     private fun loadDevice() {
