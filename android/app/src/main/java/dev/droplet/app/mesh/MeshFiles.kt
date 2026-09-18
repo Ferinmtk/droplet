@@ -88,6 +88,8 @@ object MeshFiles {
 
     class Offers {
         private val offers = java.util.concurrent.ConcurrentHashMap<String, Offer>()
+        /** Bytes a second when serving, 0 for no limit (the reference's `max_rate`). */
+        @Volatile var maxRate = 0L
 
         fun add(o: Offer) { offers[o.id] = o }
         fun get(id: String): Offer? = offers[id]
@@ -128,6 +130,7 @@ object MeshFiles {
             o.open(first).use { input ->
                 val buf = ByteArray(CHUNK)
                 var done = 0L
+                val started = System.currentTimeMillis()
                 while (done < length) {
                     val n = input.read(buf, 0, minOf(buf.size.toLong(), length - done).toInt())
                     if (n < 0) throw IOException("the file got shorter while it was being sent")
@@ -135,6 +138,11 @@ object MeshFiles {
                     done += n
                     o.sent += n
                     o.lastActivity = System.currentTimeMillis()
+                    val rate = maxRate
+                    if (rate > 0) {
+                        val ahead = done * 1000 / rate - (System.currentTimeMillis() - started)
+                        if (ahead > 0) Thread.sleep(ahead)
+                    }
                 }
                 out.flush()
             }
@@ -190,7 +198,7 @@ object MeshFiles {
     fun download(identity: MeshIdentity, fp: String, hosts: List<Pair<String, Int>>, c: Checked, dir: File,
                  tries: Int = 5, freeSpace: (File) -> Long = { it.usableSpace },
                  sleep: (Long) -> Unit = { Thread.sleep(it) }, onProgress: ((Long, Long) -> Unit)? = null,
-                 log: (String) -> Unit = {}): File {
+                 log: (String) -> Unit = {}, stopped: () -> Boolean = { false }): File {
         dir.mkdirs()
         val (part, meta) = partFiles(dir, fp, c.id)
         val prev = runCatching { JSONObject(meta.readText()) }.getOrNull()
@@ -203,14 +211,15 @@ object MeshFiles {
         var lastError = "no address to fetch it from"
         var delay = 1000L
         for (attempt in 0 until tries) {
+            if (stopped()) throw DownloadError("stopped")
             for ((host, port) in hosts) {
                 val have = if (part.exists()) part.length() else 0L
                 if (have == c.size) break
                 try {
-                    fetch(identity, fp, host, port, c.id, part, have, c.size, onProgress, log)
+                    fetch(identity, fp, host, port, c.id, part, have, c.size, onProgress, log, stopped)
                     break
                 } catch (e: DownloadError) {
-                    if (e.permanent) throw e
+                    if (e.permanent || stopped()) throw e
                     lastError = e.message ?: "failed"
                 } catch (e: IOException) {
                     lastError = "$host: ${e.message ?: e.javaClass.simpleName}"
@@ -229,7 +238,7 @@ object MeshFiles {
     }
 
     private fun fetch(identity: MeshIdentity, fp: String, host: String, port: Int, id: String, part: File, have0: Long,
-                      size: Long, onProgress: ((Long, Long) -> Unit)?, log: (String) -> Unit) {
+                      size: Long, onProgress: ((Long, Long) -> Unit)?, log: (String) -> Unit, stopped: () -> Boolean) {
         var have = have0
         val client = MeshTls.client(identity, fp)
         val req = Request.Builder().url("https://${hostPort(host, port)}/mesh/files/$id")
@@ -260,6 +269,7 @@ object MeshFiles {
                         val n = input.read(buf)
                         if (n < 0) break
                         if (got + n > size) throw DownloadError("the sender sent more than it offered", true)
+                        if (stopped()) throw DownloadError("stopped")
                         f.write(buf, 0, n)
                         got += n
                         onProgress?.invoke(got, size)

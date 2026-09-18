@@ -547,7 +547,9 @@ class MeshNode(
         try {
             host.log("mesh: receiving ${c.name} (${c.size} bytes) from ${entry.name}")
             var lastNote = 0L
-            val part = MeshFiles.download(identity, entry.fp, hosts, c, incomingDir, log = host::log, onProgress = { got, size ->
+            val part = MeshFiles.download(identity, entry.fp, hosts, c, incomingDir, log = host::log, stopped = { stopped },
+                sleep = { ms -> var left = ms; while (left > 0 && !stopped) { Thread.sleep(minOf(left, 200)); left -= 200 } },
+                onProgress = { got, size ->
                 val now = System.currentTimeMillis()
                 if (now - lastNote > 500 || got == size) {
                     lastNote = now
@@ -636,6 +638,11 @@ class MeshNode(
         val s = j.optString("state")
         s == Outbox.DONE || s == Outbox.FAILED || (s == Outbox.QUEUED && j.optInt("attempts") > 0 && !j.optBoolean("retry"))
     }
+
+    /** Serving files: bytes a second, 0 for no limit. */
+    var offerRate: Long
+        get() = offers.maxRate
+        set(v) { offers.maxRate = v }
 
     /** Bytes of a file job served so far, for progress. */
     fun jobSent(id: String): Long = offers.get(id)?.sent ?: 0L
