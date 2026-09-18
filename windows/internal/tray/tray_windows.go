@@ -101,6 +101,7 @@ func ready(o Options) {
 	systray.AddSeparator()
 	downloads := systray.AddMenuItem("Open downloads folder", "")
 	pause := systray.AddMenuItemCheckbox("Pause notifications", "Files and messages still arrive; rings still ring", a.Store.Get().Paused)
+	pauseRemote := systray.AddMenuItemCheckbox("Pause remote control", "Other devices can't control this PC until you switch this off", a.Store.Get().RemotePaused)
 	settingsItem := systray.AddMenuItem("Settings…", "")
 	systray.AddSeparator()
 	quit := systray.AddMenuItem("Quit droplet", "")
@@ -126,8 +127,11 @@ func ready(o Options) {
 		systray.SetTooltip(s.Tooltip())
 		header.SetTitle(s.Tooltip())
 		icon, state := assets.Icon, "on"
-		if !s.Connected || !s.Configured {
+		switch {
+		case !s.Connected || !s.Configured:
 			icon, state = assets.IconDim, "dim"
+		case s.Remote.Active:
+			icon, state = assets.IconLive, "live" // remote input just now
 		}
 		if state != iconState {
 			systray.SetIcon(icon)
@@ -143,6 +147,11 @@ func ready(o Options) {
 			pause.Check()
 		} else {
 			pause.Uncheck()
+		}
+		if a.Store.Get().RemotePaused {
+			pauseRemote.Check()
+		} else {
+			pauseRemote.Uncheck()
 		}
 		dests := agent.Destinations(s.Devices)
 		ringDests := make([]platform.Dest, len(dests))
@@ -197,6 +206,16 @@ func ready(o Options) {
 					pause.Check()
 				} else {
 					pause.Uncheck()
+				}
+			case <-pauseRemote.ClickedCh:
+				p := !pauseRemote.Checked()
+				if err := a.SetRemotePaused(p); err != nil {
+					log.Printf("pause remote control: %v", err)
+				}
+				if p {
+					pauseRemote.Check()
+				} else {
+					pauseRemote.Uncheck()
 				}
 			case <-settingsItem.ClickedCh:
 				o.OpenSettings()

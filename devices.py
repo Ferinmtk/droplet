@@ -19,13 +19,22 @@ class DeviceStore:
     A device is a browser that has named itself. It holds a random token in a
     long-lived cookie; only the token's hash is stored here. Each device gets
     an inbox directory for items sent to it.
+
+    Native helpers on the same machine (the Linux agent, the Windows and
+    Android apps) join an existing device through a one-time link code and
+    get tokens of their own ("links"), so one machine shows up once.
     """
+
+    LINK_TTL = 600        # seconds a link code stays valid
+    LINK_MAX_FAILS = 10   # wrong codes before every open code is cancelled
 
     def __init__(self, home: Path):
         self.file = home / "devices.json"
         self.inbox_root = home / "inbox"
         self._lock = threading.Lock()
         self._seen: dict[str, float] = {}
+        self._codes: dict[str, tuple[str, float]] = {}  # code → (device id, expires)
+        self._fails: list[float] = []
         try:
             self._devices: dict[str, dict] = json.loads(self.file.read_text())
         except FileNotFoundError:
@@ -66,7 +75,40 @@ class DeviceStore:
             for dev in self._devices.values():
                 if secrets.compare_digest(dev["token"], h):
                     return dict(dev)
+                for link in dev.get("links") or []:
+                    if secrets.compare_digest(link["token"], h):
+                        return dict(dev)
         return None
+
+    def link_code(self, device_id: str) -> str:
+        """A short one-time code a native helper can trade for this device's identity."""
+        now = time.time()
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        with self._lock:
+            self._codes = {c: v for c, v in self._codes.items() if v[1] > now}
+            self._codes[code] = (device_id, now + self.LINK_TTL)
+        return code
+
+    def redeem(self, code: str, label: str) -> tuple[dict, str] | None:
+        """Swap a link code for a new token on the same device, or None."""
+        now = time.time()
+        code = "".join(ch for ch in str(code) if ch.isdigit())
+        with self._lock:
+            entry = self._codes.pop(code, None)
+            if entry is None or entry[1] < now or entry[0] not in self._devices:
+                # six digits are guessable given enough tries, so a burst of
+                # misses cancels every open code
+                self._fails = [t for t in self._fails if now - t < self.LINK_TTL] + [now]
+                if len(self._fails) >= self.LINK_MAX_FAILS:
+                    self._codes.clear()
+                    self._fails.clear()
+                return None
+            token = secrets.token_urlsafe(32)
+            dev = self._devices[entry[0]]
+            dev.setdefault("links", []).append(
+                {"token": self._hash(token), "label": label[:60], "created": int(now)})
+            self._save()
+            return dict(dev), token
 
     def get(self, device_id: str) -> dict | None:
         with self._lock:

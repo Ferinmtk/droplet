@@ -63,7 +63,7 @@
   <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3C16 3 6 14.5 6 20.5a10 10 0 0 0 20 0C26 14.5 16 3 16 3z" fill="#38bdf8"/><path d="M11.5 20.5a4.5 4.5 0 0 0 4.5 4.5" stroke="#0f172a" stroke-width="2" fill="none" stroke-linecap="round" opacity=".55"/></svg>
   <h1>droplet</h1>
 </header>
-<p class="sub" id="intro">The companion that lives in your tray: it picks up files and messages sent to this PC, rings when you're looking for it, and puts droplet in Explorer's <i>Send to</i> menu.</p>
+<p class="sub" id="intro">The companion that lives in your tray: it picks up files and messages sent to this PC, rings when you're looking for it, puts droplet in Explorer's <i>Send to</i> menu, and lets your other devices control this PC.</p>
 
 <h2>Hub</h2>
 <div class="card">
@@ -83,6 +83,18 @@
       <div class="help">This hub asks for its PIN. It's only used once, to sign this PC in.</div>
       <div class="err"></div>
     </div>
+  </div>
+  <div class="field" id="f-link_code">
+    <label class="name" for="link_code">Link with code</label>
+    <div class="row">
+      <input type="text" id="link_code" inputmode="numeric" maxlength="7" placeholder="123456" spellcheck="false" autocomplete="off">
+      <button type="button" id="link">Link</button>
+    </div>
+    <div class="help">Recommended. Open droplet in this PC's browser, choose <i>Set up remote control of this device</i>,
+      and type the six-digit code here. The app then joins that browser as one device, so this PC is listed once.
+      Or skip this: give the app a name below and Save to add it as a device of its own.</div>
+    <div class="status" id="linkStatus"></div>
+    <div class="err"></div>
   </div>
   <div class="field" id="f-name">
     <label class="name" for="name">This PC's name</label>
@@ -119,6 +131,40 @@
   <div class="field">
     <label class="toggle"><span><span class="t">Ring out loud</span><br><span class="d">When another device rings this PC. Off shows a notification only.</span></span>
       <span class="switch"><input type="checkbox" id="ring_sound"><span></span></span></label>
+  </div>
+</div>
+
+<h2>Remote control</h2>
+<div class="card">
+  <div class="field">
+    <div class="status" style="margin-top:0"><span class="dot" id="liveDot"></span><span id="liveStatus">…</span></div>
+    <div class="help">What your other devices may do to this PC, from droplet's remote. Changes apply at once.</div>
+  </div>
+  <div class="field">
+    <label class="toggle"><span><span class="t">Allow remote control</span><br><span class="d">Move the mouse, click, scroll and type, including the presentation remote.
+      Windows keeps this input away from apps running as administrator and from the lock screen.</span></span>
+      <span class="switch"><input type="checkbox" id="r_input" data-remote="input"><span></span></span></label>
+  </div>
+  <div class="field">
+    <label class="toggle"><span><span class="t">Media and volume</span><br><span class="d">Play, pause, skip, set the volume, and show what's playing.</span></span>
+      <span class="switch"><input type="checkbox" id="r_media" data-remote="media"><span></span></span></label>
+  </div>
+  <div class="field">
+    <label class="toggle"><span class="t">Lock this PC</span>
+      <span class="switch"><input type="checkbox" id="r_lock" data-remote="lock"><span></span></span></label>
+  </div>
+  <div class="field">
+    <label class="toggle"><span><span class="t">Screenshots</span><br><span class="d">Another device can take a picture of all your screens. You get a notification each time.</span></span>
+      <span class="switch"><input type="checkbox" id="r_screenshot" data-remote="screenshot"><span></span></span></label>
+  </div>
+  <div class="field">
+    <label class="toggle"><span><span class="t">Clipboard sync</span><br><span class="d">Text you copy goes to your other devices, and theirs comes here.
+      Off at first, because everything you copy leaves this PC. Copies a password manager marks as private are never sent.</span></span>
+      <span class="switch"><input type="checkbox" id="r_clipboard" data-remote="clipboard"><span></span></span></label>
+  </div>
+  <div class="field">
+    <label class="toggle"><span><span class="t">Pause remote control</span><br><span class="d">Turns all of the above off until you switch it back. Also in the tray menu.</span></span>
+      <span class="switch"><input type="checkbox" id="r_paused" data-remote="paused"><span></span></span></label>
   </div>
 </div>
 
@@ -193,9 +239,65 @@ async function probe(fillName) {
   checkName();
 }
 
+const remoteBoxes = () => document.querySelectorAll("input[data-remote]");
+function showLive(live) {
+  if (!live) return;
+  $("liveDot").className = "dot " + (live.live ? "ok" : "");
+  $("liveStatus").textContent = live.text;
+}
+function showRemote(r) {
+  remoteBoxes().forEach((el) => { el.checked = !!r[el.dataset.remote]; });
+}
+async function saveRemote() {
+  const body = {};
+  remoteBoxes().forEach((el) => { body[el.dataset.remote] = el.checked; });
+  const { ok, data } = await api("remote", body).catch(() => ({ ok: false, data: {} }));
+  if (ok) showRemote(data.remote);
+  setTimeout(refreshLive, 700);
+}
+async function refreshLive() {
+  const { ok, data } = await api("settings").catch(() => ({ ok: false }));
+  if (ok) showLive(data.live);
+}
+remoteBoxes().forEach((el) => el.addEventListener("change", saveRemote));
+setInterval(refreshLive, 3000);
+
+$("link").onclick = async () => {
+  clearErrors();
+  $("linkStatus").textContent = "Linking…";
+  $("link").disabled = true;
+  const { ok, data } = await api("link", { hub_url: $("hub_url").value, code: $("link_code").value, pin: $("pin").value })
+    .catch(() => ({ ok: false, data: { error: "droplet stopped running — start it again" } }));
+  $("link").disabled = false;
+  $("linkStatus").textContent = "";
+  if (!ok) { fieldError(data.field || "link_code", data.error || "Couldn't link"); return; }
+  $("link_code").value = "";
+  $("hub_url").value = data.hub_url;
+  $("name").value = data.link.name;
+  registered = true;
+  $("linkStatus").textContent = `Linked: this app is now part of "${data.link.name}".`;
+  const old = data.link.replaced;
+  if (old) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = `Remove the old "${old.name}"`;
+    b.title = "This app's previous, separate entry on the hub";
+    b.onclick = async () => {
+      b.disabled = true;
+      const r = await api("remove-old", { id: old.id }).catch(() => ({ ok: false, data: {} }));
+      b.replaceWith(document.createTextNode(r.ok ? ` Removed "${old.name}".` : ` Couldn't remove it: ${r.data.error || "try the Devices list"}`));
+    };
+    $("linkStatus").append(" ", b);
+  }
+  $("save").click(); // keep the rest of the page's choices too
+};
+$("link_code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("link").click(); });
+
 async function load() {
   const { data } = await api("settings");
   const s = data.settings;
+  showRemote(data.remote || {});
+  showLive(data.live);
   registered = data.registered;
   for (const k of ["hub_url", "name", "download_dir"]) $(k).value = s[k] || "";
   for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart"]) $(k).checked = !!s[k];
@@ -228,6 +330,7 @@ $("save").onclick = async () => {
   $("name").value = data.name;
   $("hub_url").value = data.hub_url;
   $("saved").textContent = "Saved ✓";
+  refreshLive();
   $("done").style.display = "block";
   registered = true;
   probe(false);

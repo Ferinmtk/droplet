@@ -97,7 +97,7 @@
     <string name="s_checking">Checking the hub…</string>
     <string name="s_hub_unreachable">Can\'t reach the hub right now.</string>
     <string name="s_connected">Stay connected</string>
-    <string name="s_connected_desc">Keeps a small notification up and checks the hub every 15 seconds, so another device can ring this phone (loud, even on silent), and you hear about files and messages sent here.</string>
+    <string name="s_connected_desc">Keeps a small notification up and a live connection to the hub, and checks it every 15 seconds, so another device can ring this phone (loud, even on silent) or control it, and you hear about files and messages sent here.</string>
     <string name="s_inbox">Notify me about files and messages</string>
     <string name="s_inbox_desc">Needs Stay connected. Shows a notification when something arrives for this phone.</string>
     <string name="s_notif_perm_off">Notifications are off for droplet, so rings and transfers can\'t show.</string>
@@ -121,4 +121,98 @@
     <string name="s_about">droplet %1$s · your own hub, no cloud</string>
     <string name="excluded_title">Apps not to mirror</string>
     <string name="excluded_body">Ticked apps\' notifications stay on this phone.</string>
+
+    <!-- live connection (remote control) -->
+    <string name="live_off">Off. Turn on Stay connected so other devices can reach this phone.</string>
+    <string name="live_no_hub">Set up a hub first.</string>
+    <string name="live_unnamed">Open droplet and name this phone first.</string>
+    <string name="live_alone">Connected · no other devices online</string>
+    <plurals name="live_online">
+        <item quantity="one">Connected · %d device online</item>
+        <item quantity="other">Connected · %d devices online</item>
+    </plurals>
+    <string name="live_retrying">Can\'t reach the hub, retrying</string>
+    <string name="live_err_pin">the hub wants its PIN: open droplet and log in</string>
+    <string name="live_err_http">the hub answered %1$d</string>
+    <string name="live_err_off">%1$s is switched off on the phone.</string>
+    <string name="live_err_slow">The phone took too long to answer.</string>
+    <string name="live_err_permission">Permission not granted on the phone.</string>
+    <string name="cap_files">Files</string>
+    <string name="cap_sms">SMS</string>
+
+    <!-- sms -->
+    <string name="sms_err_provider">The phone wouldn\'t open its messages. On Xiaomi phones, allow droplet to read SMS under Settings → Apps → droplet → Other permissions.</string>
+    <string name="sms_err_address">That isn\'t a phone number.</string>
+    <string name="sms_err_empty">The message is empty.</string>
+    <string name="sms_err_long">That message is too long for SMS.</string>
+    <string name="sms_err_blocked">The phone refused to send it. On Xiaomi phones, allow Send SMS under Settings → Apps → droplet → Other permissions.</string>
+    <string name="sms_err_timeout">The phone didn\'t confirm sending within 25 seconds. It may still go out. On Xiaomi phones, check Settings → Apps → droplet → Other permissions → Send SMS.</string>
+    <string name="sms_err_radio">The phone\'s mobile radio is off (airplane mode?).</string>
+    <string name="sms_err_service">The phone has no mobile signal right now.</string>
+    <string name="sms_err_failed">The phone couldn\'t send it (error %1$d). On Xiaomi phones, check Settings → Apps → droplet → Other permissions → Send SMS.</string>
+
+    <!-- files -->
+    <string name="files_sending">Sending a file to %1$s</string>
+
+    <!-- clipboard -->
+    <string name="clip_action">Send clipboard</string>
+    <string name="clip_tile">Send clipboard</string>
+    <string name="clip_sent">Clipboard sent to your devices</string>
+    <string name="clip_empty">The clipboard is empty</string>
+    <string name="clip_too_big">That\'s too much text to sync (256 KB at most)</string>
+    <string name="clip_off">Clipboard sync is off in droplet\'s settings</string>
+    <string name="clip_offline">Not connected to the hub</string>
+
+    <!-- presentation remote -->
+    <string name="back">Back</string>
+    <string name="remote_title">Remote</string>
+    <string name="remote_action">Remote</string>
+    <string name="remote_presenting_on">Presenting on</string>
+    <string name="remote_timer_hint">Tap to pause · hold to reset</string>
+    <string name="remote_next">Next</string>
+    <string name="remote_prev">Previous</string>
+    <string name="remote_start">Start</string>
+    <string name="remote_black">Black</string>
+    <string name="remote_end">End</string>
+    <string name="remote_keys_hint">Volume up: next slide · Volume down: previous</string>
+    <string name="remote_live">Live</string>
+    <string name="remote_loading">Loading…</string>
+    <string name="remote_offline_short">Not connected</string>
+    <string name="remote_offline">Not connected to the hub. Is Tailscale on?</string>
+    <string name="remote_none">No computer ready</string>
+    <string name="remote_none_help">No computer is ready for remote control. Start droplet\'s helper on it.</string>
+    <string name="remote_no_target">Pick a computer first</string>
+    <string name="remote_pick">Present on</string>
+
+    <!-- settings: remote control -->
+    <string name="s_remote">Remote control</string>
+    <string name="s_remote_desc">Other devices can control this phone, and it can drive a computer\'s slides.</string>
+    <string name="s_open_remote">Presentation remote</string>
+    <string name="s_link">Link with code</string>
+    <string name="s_link_desc">Only if this app shows up as a separate device from the one you named in a browser.</string>
+    <string name="s_link_help">On the device you want this app to be, open droplet and make a link code, then type it here.</string>
+    <string name="s_link_hint">6-digit code</string>
+    <string name="s_link_go">Link</string>
+    <string name="s_link_six">The code has six digits.</string>
+    <string name="s_linked">This app is now %1$s.</string>
+    <string name="s_caps">What other devices can do</string>
+    <string name="s_cap_media">Media control</string>
+    <string name="s_cap_media_desc">See what\'s playing here and play, pause, skip, seek and change the volume.</string>
+    <string name="s_cap_sms">SMS</string>
+    <string name="s_cap_sms_desc">Read this phone\'s text messages and send new ones from the default SIM. Contacts give the names.</string>
+    <string name="s_sms_grant">Let droplet read and send SMS</string>
+    <string name="s_sms_denied">Allow SMS (and Contacts) on droplet\'s app page. On Xiaomi phones, also allow Read SMS and Send SMS under Other permissions.</string>
+    <string name="s_cap_files">Files</string>
+    <string name="s_cap_files_desc">Browse Downloads, Camera, Pictures, Documents, Music and Movies, and take a copy of a file. Nothing else on the phone is reachable.</string>
+    <string name="s_files_grant">Allow all files access</string>
+    <string name="s_cap_clip">Clipboard sync</string>
+    <string name="s_cap_clip_desc">Text copied on your other devices lands on this phone\'s clipboard. Android only lets the app on screen read the clipboard, so this phone\'s clipboard goes out when you open droplet, or when you tap Send clipboard in the notification or the quick-settings tile.</string>
+    <string name="s_perm_notif_ok">Notification access: allowed</string>
+    <string name="s_perm_notif_no">Needs notification access</string>
+    <string name="s_perm_sms_ok">SMS and contacts: allowed</string>
+    <string name="s_perm_sms_no_names">SMS allowed; contacts not, so no names</string>
+    <string name="s_perm_sms_no">SMS: not allowed</string>
+    <string name="s_perm_sms_none">This device can\'t send SMS</string>
+    <string name="s_perm_files_ok">All files access: allowed</string>
+    <string name="s_perm_files_no">All files access: not allowed</string>
 </resources>

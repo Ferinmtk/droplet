@@ -7,6 +7,8 @@
 //	droplet ring <device|hub>
 //	droplet status
 //	droplet setup --hub <url> --name <name> [--pin <pin>]
+//	droplet link --code <code> [--hub <url>] [--pin <pin>]
+//	droplet live [--caps input,media,…]
 //	droplet settings | stop-ring | uninstall | version
 package main
 
@@ -40,6 +42,9 @@ Usage:
   droplet ring <device|hub>             make a device (or the hub) ring
   droplet status                        show the hub connection and devices
   droplet setup --hub <url> --name <n>  register this PC without the settings page [--pin <pin>]
+  droplet link --code <123456>          join this PC's browser as one device, with the code from
+                                        "Set up remote control of this device" [--hub <url>] [--pin <pin>]
+  droplet live [--caps input,media]     run only the remote-control connection, with a log (for testing)
   droplet settings                      open the settings page
   droplet stop-ring                     silence this PC
   droplet uninstall                     remove autostart, Send To entries and the Start menu entry
@@ -108,6 +113,10 @@ func runCLI(args []string, console bool) error {
 		return cmdStatus()
 	case "setup":
 		return cmdSetup(rest)
+	case "link":
+		return cmdLink(rest)
+	case "live":
+		return cmdLive(rest)
 	case "settings":
 		if u, ok := settings.RunningURL(); ok {
 			return platform.OpenURL(u)

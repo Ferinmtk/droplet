@@ -243,3 +243,69 @@ func TestExpandPath(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestLinkWithCode(t *testing.T) {
+	a, h, _, _ := setup(t) // registered as its own device, "maryanne"
+	browser := h.AddDevice("maryanne-pc")
+	old := a.Store.Get()
+
+	if _, err := a.Link(context.Background(), h.Server.URL, "12", ""); err == nil {
+		t.Fatal("a short code should be refused")
+	}
+	if _, err := a.Link(context.Background(), h.Server.URL, "000000", ""); err == nil ||
+		!strings.Contains(err.Error(), "wrong") {
+		t.Fatalf("a wrong code: %v", err)
+	}
+	code := h.LinkCode(browser)
+	res, err := a.Link(context.Background(), h.Server.URL, code[:3]+" "+code[3:], "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := a.Store.Get()
+	if cfg.DeviceID != browser.ID || cfg.DeviceName != "maryanne-pc" || cfg.DeviceToken == old.DeviceToken || cfg.DeviceToken == browser.Token {
+		t.Fatalf("config after link: %+v", cfg)
+	}
+	if res.Replaced == nil || res.Replaced.ID != old.DeviceID {
+		t.Fatalf("should report the old device: %+v", res)
+	}
+	// the app now is that device: the hub lists it as self
+	c, _ := a.Client()
+	files, err := c.Files(context.Background())
+	if err != nil || files.Self() == nil || files.Self().ID != browser.ID {
+		t.Fatalf("self after link: %+v %v", files, err)
+	}
+	if err := a.RemoveOld(context.Background(), res.Replaced.ID); err != nil {
+		t.Fatal(err)
+	}
+	if h.Removed[0] != old.DeviceID {
+		t.Fatal("old device not removed")
+	}
+	// a code only works once
+	if _, err := a.Link(context.Background(), h.Server.URL, code, ""); err == nil {
+		t.Fatal("reused code accepted")
+	}
+	// the live connection's parameters follow
+	p := a.RemoteParams()
+	if p.Token != cfg.DeviceToken || !p.Caps["input"] || p.Caps["clipboard"] || p.Paused {
+		t.Fatalf("params %+v", p)
+	}
+}
+
+func TestRemoteSwitches(t *testing.T) {
+	a, _, _, _ := setup(t)
+	changed := 0
+	a.OnRemoteChange = func() { changed++ }
+	if err := a.SetRemote(RemoteSettings{Media: true, Clipboard: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetRemotePaused(true); err != nil {
+		t.Fatal(err)
+	}
+	p := a.RemoteParams()
+	if p.Caps["input"] || !p.Caps["media"] || !p.Caps["clipboard"] || !p.Paused || changed != 2 {
+		t.Fatalf("params %+v, %d changes", p, changed)
+	}
+	if got := a.CurrentRemote(); got != (RemoteSettings{Media: true, Clipboard: true, Paused: true}) {
+		t.Fatalf("current %+v", got)
+	}
+}

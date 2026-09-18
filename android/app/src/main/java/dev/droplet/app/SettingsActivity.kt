@@ -9,12 +9,19 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.InputFilter
+import android.text.InputType
 import android.view.View
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.droplet.app.databinding.ActivitySettingsBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,6 +36,17 @@ class SettingsActivity : AppCompatActivity() {
         if (!granted) openAppNotificationSettings()
         refresh()
     }
+
+    private val askSms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        // denied for good (or MIUI's own permission manager said no): the app's page is the way on
+        if (!Caps.smsAllowed(this) && !shouldShowRequestPermissionRationale(Manifest.permission.READ_SMS)) {
+            Toast.makeText(this, R.string.s_sms_denied, Toast.LENGTH_LONG).show()
+            tryStart(appDetails())
+        }
+        capsChanged()
+    }
+
+    private val askStorage = registerForActivityResult(ActivityResultContracts.RequestPermission()) { capsChanged() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         edgeToEdge()
@@ -73,12 +91,124 @@ class SettingsActivity : AppCompatActivity() {
         b.autostartButton.setOnClickListener { openAutostart() }
 
         b.about.text = getString(R.string.s_about, BuildConfig.VERSION_NAME)
+
+        setUpRemote()
+    }
+
+    // --- remote control ----------------------------------------------------------
+
+    private fun setUpRemote() {
+        b.openRemote.setOnClickListener { startActivity(Intent(this, RemoteActivity::class.java)) }
+        b.linkRow.setOnClickListener { askLinkCode() }
+
+        b.capMedia.setOnCheckedChangeListener { _, on -> if (on != Prefs.capMedia) { Prefs.capMedia = on; capsChanged() } }
+        b.capSms.setOnCheckedChangeListener { _, on -> if (on != Prefs.capSms) { Prefs.capSms = on; capsChanged() } }
+        b.capFiles.setOnCheckedChangeListener { _, on -> if (on != Prefs.capFiles) { Prefs.capFiles = on; capsChanged() } }
+        b.capClipboard.setOnCheckedChangeListener { _, on -> if (on != Prefs.capClipboard) { Prefs.capClipboard = on; capsChanged() } }
+
+        b.mediaGrant.setOnClickListener { b.mirrorButton.performClick() }
+        b.smsGrant.setOnClickListener { askSms.launch(Caps.SMS_PERMISSIONS) }
+        b.filesGrant.setOnClickListener {
+            if (Build.VERSION.SDK_INT >= 30) {
+                tryStart(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
+                    || tryStart(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            } else {
+                askStorage.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                Live.state.collect { s ->
+                    b.liveState.text = s.describe(this@SettingsActivity)
+                    b.liveDot.setBackgroundResource(if (s.connected) R.drawable.dot_online else R.drawable.dot)
+                }
+            }
+        }
+    }
+
+    private fun capsChanged() {
+        refresh()
+        Live.refresh()
+    }
+
+    private fun refreshCaps() {
+        b.capMedia.isChecked = Prefs.capMedia
+        b.capSms.isChecked = Prefs.capSms
+        b.capFiles.isChecked = Prefs.capFiles
+        b.capClipboard.isChecked = Prefs.capClipboard
+
+        val media = Caps.mediaAllowed(this)
+        showPerm(b.mediaDot, b.mediaPerm, b.mediaGrant, media,
+            getString(if (media) R.string.s_perm_notif_ok else R.string.s_perm_notif_no))
+
+        val phone = Caps.hasTelephony(this)
+        val sms = Caps.smsAllowed(this)
+        showPerm(b.smsDot, b.smsPerm, b.smsGrant, sms, getString(when {
+            !phone -> R.string.s_perm_sms_none
+            sms && !Caps.contactsAllowed(this) -> R.string.s_perm_sms_no_names
+            sms -> R.string.s_perm_sms_ok
+            else -> R.string.s_perm_sms_no
+        }))
+        if (!phone) b.smsGrant.visibility = View.GONE
+        b.capSms.isEnabled = phone
+
+        val files = Caps.filesAllowed(this)
+        showPerm(b.filesDot, b.filesPerm, b.filesGrant, files,
+            getString(if (files) R.string.s_perm_files_ok else R.string.s_perm_files_no))
+    }
+
+    private fun showPerm(dot: View, label: android.widget.TextView, grant: View, ok: Boolean, text: String) {
+        label.text = text
+        dot.setBackgroundResource(if (ok) R.drawable.dot_online else R.drawable.dot)
+        grant.visibility = if (ok) View.GONE else View.VISIBLE
+    }
+
+    /** Settings → Link with code: become the device another browser named. */
+    private fun askLinkCode() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(InputFilter.LengthFilter(6))
+            hint = getString(R.string.s_link_hint)
+            textSize = 22f
+            letterSpacing = 0.3f
+        }
+        val box = FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.s_link)
+            .setMessage(R.string.s_link_help)
+            .setView(box)
+            .setPositiveButton(R.string.s_link_go) { _, _ ->
+                val code = input.text.toString().filter { it.isDigit() }
+                if (code.length != 6) {
+                    Toast.makeText(this, R.string.s_link_six, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    val res = withContext(Dispatchers.IO) { runCatching { Hub.link(code) } }
+                    res.onSuccess { name ->
+                        Toast.makeText(this@SettingsActivity, getString(R.string.s_linked, name), Toast.LENGTH_LONG).show()
+                        Live.refresh()
+                        loadDevice()
+                    }.onFailure {
+                        Toast.makeText(this@SettingsActivity, it.message ?: getString(R.string.s_hub_unreachable), Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     override fun onResume() {
         super.onResume()
         refresh()
         loadDevice()
+        // back from a system permission screen: announce what changed
+        Live.refresh()
     }
 
     private fun refresh() {
@@ -96,6 +226,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val pm = getSystemService(PowerManager::class.java)
         b.batteryState.setText(if (pm.isIgnoringBatteryOptimizations(packageName)) R.string.s_battery_ok else R.string.s_battery_on)
+        refreshCaps()
     }
 
     private fun loadDevice() {

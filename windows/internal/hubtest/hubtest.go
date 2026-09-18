@@ -17,6 +17,7 @@ import (
 // Device is a registered device.
 type Device struct {
 	ID, Name, Token string
+	Links           []string // tokens of apps linked to this device
 }
 
 // Hub is the fake hub's state. Lock Mu to inspect or change it from a test.
@@ -33,6 +34,23 @@ type Hub struct {
 	Read     map[string]map[string]float64 // reader -> sender -> ts
 	ActiveRg map[string]*Ring              // device id -> ring
 	Rang     []string                      // targets rung
+	Codes    map[string]string             // link code -> device id
+	Removed  []string                      // device ids removed
+}
+
+// LinkCode makes a one-time code for linking an app to d.
+func (h *Hub) LinkCode(d *Device) string {
+	h.Mu.Lock()
+	defer h.Mu.Unlock()
+	code := "4" + rid()[:5]
+	code = strings.Map(func(r rune) rune {
+		if r >= 'a' {
+			return '0' + (r-'a')%10
+		}
+		return r
+	}, code)
+	h.Codes[code] = d.ID
+	return code
 }
 
 // InboxFile is a file waiting in a device's inbox.
@@ -65,6 +83,7 @@ func New() *Hub {
 		Received: map[string][]byte{},
 		Read:     map[string]map[string]float64{},
 		ActiveRg: map[string]*Ring{},
+		Codes:    map[string]string{},
 	}
 	h.Server = httptest.NewServer(h)
 	return h
@@ -103,13 +122,23 @@ func (h *Hub) Say(from, to *Device, text string) {
 }
 
 func (h *Hub) byToken(r *http.Request) *Device {
-	c, err := r.Cookie("droplet_device")
-	if err != nil {
+	token := ""
+	if a := r.Header.Get("Authorization"); strings.HasPrefix(a, "Bearer ") {
+		token = strings.TrimPrefix(a, "Bearer ")
+	} else if c, err := r.Cookie("droplet_device"); err == nil {
+		token = c.Value
+	}
+	if token == "" {
 		return nil
 	}
 	for _, d := range h.Devices {
-		if d.Token == c.Value {
+		if d.Token == token {
 			return d
+		}
+		for _, l := range d.Links {
+			if l == token {
+				return d
+			}
 		}
 	}
 	return nil
@@ -177,6 +206,30 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Devices = append(h.Devices, d)
 		http.SetCookie(w, &http.Cookie{Name: "droplet_device", Value: d.Token, MaxAge: 5 * 365 * 24 * 3600, HttpOnly: true})
 		writeJSON(w, 200, map[string]string{"id": d.ID, "name": d.Name})
+	case p == "/api/device/link" && r.Method == http.MethodPost:
+		var in struct{ Code, Client string }
+		json.NewDecoder(r.Body).Decode(&in)
+		id, ok := h.Codes[in.Code]
+		delete(h.Codes, in.Code)
+		d := h.get(id)
+		if !ok || d == nil {
+			writeJSON(w, 403, map[string]string{"error": "That code is wrong or has expired. Make a new one."})
+			return
+		}
+		tok := rid()
+		d.Links = append(d.Links, tok)
+		writeJSON(w, 200, map[string]string{"id": d.ID, "name": d.Name, "token": tok})
+	case strings.HasPrefix(p, "/api/device/") && strings.HasSuffix(p, "/remove") && r.Method == http.MethodPost:
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/device/"), "/remove")
+		for i, d := range h.Devices {
+			if d.ID == id {
+				h.Devices = append(h.Devices[:i], h.Devices[i+1:]...)
+				h.Removed = append(h.Removed, id)
+				writeJSON(w, 200, map[string]string{"removed": id})
+				return
+			}
+		}
+		http.NotFound(w, r)
 	case p == "/api/files":
 		devs := []map[string]any{}
 		for _, d := range h.Devices {
