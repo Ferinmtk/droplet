@@ -324,6 +324,28 @@ def folder_dir(folder: str) -> Path:
     return directory
 
 
+# --- cross-site guard -------------------------------------------------------
+
+@app.before_request
+def same_origin_writes():
+    """Refuse state-changing requests that another website started.
+
+    Tailnet visitors are trusted by network, not by cookie, so a page on any
+    site could otherwise make the visitor's browser POST here (delete files,
+    run hub commands…). Browsers always send Origin on cross-site POSTs;
+    curl and the native apps send none and aren't affected.
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS") or request.endpoint == "share":
+        return None  # /share: Android's share sheet may post with Origin: null
+    origin = request.headers.get("Origin")
+    if origin is None:
+        return None
+    from urllib.parse import urlsplit
+    if urlsplit(origin).netloc != request.host:
+        abort(403)
+    return None
+
+
 # --- PIN gate ----------------------------------------------------------------
 
 @app.before_request
@@ -722,9 +744,15 @@ def banner(url: str, tailnet_url: str | None = None):
 
 from types import SimpleNamespace  # noqa: E402
 
+import clipboard  # noqa: E402
+import commands  # noqa: E402
+import media  # noqa: E402
 import phone  # noqa: E402
+import ring  # noqa: E402
 
-FEATURES: list = [phone]
+FEATURES: list = [clipboard, commands, media, phone, ring]
+
+
 
 feature_ctx = SimpleNamespace(
     app=app,

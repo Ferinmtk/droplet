@@ -2,159 +2,692 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#0f172a">
+<meta name="theme-color" content="#f5f2ec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#061419" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="dark light">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-<title>droplet 💧</title>
+<title>droplet</title>
 <style>
-  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --dim:#94a3b8; --accent:#38bdf8; --danger:#f87171; }
-  @media (prefers-color-scheme: light) {
-    :root { --bg:#f1f5f9; --card:#ffffff; --line:#cbd5e1; --text:#0f172a; --dim:#64748b; --accent:#0284c7; --danger:#dc2626; }
+  /* droplet: "deep water" at night, "rain on paper" by day.
+     Aqua is the water, coral is anything that wants your attention.
+
+     Public palette for feature modules: --bg --card --line --text --dim --accent --danger.
+     Extras they may use: --card-2 --line-2 --accent-soft --on-accent --coral --ok --tide
+     and the spacing/radius scale below. */
+  :root {
+    color-scheme: dark;
+    --bg:#061419; --card:#0b1f26; --card-2:#11292f; --line:#173640; --line-2:#22474f;
+    --text:#e3f1ef; --dim:#7d9da0; --accent:#4de8d4; --accent-2:#3aa7f5;
+    --accent-soft:rgba(77,232,212,.12); --on-accent:#032824;
+    --coral:#ff8468; --coral-soft:rgba(255,132,104,.14); --danger:#ff6f6f; --danger-soft:rgba(255,111,111,.12);
+    --ok:#4de8d4;
+    --tide:linear-gradient(140deg,#6af2dc 0%,#40c6ec 55%,#3a9ff5 100%);
+    --tide-a:#6af2dc; --tide-b:#3a9ff5;
+    --glass:rgba(6,20,25,.78);
+    --shadow:0 1px 0 rgba(160,255,240,.035) inset, 0 10px 30px -18px rgba(0,0,0,.8);
+    --shadow-float:0 18px 40px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.04);
+    --kind-s:70%; --kind-l:70%; --kind-a:.13;
+    --caustic-1:rgba(77,232,212,.09); --caustic-2:rgba(58,167,245,.08);
+
+    --font:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif;
+    --font-display:ui-rounded,"SF Pro Rounded",var(--font);
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
+    --r-sm:12px; --r:20px; --r-lg:28px;
+    --tap:44px; --tabbar-h:66px; --gutter:16px;
+    --ease:cubic-bezier(.2,.8,.2,1); --spring:cubic-bezier(.34,1.56,.64,1);
   }
-  * { box-sizing:border-box; margin:0; }
-  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; max-width:640px; margin:0 auto; padding:1.5rem 1rem 3rem; }
-  h1 { font-size:1.5rem; margin-bottom:.25rem; display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
-  #install { font-size:.8rem; font-weight:500; }
-  .sub { color:var(--dim); font-size:.85rem; margin-bottom:1.25rem; }
-  #drop { border:2px dashed var(--line); border-radius:12px; padding:2.5rem 1rem; text-align:center;
-          color:var(--dim); cursor:pointer; transition:border-color .15s, background .15s; }
-  #drop.hover { border-color:var(--accent); color:var(--accent); background:rgba(56,189,248,.08); }
-  #bar-wrap { height:6px; background:var(--card); border-radius:3px; margin:.75rem 0 0; overflow:hidden; display:none; }
-  #bar { height:100%; width:0; background:var(--accent); transition:width .1s; }
-  #bar-text { color:var(--dim); font-size:.78rem; margin-top:.35rem; min-height:1em; }
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --bg:#f5f2ec; --card:#fffdf9; --card-2:#efebe3; --line:#e6e0d4; --line-2:#d4ccbd;
+      --text:#0c2a30; --dim:#5e7478; --accent:#0a7d84; --accent-2:#1769b0;
+      --accent-soft:rgba(10,125,132,.09); --on-accent:#ffffff;
+      --coral:#e2563f; --coral-soft:rgba(226,86,63,.10); --danger:#d33a3a; --danger-soft:rgba(211,58,58,.08);
+      --ok:#0fae9c;
+      --tide:linear-gradient(140deg,#12a5a0 0%,#127fa8 55%,#1a62ad 100%);
+      --tide-a:#19b3a8; --tide-b:#1a62ad;
+      --glass:rgba(245,242,236,.8);
+      --shadow:0 1px 1px rgba(12,42,48,.04), 0 8px 24px -16px rgba(12,42,48,.18);
+      --shadow-float:0 18px 40px -14px rgba(12,42,48,.35);
+      --kind-s:55%; --kind-l:40%; --kind-a:.10;
+      --caustic-1:rgba(18,165,160,.07); --caustic-2:rgba(26,98,173,.05);
+    }
+  }
 
-  details { margin-top:1rem; border:1px solid var(--line); border-radius:10px; background:var(--card); }
-  summary { padding:.6rem .8rem; cursor:pointer; font-size:.85rem; color:var(--dim); }
-  .text-body { padding:0 .8rem .8rem; }
-  textarea { width:100%; min-height:5rem; resize:vertical; background:var(--bg); color:var(--text);
-             border:1px solid var(--line); border-radius:8px; padding:.5rem .6rem; font:inherit; font-size:.9rem; }
+  /* ---- base ---------------------------------------------------------------- */
+  *, *::before, *::after { box-sizing:border-box; margin:0; }
+  [hidden] { display:none !important; }   /* no class may un-hide what the script hides */
+  html { -webkit-text-size-adjust:100%; scroll-padding-top:84px; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:15px; line-height:1.45;
+         -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent; min-height:100vh; min-height:100dvh; }
+  /* light through water: two faint pools of colour behind everything */
+  body::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background:radial-gradient(70% 45% at 8% -8%, var(--caustic-1), transparent 70%),
+               radial-gradient(60% 40% at 105% 12%, var(--caustic-2), transparent 70%); }
+  a { color:var(--accent); }
+  ul { list-style:none; padding:0; }
+  svg.ico { width:20px; height:20px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.9;
+            stroke-linecap:round; stroke-linejoin:round; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  ::selection { background:var(--accent-soft); }
 
-  button { font:inherit; font-size:.85rem; cursor:pointer; border-radius:8px; border:1px solid var(--line);
-           background:var(--card); color:var(--text); padding:.45rem .8rem; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:var(--bg); font-weight:600; }
+  /* ---- controls --------------------------------------------------------------- */
+  button { font:inherit; font-size:14px; font-weight:600; cursor:pointer; border-radius:14px; border:1px solid var(--line);
+           background:var(--card-2); color:var(--text); padding:0 16px; min-height:40px;
+           display:inline-flex; align-items:center; justify-content:center; gap:7px;
+           transition:background .15s, border-color .15s, color .15s, transform .12s var(--ease), box-shadow .15s;
+           -webkit-user-select:none; user-select:none; }
+  button:hover { border-color:var(--line-2); }
+  button:active:not(:disabled) { transform:scale(.96); }
+  button.primary { background:var(--tide); border-color:transparent; color:var(--on-accent); font-weight:700;
+                   box-shadow:0 6px 18px -8px var(--accent-2); }
+  button.primary:hover { filter:brightness(1.05) saturate(1.05); }
+  button.soft { background:var(--accent-soft); border-color:transparent; color:var(--accent); }
+  button.soft:hover { border-color:color-mix(in srgb, var(--accent) 40%, transparent); }
+  button.ghost { background:none; border-color:transparent; color:var(--dim); }
+  button.ghost:hover { color:var(--text); background:var(--card-2); }
   button:disabled { opacity:.5; cursor:default; }
+  button.icon-btn { padding:0; width:40px; }
+  @media (pointer: coarse) { button { min-height:var(--tap); } button.icon-btn { width:var(--tap); } }
 
-  .toolbar { display:flex; gap:.5rem; margin-top:1.5rem; }
-  .toolbar input, .toolbar select { flex:1; font:inherit; font-size:.85rem; background:var(--card); color:var(--text);
-                                    border:1px solid var(--line); border-radius:8px; padding:.45rem .6rem; }
-  .toolbar select { flex:0 0 auto; }
+  input[type=text], input[type=search], input[type=password], input:not([type]), textarea, select {
+    font:inherit; font-size:16px; color:var(--text); background:var(--bg); border:1px solid var(--line);
+    border-radius:14px; padding:0 14px; min-height:46px; min-width:0; transition:border-color .15s, box-shadow .15s; }
+  textarea { padding:12px 14px; line-height:1.4; width:100%; resize:vertical; }
+  input:focus, textarea:focus, select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
+  ::placeholder { color:var(--dim); opacity:.8; }
+  select { appearance:none; -webkit-appearance:none; padding-right:36px; cursor:pointer;
+    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+    background-position:calc(100% - 19px) 50%, calc(100% - 14px) 50%; background-size:5px 5px; background-repeat:no-repeat; }
 
-  #selbar { display:none; align-items:center; gap:.6rem; margin-top:.75rem; padding:.5rem .7rem;
-            background:var(--card); border:1px solid var(--accent); border-radius:8px; font-size:.85rem; }
-  #selcount { flex:1; color:var(--dim); }
-
-  h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:1.75rem 0 .5rem; }
-  ul { list-style:none; }
-  li { background:var(--card); border:1px solid var(--line); border-radius:8px; margin-bottom:.4rem;
-       display:flex; align-items:center; gap:.15rem; padding-left:.6rem; }
-  li.empty { border:none; background:none; color:var(--dim); font-size:.85rem; padding:.4rem .2rem; display:block; }
-  li input[type=checkbox] { flex:0 0 auto; width:1.05rem; height:1.05rem; accent-color:var(--accent); }
-  li a { flex:1; min-width:0; display:flex; align-items:center; gap:.6rem;
-         padding:.6rem .5rem; color:var(--text); text-decoration:none; }
-  li a .name { flex:1; min-width:0; word-break:break-all; }
-  li a .size { color:var(--dim); font-size:.8rem; white-space:nowrap; }
-  li img.thumb { flex:0 0 auto; width:40px; height:40px; object-fit:cover; border-radius:5px;
-                 background:var(--bg); border:1px solid var(--line); }
-  li .del { flex:0 0 auto; border:none; background:none; color:var(--dim); font-size:1.1rem;
-            line-height:1; padding:.5rem .7rem; }
-  li .del:hover { color:var(--danger); }
-  li a .from { display:block; color:var(--dim); font-size:.75rem; margin-top:.1rem; }
-
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.7rem .8rem;
-          margin-bottom:1rem; font-size:.85rem; }
-  .card.attn { border-color:var(--accent); }
-  .row { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
-  .card input[type=text] { flex:1; min-width:8rem; font:inherit; background:var(--bg); color:var(--text);
-                           border:1px solid var(--line); border-radius:8px; padding:.45rem .6rem; }
+  /* ---- shared building blocks (feature modules use these) --------------------- */
+  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:18px;
+          box-shadow:var(--shadow); scroll-margin-top:84px; }
+  .card > * + * { margin-top:var(--s3); }
+  .card.attn { border-color:color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow:0 0 0 4px var(--accent-soft), var(--shadow); }
+  .card h3, .card-title { font-family:var(--font-display); font-size:16px; font-weight:700; letter-spacing:-.01em; line-height:1.25; }
+  .card-head { display:flex; align-items:center; gap:var(--s3); }
+  .card-head > .ico { color:var(--accent); }
+  .grow { flex:1; min-width:0; }
+  .card-head .grow > span { display:block; margin-top:1px; }
+  .ico-tile { width:40px; height:40px; border-radius:13px; display:grid; place-items:center; flex:0 0 auto;
+              background:var(--accent-soft); color:var(--accent); }
+  .eyebrow { font-size:11.5px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); }
+  .row { display:flex; flex-wrap:wrap; gap:var(--s2); align-items:center; }
+  .row > input[type=text], .row > input:not([type]) { flex:1; min-width:8rem; }
   .dim { color:var(--dim); }
-  .chips { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin-bottom:.6rem; font-size:.85rem; }
-  .chip { border-radius:999px; padding:.3rem .75rem; }
-  .chip.on { border-color:var(--accent); color:var(--accent); background:rgba(56,189,248,.1); }
-  .dot { display:inline-block; width:.5rem; height:.5rem; border-radius:50%; background:var(--line);
-         margin-right:.35rem; vertical-align:middle; }
-  .dot.online { background:#4ade80; }
-  #devices li { padding:.5rem .3rem .5rem .7rem; }
-  #devices .dname { flex:1; }
-  #chat { margin-top:1rem; }
-  #chat-log { max-height:55vh; overflow-y:auto; display:flex; flex-direction:column; gap:.3rem; padding:.5rem 0; }
-  .msg { max-width:80%; padding:.45rem .65rem; border-radius:14px; font-size:.9rem; line-height:1.35;
-         white-space:pre-wrap; word-break:break-word; cursor:pointer; }
-  .msg.mine { align-self:flex-end; background:var(--accent); color:var(--bg); border-bottom-right-radius:4px; }
-  .msg.theirs { align-self:flex-start; background:var(--bg); border:1px solid var(--line); border-bottom-left-radius:4px; }
-  .msg a { color:inherit; text-decoration:underline; }
-  .msg .time { display:block; font-size:.68rem; opacity:.7; text-align:right; margin-top:.15rem; }
-  .day { align-self:center; font-size:.72rem; color:var(--dim); margin:.4rem 0 .2rem; }
-  #chat-form { flex-wrap:nowrap; align-items:flex-end; }
-  #chat-input { flex:1; min-height:2.4rem; max-height:8rem; resize:none; }
-  .badge { background:var(--accent); color:var(--bg); border-radius:999px; font-size:.7rem; font-weight:700;
-           padding:0 .4rem; margin-left:.35rem; }
-  #devices li.pending { border-style:dashed; color:var(--dim); }
-  #devices .from { display:block; font-size:.75rem; margin-top:.1rem; word-break:break-all; }
+  .small { font-size:13px; }
+  .chips { display:flex; flex-wrap:wrap; gap:var(--s2); align-items:center; }
+  .chip { border-radius:999px; padding:0 16px; min-height:42px; gap:8px; background:var(--card); font-weight:600; }
+  .chip.on { border-color:var(--accent); color:var(--text); background:var(--accent-soft);
+             box-shadow:0 0 0 1px var(--accent) inset; }
+  .chip > .avatar:first-child { margin-left:-11px; }
+  /* status dots are tiny drops: aqua when online, dry when not */
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50% 0 50% 50%; transform:rotate(-45deg);
+         background:var(--line-2); margin-right:7px; vertical-align:middle; flex:0 0 auto; }
+  .dot.online { background:var(--ok); box-shadow:0 0 8px -1px var(--ok); }
+  .badge { display:inline-grid; place-items:center; min-width:19px; height:19px; padding:0 6px; border-radius:999px;
+           background:var(--coral); color:#fff; font-size:11px; font-weight:800; line-height:1; margin-left:2px;
+           font-variant-numeric:tabular-nums; }
+  details { border:1px solid var(--line); border-radius:var(--r); background:var(--card); }
+  summary { padding:var(--s3) var(--s4); cursor:pointer; color:var(--dim); font-weight:600; }
+  details > :not(summary) { padding:0 var(--s4) var(--s4); }
+
+  /* avatars: an initial on a colour picked from the name */
+  .avatar { position:relative; width:32px; height:32px; border-radius:50%; flex:0 0 auto; display:grid; place-items:center;
+            background:linear-gradient(150deg, hsl(var(--h,190) 70% 62%), hsl(calc(var(--h,190) + 24) 62% 44%));
+            color:#fff; font-weight:800; font-size:14px; font-family:var(--font-display); text-shadow:0 1px 1px rgba(0,0,0,.18); }
+  .avatar.lg { width:46px; height:46px; font-size:19px; }
+  .avatar.hub { background:var(--tide); color:var(--on-accent); text-shadow:none; }
+  .avatar.hub .ico { width:17px; height:17px; }
+  .avatar.pending { background:none; border:1.5px dashed var(--line-2); color:var(--dim); }
+  .avatar.pending .ico { width:17px; height:17px; }
+  .avatar .dot:not(.online) { background:var(--dim); }
+  .avatar .dot { position:absolute; right:0; bottom:0; width:11px; height:11px; margin:0; box-shadow:0 0 0 2.5px var(--card); }
+  .chip.on .avatar .dot { box-shadow:0 0 0 2.5px var(--card); }
+
+  /* ---- app bar ------------------------------------------------------------------ */
+  .appbar { position:sticky; top:0; z-index:20; background:var(--glass);
+            -webkit-backdrop-filter:saturate(1.6) blur(16px); backdrop-filter:saturate(1.6) blur(16px);
+            border-bottom:1px solid transparent; transition:border-color .25s; padding-top:env(safe-area-inset-top); }
+  .appbar.scrolled { border-bottom-color:var(--line); }
+  .appbar-in { max-width:1200px; margin:0 auto; height:62px; display:flex; align-items:center; gap:10px;
+               padding:0 max(var(--gutter), env(safe-area-inset-right)) 0 max(var(--gutter), env(safe-area-inset-left)); }
+  .mark { width:30px; height:34px; flex:0 0 auto; filter:drop-shadow(0 4px 10px rgba(58,167,245,.35)); }
+  .brand { flex:1; min-width:0; line-height:1.1; }
+  .brand h1 { font-family:var(--font-display); font-size:22px; font-weight:800; letter-spacing:-.045em; }
+  .conn { display:flex; align-items:center; gap:0; margin-top:2px; font-size:12.5px; color:var(--dim); white-space:nowrap; overflow:hidden; }
+  .conn .host { overflow:hidden; text-overflow:ellipsis; font-weight:600; }
+  .conn .state { flex:0 0 auto; }
+  .conn .state::before { content:"·"; margin:0 6px; }
+  .conn .dot { position:relative; overflow:visible; }
+  html[data-conn=online] .conn .dot { background:var(--ok); }
+  /* connected: the little drop sends out a ripple every few seconds */
+  html[data-conn=online] .conn .dot::after { content:""; position:absolute; inset:-4px; border-radius:50%;
+    border:1.5px solid var(--ok); opacity:0; animation:ripple-dot 3.2s var(--ease) infinite; }
+  html[data-conn=offline] .conn .dot { background:transparent; box-shadow:inset 0 0 0 1.5px var(--coral); }
+  html[data-conn=offline] .conn .state { color:var(--coral); font-weight:600; }
+  #install { min-height:38px; border-radius:999px; font-size:13px; padding:0 14px; }
+
+  /* ---- layout: tabs on phones, two columns on wide screens ----------------------- */
+  .layout { max-width:1200px; margin:0 auto;
+            padding:var(--s2) max(var(--gutter), env(safe-area-inset-right)) var(--s6) max(var(--gutter), env(safe-area-inset-left)); }
+  .panel > * + * { margin-top:var(--s4); }
+  .panel-title { font-family:var(--font-display); font-size:34px; font-weight:800; letter-spacing:-.045em; line-height:1.05;
+                 padding:var(--s3) 2px var(--s1); }
+  .panel-title small { display:block; font-family:var(--font); font-size:14px; font-weight:500; letter-spacing:0; color:var(--dim); margin-top:6px; }
+  /* feature cards stack with a gap; the order puts the everyday controls first */
+  #features { display:flex; flex-direction:column; gap:var(--s4); }
+  #features:empty { display:none; }
+  #features > * { margin:0; }
+  #hubmedia { order:1; } #clip-card { order:2; } #hub-commands { order:3; } #ring-card { order:4; }
+  #panel-hub .features-empty { display:none; }
+  #panel-hub #features:empty + .features-empty,
+  #panel-hub #features:not(:has(> :not([hidden]))) + .features-empty { display:grid; }
+
+  @media (max-width: 879px) {
+    .panel:not(.active) { display:none; }
+    .panel.active { animation:panel-in .28s var(--ease); }
+    .layout { padding-bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--s6)); }
+  }
+  @media (min-width: 880px) {
+    :root { --gutter:32px; }
+    .tabbar { display:none !important; }
+    /* two columns: the left one stacks Send, Hub and Devices while Files runs
+       down the right, spanning every row so it never pushes the left ones apart */
+    .layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); column-gap:32px;
+              grid-template-areas:"send files" "hub files" "devices files"; grid-template-rows:auto auto 1fr;
+              align-items:start; padding-top:var(--s3); }
+    #panel-send { grid-area:send; }
+    #panel-files { grid-area:files; }
+    #panel-hub { grid-area:hub; margin-top:var(--s6); }
+    #panel-devices { grid-area:devices; margin-top:var(--s6); }
+    #panel-send > .panel-title { display:none; }
+    .panel-title { font-size:28px; padding-top:var(--s2); }
+    .appbar-in { height:70px; }
+  }
+  /* wide screens: a third column for the hub, so no column gets long */
+  @media (min-width: 1240px) {
+    .layout { max-width:1440px; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr);
+              grid-template-areas:"send files hub" "devices files hub"; grid-template-rows:auto 1fr; }
+    .appbar-in { max-width:1440px; }
+    #panel-hub { margin-top:0; }
+    .brand h1 { font-size:24px; }
+  }
+
+  /* ---- bottom tab bar (phones) --------------------------------------------------- */
+  .tabbar { position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; justify-content:space-around;
+            background:var(--glass); -webkit-backdrop-filter:saturate(1.6) blur(16px); backdrop-filter:saturate(1.6) blur(16px);
+            border-top:1px solid var(--line);
+            padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .tab { flex:1; max-width:168px; min-height:var(--tabbar-h); border:none; background:none; border-radius:0; padding:8px 0 9px;
+         flex-direction:column; gap:4px; color:var(--dim); font-size:12px; font-weight:650; letter-spacing:.01em; }
+  .tab:hover { border:none; }
+  .tab:active:not(:disabled) { transform:none; }
+  .tab .pill { position:relative; width:56px; height:32px; border-radius:999px; display:grid; place-items:center; isolation:isolate; }
+  /* the active tab fills up with water from the bottom */
+  .tab .pill::before { content:""; position:absolute; inset:0; border-radius:inherit; z-index:-1; background:var(--accent-soft);
+                       transform:scaleY(0); transform-origin:50% 100%; transition:transform .32s var(--spring); }
+  .tab .ico { width:22px; height:22px; transition:transform .25s var(--spring); }
+  .tab.on { color:var(--text); }
+  .tab.on .pill { color:var(--accent); }
+  .tab.on .pill::before { transform:scaleY(1); }
+  .tab.on .ico { transform:translateY(-1px); }
+  .tab .badge { position:absolute; top:-4px; right:4px; margin:0; box-shadow:0 0 0 2.5px var(--bg); }
+
+  /* ---- this device --------------------------------------------------------------- */
+  .me-row { display:flex; align-items:center; gap:var(--s3); }
+  .me-row .who { flex:1; min-width:0; line-height:1.25; }
+  .me-row .who b { display:block; font-family:var(--font-display); font-size:17px; font-weight:750; letter-spacing:-.015em;
+                   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .me-row .who .dim { font-size:13px; display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+  .me-row .who .ico { width:14px; height:14px; }
+  .me-row .who .on-state { color:var(--accent); display:inline-flex; align-items:center; gap:4px; }
+  .onboard { position:relative; overflow:hidden; }
+  .onboard::after { content:""; position:absolute; right:-40px; top:-60px; width:180px; height:180px; border-radius:50%;
+                    border:1px solid var(--accent-soft); box-shadow:0 0 0 22px var(--accent-soft), 0 0 0 23px transparent, 0 0 0 46px color-mix(in srgb, var(--accent-soft) 50%, transparent);
+                    pointer-events:none; opacity:.45; }
+  .onboard h3 { font-size:19px; }
+  .onboard p { color:var(--dim); max-width:32ch; }
+  .onboard .row { position:relative; z-index:1; }
+
+  /* ---- send-to strip ---------------------------------------------------------------- */
+  #targets > * + * { margin-top:10px; }
+  #targets .eyebrow { padding:0 2px; }
+  .strip { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; margin:0 calc(-1 * var(--gutter));
+           padding:3px var(--gutter) 5px; scroll-padding:0 var(--gutter); }
+  .strip::-webkit-scrollbar { display:none; }
+  .strip .chip { flex:0 0 auto; }
+  @media (min-width: 880px) { .strip { flex-wrap:wrap; overflow:visible; margin:0; padding:0; } }
+  .targets-empty { display:flex; gap:var(--s3); align-items:center; padding:14px var(--s4); border-radius:var(--r);
+                   border:1.5px dashed var(--line-2); color:var(--dim); font-size:13.5px; }
+  .targets-empty .ico { color:var(--accent); }
+
+  /* ---- drop zone: a drop that fills with water as files upload ---------------------- */
+  #drop { position:relative; overflow:hidden; isolation:isolate; display:flex; flex-direction:column; align-items:center; justify-content:center;
+          gap:var(--s3); text-align:center; padding:28px var(--s4) 26px; border-radius:var(--r-lg); cursor:pointer;
+          border:1.5px dashed var(--line-2); background:var(--card); color:var(--text); --p:.3;
+          transition:border-color .2s, background .25s, box-shadow .25s; }
+  #drop:hover, #drop:focus-visible { border-color:color-mix(in srgb, var(--accent) 60%, var(--line-2)); --p:.42; }
+  #drop.hover { border-color:var(--accent); border-style:solid; background:color-mix(in srgb, var(--accent-soft) 70%, var(--card));
+                box-shadow:0 0 0 5px var(--accent-soft); --p:.62; }
+  #drop.uploading { border-style:solid; border-color:color-mix(in srgb, var(--accent) 50%, var(--line)); cursor:progress; }
+  #drop.done { border-style:solid; border-color:var(--accent); --p:1; }
+  .drop-text { display:grid; gap:3px; }
+  .drop-title { font-family:var(--font-display); font-size:18px; font-weight:750; letter-spacing:-.02em; }
+  .drop-sub { font-size:13.5px; color:var(--dim); }
+  .vessel { position:relative; width:56px; height:64px; flex:0 0 auto; transition:transform .35s var(--spring); }
+  #drop:hover .vessel, #drop.hover .vessel { transform:translateY(-3px) scale(1.04); }
+  .liquid { position:absolute; inset:0; overflow:hidden; background:var(--accent-soft);
+            clip-path:path("M28 3C22 12 8 27 8 42a20 20 0 0 0 40 0C48 27 34 12 28 3Z"); }
+  .water { position:absolute; left:0; right:0; bottom:0; height:calc(var(--p) * 60px + 2px); background:var(--tide);
+           transition:height .45s var(--ease); }
+  #drop.uploading .water { transition:height .2s linear; }
+  #drop.done .water { height:74px; }
+  .water::before { content:""; position:absolute; left:0; top:-7px; width:112px; height:8px; background:var(--tide-a);
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 8'%3E%3Cpath d='M0 5C7 1 7 1 14 5S21 9 28 5V8H0Z'/%3E%3C/svg%3E") 0 0/28px 8px repeat-x;
+            mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 8'%3E%3Cpath d='M0 5C7 1 7 1 14 5S21 9 28 5V8H0Z'/%3E%3C/svg%3E") 0 0/28px 8px repeat-x;
+            animation:wave 1.8s linear infinite; }
+  .rim { position:absolute; inset:0; width:56px; height:64px; fill:none; stroke:var(--accent); stroke-width:2; opacity:.9; }
+  .glyph { position:absolute; left:50%; top:30px; margin-left:-10px; width:20px; height:20px; color:var(--accent);
+           stroke-width:2.4; transition:opacity .2s, transform .3s var(--spring); }
+  .glyph.ok { color:var(--on-accent); opacity:0; transform:scale(.4); top:34px; }
+  #drop.uploading .glyph.up { opacity:0; transform:translateY(-6px); }
+  #drop.done .glyph.up { opacity:0; }
+  #drop.done .glyph.ok { opacity:1; transform:none; }
+  /* rings spread out from the drop when something is dragged over, and when it lands */
+  .ripples { position:absolute; left:50%; top:60px; width:0; height:0; z-index:-1; pointer-events:none; }
+  .ripples i { position:absolute; left:-60px; top:-60px; width:120px; height:120px; border-radius:50%;
+               border:1.5px solid var(--accent); opacity:0; }
+  #drop.hover .ripples i, #drop.done .ripples i { animation:ripple 1.8s var(--ease) infinite; }
+  #drop.done .ripples i { animation-iteration-count:1; }
+  .ripples i:nth-child(2) { animation-delay:.45s !important; }
+  .ripples i:nth-child(3) { animation-delay:.9s !important; }
+  /* while chatting the drop zone becomes one row above the thread */
+  .chatting #drop { flex-direction:row; justify-content:flex-start; text-align:left; padding:10px var(--s4) 10px 10px; gap:var(--s2); }
+  .chatting .vessel { transform:scale(.62); margin:-12px -10px; }
+  .chatting #drop:hover .vessel, .chatting #drop.hover .vessel { transform:scale(.66); }
+  .chatting .drop-title { font-size:15.5px; }
+  .chatting .drop-sub { font-size:12.5px; }
+  .chatting .ripples { left:38px; top:50%; }
+
+  #bar-wrap { position:relative; height:8px; background:var(--card-2); border-radius:999px; overflow:hidden; display:none; margin-top:var(--s3); }
+  #bar { position:relative; height:100%; width:0; background:var(--tide); border-radius:inherit; transition:width .2s linear; overflow:hidden; }
+  #bar::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);
+                transform:translateX(-100%); animation:sheen 1.3s ease-in-out infinite; }
+  #bar-text { color:var(--dim); font-size:12.5px; margin-top:var(--s2); font-weight:600; font-variant-numeric:tabular-nums; text-align:center; }
+  #bar-text:empty { display:none; }
+  .drop-wrap > * + * { margin-top:0; }
+
+  /* files dragged anywhere over the window (desktop) */
+  .drag-veil { position:fixed; inset:0; z-index:50; pointer-events:none; display:grid; place-items:center;
+               background:color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+               opacity:0; transition:opacity .18s; }
+  .drag-veil > div { padding:26px 34px; border-radius:var(--r-lg); border:2px dashed var(--accent);
+                     background:var(--card); color:var(--text); font-family:var(--font-display); font-size:20px; font-weight:750;
+                     box-shadow:var(--shadow-float), 0 0 0 10px var(--accent-soft); display:flex; align-items:center; gap:var(--s3);
+                     transform:scale(.96); transition:transform .25s var(--spring); }
+  .drag-veil .ico { color:var(--accent); width:28px; height:28px; }
+  body.dragging .drag-veil { opacity:1; }
+  body.dragging .drag-veil > div { transform:none; }
+
+  /* ---- text to the hub --------------------------------------------------------------- */
+  #text { min-height:92px; }
+  .text-foot { display:flex; align-items:center; gap:var(--s3); justify-content:flex-end; }
+  #text-status { color:var(--accent); font-size:13px; font-weight:600; flex:1; }
+
+  /* ---- chat ---------------------------------------------------------------------------- */
+  #chat { padding:0; overflow:hidden; }
+  #chat > * + * { margin-top:0; }
+  .chat-head { display:flex; align-items:center; gap:var(--s3); padding:12px var(--s4); border-bottom:1px solid var(--line); }
+  .chat-head .who { flex:1; min-width:0; line-height:1.2; }
+  #chat-with { display:block; font-family:var(--font-display); font-size:16.5px; font-weight:750; letter-spacing:-.015em;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #chat-status { font-size:12.5px; color:var(--dim); }
+  #chat-status.online { color:var(--accent); }
+  #chat-log { height:min(50vh, 520px); min-height:240px; overflow-y:auto; overscroll-behavior:contain;
+              display:flex; flex-direction:column; gap:2px; padding:var(--s3) var(--s3) var(--s3);
+              background:linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 70%, var(--card))); }
+  @media (min-width: 880px) { #chat-log { height:min(46vh, 480px); } }
+  .msg { max-width:80%; padding:8px 12px 7px; border-radius:20px; font-size:15px; line-height:1.4;
+         white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; cursor:pointer; margin-top:8px; }
+  .msg.mine { align-self:flex-end; background:var(--tide); color:var(--on-accent); border-bottom-right-radius:6px; }
+  .msg.theirs { align-self:flex-start; background:var(--card); color:var(--text); border:1px solid var(--line); border-bottom-left-radius:6px; }
+  /* runs of messages from one sender hug together */
+  .msg.cont { margin-top:0; }
+  .msg.mine.cont { border-top-right-radius:6px; }
+  .msg.theirs.cont { border-top-left-radius:6px; }
+  .msg.mine.cont-next { border-bottom-right-radius:6px; }
+  .msg.theirs.cont-next { border-bottom-left-radius:6px; }
+  .msg a { color:inherit; text-decoration:underline; text-decoration-thickness:1.5px; text-underline-offset:2px; font-weight:600; }
+  .msg .time { display:inline-block; float:right; position:relative; top:7px; font-size:10.5px; font-weight:600; opacity:.62;
+               margin-left:10px; line-height:1; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .msg.pop { animation:pop .35s var(--spring); }
+  .msg:active { filter:brightness(.95); }
+  .day { align-self:center; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dim);
+         margin:var(--s3) 0 var(--s1); padding:4px 12px; border-radius:999px; background:var(--card-2); }
+  #chat-need-name { padding:var(--s5) var(--s4); text-align:center; }
+  #chat-log, .strip { scrollbar-color:var(--line-2) transparent; }
+  #chat-log { scrollbar-width:thin; }
+  #chat-form { flex-wrap:nowrap; align-items:flex-end; gap:var(--s2); padding:10px 10px 10px var(--s3);
+               border-top:1px solid var(--line); background:var(--card); }
+  #chat-input { flex:1; min-height:46px; max-height:8rem; resize:none; border-radius:23px; padding:12px 18px; }
+  #chat-send { width:46px; min-width:46px; height:46px; padding:0; border-radius:50%; transition:transform .25s var(--spring), background .2s, box-shadow .2s; }
+  #chat-send .ico { width:20px; height:20px; transform:translate(-1px, 1px); }
+  #chat-send:not(.ready) { background:var(--card-2); color:var(--dim); box-shadow:none; border-color:var(--line); }
+  #chat-send.ready { transform:rotate(0) scale(1); }
+
+  /* ---- empty states: a drop landing in still water --------------------------------------- */
+  .splash { width:72px; height:72px; color:var(--accent); overflow:visible; }
+  .splash .fall { animation:fall 3.6s var(--ease) infinite; transform-origin:36px 40px; transform-box:view-box; }
+  .splash .ring { fill:none; stroke:currentColor; stroke-width:1.6; transform-origin:36px 60px; transform-box:view-box; }
+  .splash .ring.r1 { animation:ring 3.6s var(--ease) infinite; }
+  .splash .ring.r2 { animation:ring 3.6s var(--ease) .25s infinite; opacity:.5; }
+  .empty-state { display:grid; justify-items:center; gap:6px; text-align:center; padding:var(--s6) var(--s5) var(--s5); color:var(--dim); }
+  .empty-state b { color:var(--text); font-family:var(--font-display); font-size:17px; font-weight:750; letter-spacing:-.015em; margin-top:var(--s2); }
+  .empty-state span { max-width:30ch; font-size:13.5px; }
+  .chat-empty { margin:auto; }
+
+  /* ---- files ----------------------------------------------------------------------------- */
+  .toolbar { display:flex; gap:var(--s2); }
+  .search { position:relative; flex:1; min-width:0; }
+  .search .ico { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--dim); width:18px; height:18px; pointer-events:none; }
+  #q { width:100%; padding-left:42px; background:var(--card); border-radius:999px; }
+  #sort { flex:0 0 auto; background-color:var(--card); font-size:14px; font-weight:600; border-radius:999px; }
+  .files-sec > * + * { margin-top:10px; }
+  .sec-h { display:flex; align-items:center; gap:var(--s2); font-size:11.5px; font-weight:750; letter-spacing:.12em;
+           text-transform:uppercase; color:var(--dim); padding:var(--s3) 4px 0; }
+  .sec-h .count { font-weight:700; letter-spacing:0; min-width:22px; text-align:center; padding:2px 7px; border-radius:999px;
+                  background:var(--card-2); font-size:11px; font-variant-numeric:tabular-nums; }
+  .sec-h .count:empty { display:none; }
+  .sec-h .ico { width:15px; height:15px; }
+  .sec-h.accent { color:var(--accent); }
+  .sec-h.accent .count { background:var(--coral); color:#fff; }
+
+  .list { background:var(--card); border:1px solid var(--line); border-radius:var(--r); overflow:hidden; box-shadow:var(--shadow); }
+  .list > li { display:flex; align-items:center; min-height:68px; position:relative; transition:background .15s; }
+  .list > li + li::before { content:""; position:absolute; top:0; right:var(--s4); left:108px; border-top:1px solid var(--line); }
+  @media (hover: hover) { .list > li:not(.empty):hover { background:color-mix(in srgb, var(--card-2) 60%, transparent); } }
+  .list > li.empty { color:var(--dim); font-size:13.5px; min-height:0; gap:var(--s3); padding:14px var(--s4); }
+  .list > li.empty .ico { width:18px; height:18px; color:var(--accent); opacity:.8; }
+  .list > li.empty.big { display:block; padding:0; }
+  .pick { flex:0 0 auto; width:48px; align-self:stretch; display:grid; place-items:center; cursor:pointer; padding-left:4px; }
+  .pick input { appearance:none; -webkit-appearance:none; width:22px; height:22px; border-radius:50%; margin:0; cursor:pointer;
+                border:1.8px solid var(--line-2); background:transparent center/13px no-repeat;
+                transition:background-color .15s, border-color .15s, transform .2s var(--spring); }
+  .pick input:checked { background-color:var(--accent); border-color:var(--accent); transform:scale(1.06);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23032824' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
+  .list > li.sel { background:var(--accent-soft); }
+  .list a { flex:1; min-width:0; display:flex; align-items:center; gap:14px; padding:12px var(--s1) 12px 2px;
+            color:var(--text); text-decoration:none; align-self:stretch; }
+  .list a .name { flex:1; min-width:0; display:block; }
+  .list a .fname { display:block; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .list a .from, .list a .meta { display:block; color:var(--dim); font-size:12.5px; margin-top:2px;
+                                 overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .list a .from b { color:var(--accent); font-weight:700; }
+  img.thumb, .ftile { flex:0 0 auto; width:46px; height:46px; border-radius:13px; }
+  img.thumb { object-fit:cover; background:var(--card-2); box-shadow:inset 0 0 0 1px var(--line); }
+  .ftile { display:grid; place-items:center; position:relative; --k:190;
+           background:hsl(var(--k) 70% 55% / var(--kind-a)); color:hsl(var(--k) var(--kind-s) var(--kind-l)); }
+  .ftile .ico { width:21px; height:21px; }
+  .ftile .ext { position:absolute; bottom:5px; font-size:8.5px; font-weight:800; letter-spacing:.06em; line-height:1; }
+  .ftile.has-ext .ico { transform:translateY(-5px); width:19px; height:19px; }
+  .ftile[data-kind=file], .ftile[data-kind=text] { --kind-s:15%; }
+  .list .del { flex:0 0 auto; border:none; background:none; color:var(--dim); width:44px; min-height:44px; padding:0;
+               border-radius:14px; margin-right:8px; opacity:.75; }
+  .list .del:hover { color:var(--danger); background:var(--danger-soft); opacity:1; }
+  .list .del .ico { width:19px; height:19px; }
+
+  #selbar { display:none; position:sticky; bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--s3)); z-index:15;
+            align-items:center; gap:var(--s2); margin-top:var(--s4); padding:7px 7px 7px 20px;
+            background:var(--text); color:var(--bg); border-radius:999px; box-shadow:var(--shadow-float); animation:rise .3s var(--spring); }
+  #selcount { flex:1; font-weight:700; font-size:14px; font-variant-numeric:tabular-nums; }
+  #selbar button { border-radius:999px; min-height:42px; }
+  #clearsel { background:transparent; border-color:transparent; color:inherit; opacity:.75; }
+  #clearsel:hover { opacity:1; }
+  #zip { box-shadow:none; }
+  @media (min-width: 880px) { #selbar { bottom:var(--s5); } }
+
+  /* ---- devices ---------------------------------------------------------------------------- */
+  #devices-box > * + * { margin-top:10px; }
+  #devices li { display:flex; align-items:center; gap:14px; padding:12px var(--s1) 12px var(--s4); min-height:68px; }
+  #devices li + li::before { left:64px; }
+  #devices .dname { flex:1; min-width:0; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #devices .from { display:block; font-size:12.5px; margin-top:2px; color:var(--dim); font-weight:500;
+                   white-space:normal; overflow-wrap:anywhere; }
+  #devices .from .you { color:var(--accent); font-weight:700; }
+  #devices li.pending .dname { color:var(--dim); }
+  #devices li.subhead { min-height:0; padding:14px var(--s4) 6px; font-size:11px; font-weight:750; letter-spacing:.12em;
+                        text-transform:uppercase; color:var(--dim); background:color-mix(in srgb, var(--card-2) 50%, var(--card)); }
+  #devices li.subhead + li::before { display:none; }
+  #devices .del { margin-right:8px; }
+  .hub-card { display:flex; align-items:center; gap:14px; }
+  .hub-card > * + * { margin-top:0; }
+  .hub-card .ico-tile { background:var(--tide); color:var(--on-accent); border-radius:14px; width:46px; height:46px; }
+  .hub-card b { display:block; font-family:var(--font-display); font-size:17px; font-weight:750; letter-spacing:-.015em; }
+  .hub-conn { display:flex; align-items:center; color:var(--dim); flex-wrap:wrap; }
+  .hub-conn .dot { width:7px; height:7px; }
+  html[data-conn=online] .hub-conn .dot { background:var(--ok); }
+  html[data-conn=online] .hub-conn [data-conn-state] { color:var(--accent); font-weight:600; }
+  html[data-conn=offline] .hub-conn .dot { background:var(--coral); }
+  html[data-conn=offline] .hub-conn [data-conn-state] { color:var(--coral); font-weight:600; }
+  .devices-empty { display:none; }
+  #devices-box[hidden] + .devices-empty { display:grid; }
+
+  /* ---- toast ---------------------------------------------------------------------------- */
+  #toast { position:fixed; z-index:60; left:50%; bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--s4));
+           transform:translate(-50%, 24px) scale(.96); opacity:0; pointer-events:none; max-width:min(calc(100vw - 32px), 460px); width:max-content;
+           background:var(--text); color:var(--bg); padding:12px 18px 12px 34px; border-radius:16px; font-size:14px; font-weight:600;
+           box-shadow:var(--shadow-float); transition:opacity .2s, transform .35s var(--spring); }
+  #toast::before { content:""; position:absolute; left:16px; top:50%; width:9px; height:9px; margin-top:-4px;
+                   border-radius:50% 0 50% 50%; transform:rotate(-45deg); background:var(--accent); }
+  #toast.show { opacity:1; transform:translate(-50%, 0); }
+  @media (min-width: 880px) { #toast { bottom:var(--s5); } }
+
+  /* ---- motion ------------------------------------------------------------------------------ */
+  @keyframes panel-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  @keyframes pop { from { opacity:0; transform:translateY(10px) scale(.94); } to { opacity:1; transform:none; } }
+  @keyframes rise { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }
+  @keyframes wave { to { transform:translateX(-28px); } }
+  @keyframes sheen { to { transform:translateX(100%); } }
+  @keyframes ripple { 0% { opacity:.55; transform:scale(.3); } 100% { opacity:0; transform:scale(2.6); } }
+  @keyframes ripple-dot { 0%, 55% { opacity:0; transform:scale(.4); } 60% { opacity:.8; } 100% { opacity:0; transform:scale(1.9); } }
+  @keyframes fall { 0% { transform:translateY(-16px); opacity:0; } 18% { opacity:1; } 42%, 100% { transform:none; opacity:1; } }
+  @keyframes ring { 0%, 38% { opacity:0; transform:scale(.5); } 46% { opacity:.9; } 90%, 100% { opacity:0; transform:scale(1.35); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+  }
 </style>
 </head>
 <body>
-  <h1>💧 droplet <button id="install" hidden>Install app</button></h1>
-  <p class="sub">hub: {{ host }}{% if tailnet_user %} · via tailnet as {{ tailnet_user }}{% endif %} — drop a file below to send it here</p>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="g-tide" x1="0" y1="0" x2=".7" y2="1">
+      <stop offset="0" style="stop-color:var(--tide-a)"/><stop offset="1" style="stop-color:var(--tide-b)"/>
+    </linearGradient>
+    <symbol id="i-mark" viewBox="0 0 30 34"><path d="M15 1.5C11.6 6.4 3.5 15 3.5 22.3a11.5 11.5 0 0 0 23 0C26.5 15 18.4 6.4 15 1.5Z" fill="url(#g-tide)"/><path d="M9.2 22.8a5.9 5.9 0 0 0 4.2 5.4" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M21.5 2.5 10.9 13.1M21.5 2.5l-6.7 19-3.9-8.4-8.4-3.9z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2.2 2.2h7.3A2.5 2.5 0 0 1 21 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></symbol>
+    <symbol id="i-devices" viewBox="0 0 24 24"><path d="M4 16V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V8M2 19.5h11"/><rect x="15" y="10" width="7" height="11" rx="1.8"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2.5H7A2.5 2.5 0 0 0 4.5 5v14A2.5 2.5 0 0 0 7 21.5h10a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 2.5V8h5.5"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2.5H7A2.5 2.5 0 0 0 4.5 5v14A2.5 2.5 0 0 0 7 21.5h10a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 2.5V8h5.5M8.5 13h7M8.5 17h5"/></symbol>
+    <symbol id="i-sheet" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9.5h17M3.5 15h17M9.5 9.5v11"/></symbol>
+    <symbol id="i-slides" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M12 17v3.5M8 20.5h8"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="3.5" width="18" height="5" rx="1.5"/><path d="M4.5 8.5v10A2.5 2.5 0 0 0 7 21h10a2.5 2.5 0 0 0 2.5-2.5v-10M10 12.5h4"/></symbol>
+    <symbol id="i-audio" viewBox="0 0 24 24"><path d="M9 18V5.5l11-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="13.5" height="13" rx="2.5"/><path d="m16 10.5 5.5-3.5v10L16 13.5z"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m15.5 17.5 5.5-5.5-5.5-5.5M8.5 6.5 3 12l5.5 5.5"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15.5-5-5L5 21"/></symbol>
+    <symbol id="i-app" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M15.5 3.5H6A2.5 2.5 0 0 0 3.5 6v12A2.5 2.5 0 0 0 6 20.5h12a2.5 2.5 0 0 0 2.5-2.5V8.5z"/><path d="M8 10h8M8 14h5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3.5 6.5h17M9 6.5V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5v2M18.5 6.5l-.8 12.6A2 2 0 0 1 15.7 21H8.3a2 2 0 0 1-2-1.9L5.5 6.5M10 11v5.5M14 11v5.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 4.5 5-4.5M5 20h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.9-4.9"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 0 0-12 0c0 6.5-2.5 8.5-2.5 8.5h17S18 15 18 8.5M10.3 20.5a2 2 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-bell-off" viewBox="0 0 24 24"><path d="M10.3 20.5a2 2 0 0 0 3.4 0M17.8 12.5a15 15 0 0 1-.1-4 6 6 0 0 0-9.6-4.8M6.2 6.7A6 6 0 0 0 6 8.5c0 6.5-2.5 8.5-2.5 8.5H17M3 3l18 18"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M16.5 3.5a2.4 2.4 0 0 1 3.4 3.4L7.5 19.3 3 20.5l1.2-4.5z"/></symbol>
+    <symbol id="i-hub" viewBox="0 0 24 24"><rect x="3" y="3.5" width="18" height="7" rx="2"/><rect x="3" y="13.5" width="18" height="7" rx="2"/><path d="M7 7h.01M7 17h.01"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="4.5" width="16" height="11" rx="2"/><path d="M2 19.5h20"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 11.5a8.5 8.5 0 0 1-12.3 7.6L3.5 20.5l1.4-4.4a8.5 8.5 0 1 1 15.6-4.6z"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M21.5 12.5h-5.5l-2 3h-4l-2-3H2.5M5.4 5.6 2.5 12.5v5A2.5 2.5 0 0 0 5 20h14a2.5 2.5 0 0 0 2.5-2.5v-5l-2.9-6.9A2.5 2.5 0 0 0 16.3 4H7.7a2.5 2.5 0 0 0-2.3 1.6z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="m7 9.5 3 2.5-3 2.5M12.5 15h4.5"/></symbol>
+    <symbol id="i-ring" viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 0 0-12 0c0 6.5-2.5 8.5-2.5 8.5h17S18 15 18 8.5M10.3 20.5a2 2 0 0 0 3.4 0M2.5 7.5a9 9 0 0 1 2.2-4M21.5 7.5a9 9 0 0 0-2.2-4"/></symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17.5" rx="2.5"/><path d="M9 4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zM8.5 11h7M8.5 15h5"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5.5l11-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9.5v5a1 1 0 0 0 1 1h3l4.5 3.6a.8.8 0 0 0 1.3-.6V5.5a.8.8 0 0 0-1.3-.6L8 8.5H5a1 1 0 0 0-1 1z"/><path d="M16.5 8.8a4.5 4.5 0 0 1 0 6.4M19 6.3a8 8 0 0 1 0 11.4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11.5A8 8 0 1 0 17.7 17M20 5v6.5h-6.5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5.5v13l11-6.5z"/></symbol>
+  </defs>
+</svg>
 
-  <div id="me" class="card" hidden></div>
-  <div id="share-choice" class="card attn" hidden></div>
-  <div id="targets" class="chips" hidden></div>
-
-  <div id="drop">Drop files here or tap to choose</div>
-  <input type="file" id="file" multiple hidden>
-  <div id="bar-wrap"><div id="bar"></div></div>
-  <p id="bar-text"></p>
-
-  <details id="text-box">
-    <summary>Share text</summary>
-    <div class="text-body">
-      <textarea id="text" placeholder="Paste a link, a note, a wifi password…"></textarea>
-      <p style="margin-top:.5rem"><button id="send-text" class="primary">Send text</button>
-      <span id="text-status" style="color:var(--dim);font-size:.8rem;margin-left:.5rem"></span></p>
+<header class="appbar" id="appbar">
+  <div class="appbar-in">
+    <svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg>
+    <div class="brand">
+      <h1>droplet</h1>
+      <div class="conn" id="conn" title="hub: {{ host }}{% if tailnet_user %} · via tailnet as {{ tailnet_user }}{% endif %}">
+        <span class="dot"></span><span class="host">{{ host }}</span><span class="state" id="conn-state" data-conn-state>connecting…</span>
+      </div>
     </div>
-  </details>
+    <button id="install" hidden><svg class="ico"><use href="#i-download"/></svg>Install</button>
+  </div>
+</header>
 
-  <section id="chat" class="card" hidden>
-    <b id="chat-with"></b>
-    <div id="chat-log"></div>
-    <p id="chat-need-name" class="dim" hidden>Name this device (at the top) to chat.</p>
-    <div id="chat-form" class="row">
-      <textarea id="chat-input" rows="1" placeholder="Message"></textarea>
-      <button id="chat-send" class="primary">Send</button>
+<main class="layout">
+  <!-- Send: this device, who to send to, the drop zone, a note to the hub or a chat -->
+  <section class="panel active" id="panel-send" data-panel="send" aria-label="Send">
+    <div id="me" class="card" hidden></div>
+    <div id="share-choice" class="card attn" hidden></div>
+    <div id="targets" hidden></div>
+
+    <div class="drop-wrap">
+      <div id="drop" role="button" tabindex="0" aria-label="Choose files to send">
+        <span class="vessel" aria-hidden="true">
+          <span class="liquid"><span class="water"></span></span>
+          <svg class="rim" viewBox="0 0 56 64"><path d="M28 3C22 12 8 27 8 42a20 20 0 0 0 40 0C48 27 34 12 28 3Z"/></svg>
+          <svg class="ico glyph up"><use href="#i-upload"/></svg>
+          <svg class="ico glyph ok"><use href="#i-check"/></svg>
+        </span>
+        <span class="drop-text"><span class="drop-title">Send files</span><span class="drop-sub">Drop files here or tap to choose</span></span>
+        <span class="ripples" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
+      <input type="file" id="file" multiple hidden>
+      <div id="bar-wrap"><div id="bar"></div></div>
+      <p id="bar-text" aria-live="polite"></p>
+    </div>
+
+    <section id="text-box" class="card">
+      <div class="card-head">
+        <span class="ico-tile"><svg class="ico"><use href="#i-note"/></svg></span>
+        <div class="grow"><h3>Share text</h3><span class="dim small">A link, a note, a wifi password. Saved on the hub.</span></div>
+      </div>
+      <textarea id="text" placeholder="Paste or type something…" aria-label="Text to share"></textarea>
+      <div class="text-foot">
+        <span id="text-status" aria-live="polite"></span>
+        <button id="send-text" class="primary"><svg class="ico"><use href="#i-send"/></svg>Send text</button>
+      </div>
+    </section>
+
+    <section id="chat" class="card" hidden aria-label="Chat">
+      <div class="chat-head">
+        <span id="chat-avatar"></span>
+        <div class="who"><b id="chat-with"></b><span id="chat-status"></span></div>
+      </div>
+      <div id="chat-log" aria-live="polite"></div>
+      <p id="chat-need-name" class="dim" hidden>Name this device (at the top) to chat.</p>
+      <div id="chat-form" class="row">
+        <textarea id="chat-input" rows="1" placeholder="Message" aria-label="Message"></textarea>
+        <button id="chat-send" class="primary" aria-label="Send message"><svg class="ico"><use href="#i-send"/></svg></button>
+      </div>
+    </section>
+  </section>
+
+  <!-- Files: what's waiting for this device, what the hub received, what it shares -->
+  <section class="panel" id="panel-files" data-panel="files" aria-label="Files">
+    <h2 class="panel-title">Files</h2>
+    <div class="toolbar">
+      <label class="search"><svg class="ico"><use href="#i-search"/></svg>
+        <input id="q" type="search" placeholder="Filter by name…" autocomplete="off" aria-label="Filter files by name"></label>
+      <select id="sort" aria-label="Sort files">
+        <option value="date">Newest first</option>
+        <option value="name">Name</option>
+        <option value="size">Largest first</option>
+      </select>
+    </div>
+
+    <div class="files-sec">
+      <h2 id="inbox-h" class="sec-h accent" hidden><svg class="ico"><use href="#i-inbox"/></svg>For this device <span class="count" data-count="inbox"></span></h2>
+      <ul id="inbox" class="list" hidden></ul>
+    </div>
+    <div class="files-sec">
+      <h2 class="sec-h">Received <span class="count" data-count="received"></span></h2>
+      <ul id="received" class="list"></ul>
+    </div>
+    <div class="files-sec">
+      <h2 class="sec-h">Shared <span class="count" data-count="shared"></span></h2>
+      <ul id="shared" class="list"></ul>
+    </div>
+
+    <div id="selbar" role="region" aria-label="Selection">
+      <span id="selcount"></span>
+      <button id="clearsel">Clear</button>
+      <button id="zip" class="primary"><svg class="ico"><use href="#i-download"/></svg>Download zip</button>
     </div>
   </section>
 
-  <!-- feature modules mount their cards here (see static/*.js) -->
-  <div id="features"></div>
+  <!-- Hub: the hub itself and every feature module's card -->
+  <section class="panel" id="panel-hub" data-panel="hub" aria-label="Hub">
+    <h2 class="panel-title">Hub</h2>
+    <div class="card hub-card">
+      <span class="ico-tile"><svg class="ico"><use href="#i-hub"/></svg></span>
+      <div class="grow"><b>{{ host }}</b>
+        <span class="hub-conn small"><span class="dot"></span><span data-conn-state>connecting…</span>{% if tailnet_user %}<span class="dim"> · you're {{ tailnet_user }}</span>{% endif %}</span></div>
+    </div>
+    <!-- feature modules mount their cards here (see static/*.js) -->
+    <div id="features"></div>
+    <div class="features-empty empty-state">
+      <svg class="splash" viewBox="0 0 72 72" aria-hidden="true"><g class="fall"><path d="M36 10C32.6 15 25 23 25 30.5a11 11 0 0 0 22 0C47 23 39.4 15 36 10Z" fill="url(#g-tide)"/><path d="M30.6 31a5.4 5.4 0 0 0 3.8 5" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/></g><ellipse class="ring r1" cx="36" cy="60" rx="17" ry="4.2"/><ellipse class="ring r2" cx="36" cy="60" rx="28" ry="6.5"/></svg>
+      <b>Nothing to control yet</b>
+      <span>Hub features such as media, the clipboard and commands show up here when they're turned on.</span>
+    </div>
+  </section>
 
-  <div class="toolbar">
-    <input id="q" type="search" placeholder="Filter by name…" autocomplete="off">
-    <select id="sort">
-      <option value="date">Newest first</option>
-      <option value="name">Name</option>
-      <option value="size">Largest first</option>
-    </select>
-  </div>
+  <!-- Devices: registered devices, tailnet machines not set up yet -->
+  <section class="panel" id="panel-devices" data-panel="devices" aria-label="Devices">
+    <h2 class="panel-title">Devices</h2>
+    <section id="devices-box" hidden>
+      <h2 id="devices-sum" class="sec-h">Devices</h2>
+      <ul id="devices" class="list"></ul>
+    </section>
+    <div class="devices-empty empty-state">
+      <svg class="splash" viewBox="0 0 72 72" aria-hidden="true"><g class="fall"><path d="M36 10C32.6 15 25 23 25 30.5a11 11 0 0 0 22 0C47 23 39.4 15 36 10Z" fill="url(#g-tide)"/><path d="M30.6 31a5.4 5.4 0 0 0 3.8 5" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/></g><ellipse class="ring r1" cx="36" cy="60" rx="17" ry="4.2"/><ellipse class="ring r2" cx="36" cy="60" rx="28" ry="6.5"/></svg>
+      <b>Just the hub, for now</b>
+      <span>Open droplet on your phone or laptop and give it a name. It shows up here.</span>
+    </div>
+  </section>
+</main>
 
-  <div id="selbar">
-    <span id="selcount"></span>
-    <button id="clearsel">Clear</button>
-    <button id="zip" class="primary">Download zip</button>
-  </div>
+<nav class="tabbar" role="tablist" aria-label="Sections">
+  <button class="tab on" role="tab" data-tab="send" aria-selected="true" aria-controls="panel-send">
+    <span class="pill"><svg class="ico"><use href="#i-send"/></svg><span class="badge" id="tab-badge-send" hidden></span></span>Send</button>
+  <button class="tab" role="tab" data-tab="files" aria-selected="false" aria-controls="panel-files">
+    <span class="pill"><svg class="ico"><use href="#i-folder"/></svg><span class="badge" id="tab-badge-files" hidden></span></span>Files</button>
+  <button class="tab" role="tab" data-tab="hub" aria-selected="false" aria-controls="panel-hub">
+    <span class="pill"><svg class="ico"><use href="#i-hub"/></svg></span>Hub</button>
+  <button class="tab" role="tab" data-tab="devices" aria-selected="false" aria-controls="panel-devices">
+    <span class="pill"><svg class="ico"><use href="#i-devices"/></svg></span>Devices</button>
+</nav>
 
-  <h2 id="inbox-h" hidden>For this device</h2>
-  <ul id="inbox" hidden></ul>
-  <h2>Received</h2>
-  <ul id="received"></ul>
-  <h2>Shared</h2>
-  <ul id="shared"></ul>
-
-  <details id="devices-box" hidden>
-    <summary id="devices-sum">Devices</summary>
-    <ul id="devices" class="text-body"></ul>
-  </details>
+<div class="drag-veil" aria-hidden="true"><div><svg class="ico"><use href="#i-upload"/></svg><span id="drag-label">Drop to send</span></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 const drop = document.getElementById("drop");
@@ -185,6 +718,52 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 
+// an icon from the sprite at the top of <body>: icon("trash"), icon("send", "extra-class")
+function icon(name, cls = "") {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "ico" + (cls ? " " + cls : ""));
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(NS, "use");
+  use.setAttribute("href", "#i-" + name);
+  svg.append(use);
+  return svg;
+}
+
+const HUB_NAME = {{ host|tojson }};   // the hub's machine name, for feature cards
+
+// the standard feature-card header: an icon tile, a title and an optional line under it
+function cardHead(iconName, title, sub, ...actions) {
+  return el("div", { className: "card-head" },
+    el("span", { className: "ico-tile" }, icon(iconName)),
+    el("div", { className: "grow" }, el("h3", { textContent: title }), ...(sub ? [el("span", { className: "dim small", textContent: sub })] : [])),
+    ...actions);
+}
+
+// the drop-landing illustration with a title and a line of help
+// (inlined rather than a <use>, so the page's CSS can animate its parts)
+const SPLASH = document.querySelector(".devices-empty .splash");
+function emptyState(title, text, cls = "") {
+  return el("div", { className: "empty-state" + (cls ? " " + cls : "") }, SPLASH.cloneNode(true),
+    el("b", { textContent: title }), el("span", { textContent: text }));
+}
+
+// a round initial on a colour picked from the name, with an optional online dot
+function avatar(name, { online, size = "", hub = false, pending = false, os } = {}) {
+  const a = el("span", { className: "avatar" + (size ? " " + size : "") + (hub ? " hub" : "") + (pending ? " pending" : "") });
+  if (hub) a.append(icon("hub"));
+  else if (pending) a.append(icon(os === "android" || os === "iOS" ? "phone" : "laptop"));
+  else {
+    // a fixed set of hues that sit well on both themes, picked by a hash of the name
+    let h = 0;
+    for (const ch of name || "?") h = (h * 31 + ch.codePointAt(0)) >>> 0;
+    a.style.setProperty("--h", [172, 205, 262, 12, 38, 320, 145, 228][h % 8]);
+    a.append(([...(name || "?").trim()][0] || "?").toUpperCase());
+  }
+  if (online !== undefined) a.append(el("span", { className: "dot" + (online ? " online" : "") }));
+  return a;
+}
+
 function ago(ts) {
   const s = Date.now() / 1000 - ts;
   if (s < 60) return "just now";
@@ -207,6 +786,33 @@ function fmtEta(sec) {
   return Math.ceil(sec / 60) + "m left";
 }
 
+// file type -> [icon, hue] for rows without a thumbnail
+const KINDS = {
+  pdf: ["doc", 4], doc: ["doc", 212], sheet: ["sheet", 148], slides: ["slides", 24], archive: ["archive", 40],
+  audio: ["audio", 290], video: ["video", 330], code: ["code", 178], image: ["image", 262], app: ["app", 96],
+  text: ["text", 190], file: ["file", 190],
+};
+const EXT_KIND = {};
+for (const [kind, exts] of Object.entries({
+  pdf: "pdf", doc: "doc docx odt rtf pages epub", sheet: "xls xlsx ods csv tsv numbers", slides: "ppt pptx odp key",
+  archive: "zip tar gz tgz 7z rar xz bz2 zst iso", audio: "mp3 wav flac ogg oga m4a opus aac", video: "mp4 mkv mov webm avi m4v 3gp",
+  code: "js ts py sh json html css c h cpp rs go java kt rb php yml yaml toml xml sql", image: "svg heic heif tif tiff ico",
+  app: "apk aab exe msi deb rpm appimage flatpak dmg", text: "txt md log",
+})) for (const x of exts.split(" ")) EXT_KIND[x] = kind;
+
+function fileTile(name) {
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  const kind = EXT_KIND[ext] || "file";
+  const [ico, hue] = KINDS[kind];
+  const t = el("span", { className: "ftile" });
+  t.dataset.kind = kind;
+  t.style.setProperty("--k", hue);
+  t.append(icon(ico));
+  if (ext && ext.length <= 4 && kind !== "text") { t.classList.add("has-ext"); t.append(el("span", { className: "ext", textContent: ext.toUpperCase() })); }
+  return t;
+}
+
 function arrange(files) {
   const needle = q.value.trim().toLowerCase();
   const out = needle ? files.filter(f => f.name.toLowerCase().includes(needle)) : files.slice();
@@ -225,35 +831,29 @@ function updateSelBar() {
 
 function row(folder, f) {
   const key = `${folder}/${f.name}`;
-  const li = document.createElement("li");
+  const li = el("li", { className: selected.has(key) ? "sel" : "" });
 
-  const box = document.createElement("input");
-  box.type = "checkbox";
-  box.checked = selected.has(key);
-  box.onchange = () => { box.checked ? selected.add(key) : selected.delete(key); updateSelBar(); };
+  const box = el("input", { type: "checkbox", checked: selected.has(key) });
+  box.setAttribute("aria-label", `Select ${f.name}`);
+  box.onchange = () => {
+    box.checked ? selected.add(key) : selected.delete(key);
+    li.classList.toggle("sel", box.checked);
+    updateSelBar();
+  };
 
-  const a = document.createElement("a");
-  a.href = `/d/${folder}/${encodeURIComponent(f.name)}`;
+  const a = el("a", { href: `/d/${folder}/${encodeURIComponent(f.name)}`, title: `Download ${f.name}` });
   if (f.image) {
-    const img = document.createElement("img");
-    img.className = "thumb";
-    img.loading = "lazy";
-    img.src = `/raw/${folder}/${encodeURIComponent(f.name)}`;
-    a.appendChild(img);
+    a.appendChild(el("img", { className: "thumb", loading: "lazy", alt: "", src: `/raw/${folder}/${encodeURIComponent(f.name)}` }));
+  } else {
+    a.appendChild(fileTile(f.name));
   }
-  const name = document.createElement("span");
-  name.className = "name";
-  name.textContent = f.name;
-  if (f.from) name.append(el("span", { className: "from", textContent: `from ${f.from} · ${ago(f.mtime)}` }));
-  const size = document.createElement("span");
-  size.className = "size";
-  size.textContent = fmtSize(f.size);
-  a.append(name, size);
+  const name = el("span", { className: "name" }, el("span", { className: "fname", textContent: f.name }));
+  if (f.from) name.append(el("span", { className: "from" }, "from ", el("b", { textContent: f.from }), ` · ${ago(f.mtime)} · ${fmtSize(f.size)}`));
+  else name.append(el("span", { className: "meta size", textContent: `${fmtSize(f.size)} · ${ago(f.mtime)}` }));
+  a.append(name);
 
-  const del = document.createElement("button");
-  del.className = "del";
-  del.title = "Delete";
-  del.textContent = "×";
+  const del = el("button", { className: "del", title: "Delete" }, icon("trash"));
+  del.setAttribute("aria-label", `Delete ${f.name}`);
   del.onclick = async () => {
     if (!confirm(`Delete ${f.name}?`)) return;
     await fetch(`/delete/${folder}/${encodeURIComponent(f.name)}`, { method: "POST" });
@@ -262,21 +862,37 @@ function row(folder, f) {
     refresh();
   };
 
-  li.append(box, a, del);
+  li.append(el("label", { className: "pick" }, box), a, del);
   return li;
 }
 
+const EMPTY = {
+  inbox: "Nothing waiting for this device.",
+  received: "Nothing received yet. Files sent to the hub land here.",
+  shared: "Nothing shared yet. Files in the hub's shared folder show up here.",
+};
+
 function render() {
   document.getElementById("inbox-h").hidden = document.getElementById("inbox").hidden = !me;
-  for (const folder of me ? ["inbox", "received", "shared"] : ["received", "shared"]) {
+  const folders = me ? ["inbox", "received", "shared"] : ["received", "shared"];
+  const filtering = !!q.value.trim();
+  // with nothing anywhere, Received gets the illustration and the others stay quiet
+  const allEmpty = !filtering && folders.every(f => !(latest[f] || []).length);
+  for (const folder of folders) {
     const ul = document.getElementById(folder);
     ul.innerHTML = "";
-    const files = arrange(latest[folder] || []);
+    const all = latest[folder] || [];
+    const count = document.querySelector(`[data-count="${folder}"]`);
+    if (count) count.textContent = all.length || "";
+    const files = arrange(all);
     if (!files.length) {
-      const li = document.createElement("li");
-      li.className = "empty";
-      li.textContent = q.value.trim() ? "nothing matches" : folder === "inbox" ? "nothing waiting for this device" : "nothing yet";
-      ul.appendChild(li);
+      if (allEmpty && folder === "received") {
+        ul.appendChild(el("li", { className: "empty big" },
+          emptyState("Still waters", "Nothing here yet. Files sent to the hub land in Received.")));
+      } else {
+        ul.appendChild(el("li", { className: "empty" }, icon(filtering ? "search" : "file"),
+          el("span", { textContent: filtering ? "Nothing matches." : EMPTY[folder] })));
+      }
       continue;
     }
     for (const f of files) ul.appendChild(row(folder, f));
@@ -284,13 +900,20 @@ function render() {
   renderTargets();
   renderDevices();
   updateSelBar();
+  renderTabBadges();
 }
 
 let inboxSeen = null;   // names already shown, so only new arrivals get flashed
 let lastUnread = {};
 
+function setConn(ok) {
+  document.documentElement.dataset.conn = ok ? "online" : "offline";
+  for (const e of document.querySelectorAll("[data-conn-state]")) e.textContent = ok ? "connected" : "can't reach the hub";
+}
+
 async function refresh() {
   const res = await fetch("/api/files").catch(() => null);   // hub briefly unreachable
+  setConn(!!(res && res.ok));
   if (!res || !res.ok) return;
   latest = await res.json();
   const names = new Set(latest.inbox.map(f => f.name));
@@ -326,33 +949,48 @@ function renderMe(suggested) {
   const box = document.getElementById("me");
   box.hidden = false;
   box.innerHTML = "";
+  box.classList.toggle("onboard", !me);
+  box.classList.toggle("attn", !me);
   if (!me) {
-    const input = el("input", { type: "text", value: suggested || "", maxLength: 40 });
+    const input = el("input", { type: "text", value: suggested || "", maxLength: 40, placeholder: "Phone, Laptop…" });
+    input.setAttribute("aria-label", "Device name");
     const save = el("button", { className: "primary", textContent: "Save" });
     save.onclick = () => nameDevice(input.value);
     input.onkeydown = e => { if (e.key === "Enter") nameDevice(input.value); };
-    box.append(el("p", { className: "dim", textContent: "Name this device so others can send files straight to it." }),
-               el("div", { className: "row", style: "margin-top:.5rem" }, input, save));
+    box.append(el("span", { className: "eyebrow", textContent: "Welcome" }),
+               el("h3", { textContent: "What should we call this device?" }),
+               el("p", { textContent: "Name this device so others can send files straight to it." }),
+               el("div", { className: "row" }, input, save));
     return;
   }
-  const r = el("div", { className: "row" }, el("span", {}, "This device: ", el("b", { textContent: me.name })));
-  const rename = el("button", { textContent: "Rename" });
+  const status = el("span", { className: "dim" }, "This device");
+  const actions = [];
+  const rename = el("button", { className: "ghost icon-btn", title: "Rename" }, icon("pencil"));
+  rename.setAttribute("aria-label", "Rename this device");
   rename.onclick = () => { const n = prompt("Name this device", me.name); if (n && n.trim()) nameDevice(n); };
-  r.append(rename);
+  let extra = null;
   if (pushKey && "PushManager" in window && "Notification" in window) {
     if (me.push && Notification.permission === "granted") {
+      status.append(" · ", el("span", { className: "on-state" }, icon("bell"), "notifications on"));
       const test = el("button", { textContent: "Test" });
+      test.title = "Send a test notification";
       test.onclick = async () => { await fetch("/api/push/test", { method: "POST" }); flash("Test sent, it should pop up in a moment"); };
-      r.append(el("span", { className: "dim", textContent: "🔔 notifications on" }), test);
+      actions.push(test);
     } else if (Notification.permission === "denied") {
-      r.append(el("span", { className: "dim", textContent: "🔕 notifications are blocked in this browser's site settings" }));
+      status.append(" · ", icon("bell-off"), "notifications blocked");
+      extra = el("p", { className: "dim small", textContent: "Notifications are blocked in this browser's site settings." });
     } else {
-      const on = el("button", { className: "primary", textContent: "Turn on notifications" });
+      const on = el("button", { className: "soft" }, icon("bell"), "Turn on notifications");
+      on.style.width = "100%";
       on.onclick = enablePush;
-      r.append(on);
+      extra = on;
     }
   }
-  box.append(r);
+  box.append(el("div", { className: "me-row" },
+    avatar(me.name, { size: "lg" }),
+    el("div", { className: "who" }, el("b", { textContent: me.name }), status),
+    ...actions, rename));
+  if (extra) box.append(extra);
 }
 
 async function nameDevice(name) {
@@ -410,14 +1048,19 @@ async function syncPush() {
 function others() { return (latest.devices || []).filter(d => !d.self); }
 
 function chips(selectedId, onPick) {
-  const hub = el("button", { className: "chip" + (selectedId === "hub" ? " on" : ""), textContent: "Hub" });
+  const hub = el("button", { className: "chip" + (selectedId === "hub" ? " on" : "") },
+    avatar(null, { hub: true }), "Hub");
+  hub.dataset.id = "hub";
+  hub.setAttribute("aria-pressed", selectedId === "hub");
   hub.onclick = () => onPick("hub");
   const out = [hub];
   for (const d of others()) {
     const c = el("button", {
       className: "chip" + (selectedId === d.id ? " on" : ""),
       title: d.online ? "online" : "offline: it gets it when it's back",
-    }, el("span", { className: "dot" + (d.online ? " online" : "") }), d.name);
+    }, avatar(d.name, { online: d.online }), d.name);
+    c.dataset.id = d.id;
+    c.setAttribute("aria-pressed", selectedId === d.id);
     const n = (latest.unread || {})[d.id];
     if (n) c.append(el("span", { className: "badge", textContent: n }));
     c.onclick = () => onPick(d.id);
@@ -434,15 +1077,26 @@ function renderTargets() {
   const box = document.getElementById("targets");
   const list = others();
   if (target !== "hub" && !list.some(d => d.id === target)) target = "hub";
+  // rebuilt every few seconds: keep keyboard focus, and the strip's scroll, where they were
+  const focused = box.contains(document.activeElement) ? document.activeElement.dataset.id : null;
+  const scrolled = box.querySelector(".strip")?.scrollLeft || 0;
   box.hidden = false;
   box.innerHTML = "";
   if (list.length) {
-    box.append(el("span", { className: "dim", textContent: "Send to" }),
-               ...chips(target, id => { target = id; LS.set("droplet-target", id); renderTargets(); }));
+    const strip = el("div", { className: "chips strip" },
+      ...chips(target, id => { target = id; LS.set("droplet-target", id); renderTargets(); }));
+    box.append(el("div", { className: "eyebrow", textContent: "Send to" }), strip);
+    strip.scrollLeft = scrolled;
+    if (focused) box.querySelector(`[data-id="${focused}"]`)?.focus({ preventScroll: true });
   } else {
-    box.append(el("span", { className: "dim", textContent: "Other devices show up here once droplet is opened on them and given a name." }));
+    box.append(el("div", { className: "targets-empty" }, icon("devices"),
+      el("span", { textContent: "Other devices show up here once droplet is opened on them and given a name." })));
   }
-  drop.textContent = list.length ? `Drop files here or tap to choose (to ${targetName()})` : "Drop files here or tap to choose";
+  const coarse = matchMedia("(pointer: coarse)").matches;
+  drop.querySelector(".drop-title").textContent = list.length ? `Send files to ${targetName()}` : "Send files";
+  drop.querySelector(".drop-sub").textContent = coarse ? "Tap to choose" : "Drop files here or click to choose";
+  drop.setAttribute("aria-label", list.length ? `Choose files to send to ${targetName()}` : "Choose files to send");
+  document.getElementById("drag-label").textContent = `Drop to send to ${targetName()}`;
   renderChatMode();
 }
 
@@ -455,9 +1109,15 @@ function renderChatMode() {
   const dev = target !== "hub" && others().find(d => d.id === target);
   document.getElementById("text-box").hidden = !!dev;
   document.getElementById("chat").hidden = !dev;
+  document.getElementById("panel-send").classList.toggle("chatting", !!dev);
   if (!dev) { chatWith = null; return; }
-  document.getElementById("chat-with").textContent = `Chat with ${dev.name}`;
+  document.getElementById("chat-with").textContent = dev.name;
+  const status = document.getElementById("chat-status");
+  status.textContent = dev.online ? "online now" : "offline · gets messages when it's back";
+  status.classList.toggle("online", !!dev.online);
+  document.getElementById("chat-avatar").replaceChildren(avatar(dev.name, { online: dev.online }));
   document.getElementById("chat-form").hidden = !me;
+  document.getElementById("chat-log").hidden = !me;
   document.getElementById("chat-need-name").hidden = !!me;
   if (chatWith !== dev.id) {
     chatWith = dev.id;
@@ -487,27 +1147,34 @@ async function loadChat() {
   const { messages } = await res.json();
   const newest = messages.length ? messages[messages.length - 1].id : "";
   if (newest === chatLast) return;
+  const firstLoad = chatLast === null;
   chatLast = newest;
   const log = document.getElementById("chat-log");
   log.innerHTML = "";
-  if (!messages.length) log.append(el("p", { className: "dim", textContent: "No messages yet. Say hi 👋" }));
-  let lastDay = "";
+  if (!messages.length) log.append(emptyState("No messages yet", "Say hi. Tap any message later to copy it.", "chat-empty"));
+  let lastDay = "", prev = null, prevEl = null;
   for (const m of messages) {
     const d = new Date(m.ts * 1000);
     if (d.toDateString() !== lastDay) {
       lastDay = d.toDateString();
       log.append(el("div", { className: "day", textContent: lastDay === new Date().toDateString() ? "Today" : d.toLocaleDateString() }));
+      prev = null;
     }
-    const b = el("div", { className: "msg " + (m.from === me.id ? "mine" : "theirs"), title: "Tap to copy" },
-      linkify(m.text), el("span", { className: "time", textContent: d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }));
+    // a run of messages from one sender within a few minutes sits together
+    const cont = prev && prev.from === m.from && m.ts - prev.ts < 300;
+    const b = el("div", { className: "msg " + (m.from === me.id ? "mine" : "theirs") + (cont ? " cont" : ""), title: "Tap to copy" },
+      linkify(m.text), el("span", { className: "time", textContent: d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }));
+    if (cont) prevEl.classList.add("cont-next");
     b.onclick = e => {
       if (e.target.tagName === "A") return;
       navigator.clipboard?.writeText(m.text).then(() => flash("Copied"), () => {});
     };
     log.append(b);
+    prev = m; prevEl = b;
   }
+  if (!firstLoad && prevEl) prevEl.classList.add("pop");
   log.scrollTop = log.scrollHeight;
-  if ((latest.unread || {})[id]) { delete latest.unread[id]; renderTargets(); }
+  if ((latest.unread || {})[id]) { delete latest.unread[id]; renderTargets(); renderTabBadges(); }
 }
 
 async function sendChat() {
@@ -521,20 +1188,28 @@ async function sendChat() {
   if (res && res.ok) {
     input.value = "";
     input.style.height = "";
+    document.getElementById("chat-send").classList.remove("ready");
     loadChat();
   } else {
     flash((res && (await res.json().catch(() => ({}))).error) || "Didn't send, is the hub reachable?");
   }
 }
 
-// deep link from a notification: /#chat-<device id>
+// deep links from a notification: /#chat-<device id>, /#inbox
 function openFromHash() {
+  if (location.hash === "#inbox") {
+    history.replaceState(null, "", location.pathname);
+    showTab("files");
+    document.getElementById("inbox-h").scrollIntoView({ block: "start" });
+    return;
+  }
   const m = location.hash.match(/^#chat-([0-9a-f]+)$/);
   if (!m || !others().some(d => d.id === m[1])) return;
   target = m[1];
   LS.set("droplet-target", target);
   history.replaceState(null, "", location.pathname);
   renderTargets();
+  showTab("send");
   document.getElementById("chat").scrollIntoView({ block: "start" });
 }
 
@@ -546,39 +1221,52 @@ function renderDevices() {
   document.getElementById("devices-sum").textContent = "Devices" + (pending.length ? ` · ${pending.length} not set up` : "");
   ul.innerHTML = "";
   for (const d of list) {
-    const del = el("button", { className: "del", title: "Remove device", textContent: "×" });
+    const del = el("button", { className: "del", title: "Remove device" }, icon("x"));
+    del.setAttribute("aria-label", `Remove ${d.name}`);
     del.onclick = async () => {
       if (!confirm(`Remove ${d.name}? Anything waiting for it is deleted.`)) return;
       await fetch(`/api/device/${d.id}/remove`, { method: "POST" });
       if (d.self) location.reload(); else refresh();
     };
+    const meta = el("span", { className: "from" });
+    if (d.self) meta.append(el("span", { className: "you", textContent: "This device" }), " · ");
+    meta.append([d.online ? "online" : "offline", d.push ? "notifications on" : null].filter(Boolean).join(" · "));
     ul.append(el("li", {},
-      el("span", { className: "dname" }, el("span", { className: "dot" + (d.online ? " online" : "") }),
-         d.name + (d.self ? " (this device)" : "") + (d.push ? " 🔔" : "")),
+      avatar(d.name, { online: d.online }),
+      el("span", { className: "dname" }, d.name, meta),
       del));
   }
   const osName = { windows: "Windows", android: "Android", linux: "Linux", macOS: "Mac", iOS: "iPhone/iPad" };
+  if (pending.length) ul.append(el("li", { className: "subhead", textContent: "On your tailnet, not set up yet" }));
   for (const p of pending) {
     ul.append(el("li", { className: "pending" },
-      el("span", { className: "dname" }, el("span", { className: "dot" + (p.online ? " online" : "") }),
-         p.node, el("span", { className: "from",
-           textContent: `${osName[p.os] || p.os}${p.online ? "" : " · offline"} · not set up: open ${hubUrl || "this page"} on it` }))));
+      avatar(null, { pending: true, os: p.os }),
+      el("span", { className: "dname" }, p.node, el("span", { className: "from",
+           textContent: `${osName[p.os] || p.os}${p.online ? "" : " · offline"} · open ${hubUrl || "this page"} on it` }))));
   }
 }
 
+let doneTimer = null;
 function upload(files, to = target) {
   if (!files.length) return Promise.resolve(true);
   return new Promise(resolve => {
   const form = new FormData();
   for (const f of files) form.append("files", f);
+  // the caller may clear a live FileList right after this, so describe it now
+  const what = files.length === 1 ? files[0].name : files.length + " files";
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/upload?to=" + encodeURIComponent(to));
   barWrap.style.display = "block";
+  clearTimeout(doneTimer);
+  drop.classList.remove("done");
+  drop.classList.add("uploading");
+  drop.style.setProperty("--p", 0.04);
   const started = Date.now();
   xhr.upload.onprogress = e => {
     if (!e.lengthComputable) return;
     const pct = e.loaded / e.total * 100;
     bar.style.width = pct + "%";
+    drop.style.setProperty("--p", Math.max(0.04, pct / 100));
     const elapsed = (Date.now() - started) / 1000;
     const eta = elapsed > 0.5 ? fmtEta((e.total - e.loaded) / (e.loaded / elapsed)) : "";
     barText.textContent = `${Math.round(pct)}% · ${fmtSize(e.loaded)} of ${fmtSize(e.total)}${eta ? " · " + eta : ""}`;
@@ -587,16 +1275,33 @@ function upload(files, to = target) {
     bar.style.width = "0";
     barWrap.style.display = "none";
     barText.textContent = "";
+    drop.classList.remove("uploading");
+    drop.style.removeProperty("--p");
+    const ok = xhr.status === 200;
+    if (ok) {
+      // the drop fills, a check appears and a ripple goes out, then it settles again
+      drop.classList.add("done");
+      doneTimer = setTimeout(() => drop.classList.remove("done"), 1800);
+      const where = to === "hub" ? "the hub" : (others().find(d => d.id === to) || {}).name || "the device";
+      flash(`Sent ${what} to ${where}`);
+    } else {
+      flash("Upload failed, is the hub reachable?");
+    }
     refresh();
-    resolve(xhr.status === 200);
+    resolve(ok);
   };
   xhr.send(form);
   });
 }
 
+// a short message that floats up from the bottom (feature modules use this too)
+let toastTimer = null;
 function flash(msg) {
-  barText.textContent = msg;
-  setTimeout(() => { if (barText.textContent === msg) barText.textContent = ""; }, 4000);
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
 }
 
 // Items shared from another app wait in the service worker's inbox cache
@@ -609,12 +1314,14 @@ async function drainInbox() {
   if (!keys.length) return;
   if (!others().length) return sendParked(cache, keys, "hub");
   const box = document.getElementById("share-choice");
-  const discard = el("button", { textContent: "Discard" });
+  const discard = el("button", { className: "ghost", textContent: "Discard" });
   discard.onclick = async () => { for (const k of keys) await cache.delete(k); box.hidden = true; };
   box.innerHTML = "";
-  box.append(el("p", { textContent: `${keys.length} shared item(s). Send to:`, style: "margin-bottom:.5rem" }),
+  box.append(el("span", { className: "eyebrow", textContent: "Shared from another app" }),
+             el("h3", { textContent: `${keys.length} item(s). Where to?` }),
              el("div", { className: "chips" }, ...chips(null, to => sendParked(cache, keys, to)), discard));
   box.hidden = false;
+  showTab("send");
   box.scrollIntoView({ block: "nearest" });
 }
 
@@ -651,11 +1358,11 @@ document.getElementById("send-text").onclick = async () => {
   const res = await fetch("/text", { method: "POST", body });
   if (res.ok) {
     box.value = "";
-    status.textContent = "sent";
+    status.textContent = "Sent to the hub";
     setTimeout(() => (status.textContent = ""), 2000);
     refresh();
   } else {
-    status.textContent = "failed";
+    status.textContent = "Didn't send";
   }
 };
 
@@ -687,10 +1394,57 @@ q.oninput = render;
 sortBy.onchange = render;
 
 drop.onclick = () => input.click();
+drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } };
 input.onchange = () => { upload(input.files); input.value = ""; };
 ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("hover"); }));
 ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hover"); }));
 drop.addEventListener("drop", e => upload(e.dataTransfer.files));
+
+// files dropped anywhere on the page go to the current target too,
+// instead of the browser navigating away to open them
+let dragDepth = 0;
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes("Files");
+window.addEventListener("dragenter", e => { if (hasFiles(e)) { dragDepth++; document.body.classList.add("dragging"); } });
+window.addEventListener("dragleave", e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); } });
+window.addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener("drop", e => {
+  dragDepth = 0;
+  document.body.classList.remove("dragging");
+  if (!hasFiles(e) || e.defaultPrevented) return;   // the drop zone already took it
+  e.preventDefault();
+  upload(e.dataTransfer.files);
+});
+
+// --- tabs on phones; on wide screens every panel shows and the tab bar hides ---
+
+let tab = "send";
+const tabScroll = {};
+function showTab(name) {
+  if (name === tab) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+  tabScroll[tab] = window.scrollY;
+  tab = name;
+  for (const b of document.querySelectorAll(".tab")) {
+    const on = b.dataset.tab === name;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-selected", on);
+  }
+  for (const p of document.querySelectorAll(".panel")) p.classList.toggle("active", p.dataset.panel === name);
+  window.scrollTo(0, tabScroll[name] || 0);
+}
+for (const b of document.querySelectorAll(".tab")) b.onclick = () => showTab(b.dataset.tab);
+
+function renderTabBadges() {
+  const unread = Object.values(latest.unread || {}).reduce((a, b) => a + b, 0);
+  const waiting = me ? (latest.inbox || []).length : 0;
+  for (const [id, n] of [["tab-badge-send", unread], ["tab-badge-files", waiting]]) {
+    const b = document.getElementById(id);
+    b.hidden = !n;
+    b.textContent = n > 99 ? "99+" : n;
+  }
+}
+
+const appbar = document.getElementById("appbar");
+window.addEventListener("scroll", () => appbar.classList.toggle("scrolled", window.scrollY > 4), { passive: true });
 
 // service worker = installable app + "Share → droplet" (HTTPS or localhost only)
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
@@ -709,8 +1463,14 @@ if (params.has("shared")) {
 }
 
 const chatInput = document.getElementById("chat-input");
-document.getElementById("chat-send").onclick = sendChat;
-chatInput.addEventListener("input", () => { chatInput.style.height = ""; chatInput.style.height = chatInput.scrollHeight + "px"; });
+const chatSend = document.getElementById("chat-send");
+chatSend.onclick = sendChat;
+// keep the keyboard up on phones: tapping send shouldn't take focus from the message box
+chatSend.addEventListener("mousedown", e => e.preventDefault());
+chatInput.addEventListener("input", () => {
+  chatInput.style.height = ""; chatInput.style.height = chatInput.scrollHeight + "px";
+  chatSend.classList.toggle("ready", !!chatInput.value.trim());
+});
 chatInput.addEventListener("keydown", e => {
   // Enter sends on a keyboard; on touch screens Enter is a newline and the button sends
   if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); sendChat(); }
@@ -724,5 +1484,9 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) refr
 </script>
 <!-- feature scripts: plain scripts that use the helpers above (el, flash, me, latest, others…) -->
 <script src="/static/phone.js"></script>
+<script src="/static/commands.js"></script>
+<script src="/static/ring.js"></script>
+<script src="/static/clipboard.js"></script>
+<script src="/static/media.js"></script>
 </body>
 </html>

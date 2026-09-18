@@ -266,6 +266,144 @@ both ways. Tested in two desktop browsers: unread counts, opening a chat
 from a notification link, duplicate names refused, an unnamed browser can't
 chat, and one device can't read another's inbox.
 
+## The Hub tab: control the hub from any device
+
+The app has four tabs on a phone (**Send · Files · Hub · Devices**). On a
+desktop they sit side by side. The **Hub** tab is a remote for the hub
+machine, with four cards.
+
+### Now playing
+
+Shows what's playing on the hub: album art, title and artist, a progress bar
+(tap it to jump), previous / play-pause / next, ±10 s skips when the player
+can seek, and the hub's volume with a mute button. With more than one player
+open there's a picker. **Speaker ▾** switches the hub's audio output (speaker,
+HDMI, an AirPlay sink…).
+
+It uses `playerctl` (any MPRIS player: browsers, VLC, Spotify, and phones
+relayed by KDE Connect, shown as e.g. "Chrome on fedora") and `wpctl`
+(PipeWire). Both talk over the session bus, so run droplet as the
+[`systemd --user` service](#run-as-a-service). Without either tool the card
+doesn't appear.
+
+- Devices never send commands, only choices: players and outputs must be
+  ones the hub lists itself, and volume is capped at 100%.
+- Album art from local players is served only if it's a real image file (the
+  file's bytes are checked, not its name) under your home or `/tmp`, at most
+  5 MB. Web art loads straight from its URL.
+- The card only polls while it's on screen and the page is visible.
+
+### Shared clipboard
+
+Copy on one device, paste on another.
+
+- **In a chat**, the clipboard button next to **Send** sends whatever is on
+  this device's clipboard as a message. The other device taps the bubble to
+  copy it.
+- The **Hub clipboard** card shows what's on the hub's own clipboard. **Send
+  mine to the hub** puts this device's clipboard there, ready to paste on the
+  hub. **Copy the hub's here** does the reverse. The preview refreshes when
+  the card appears, when you switch back to droplet, or with ↻. It isn't
+  polled.
+
+The hub side uses `wl-paste`/`wl-copy` (wl-clipboard), so the hub needs a
+Wayland session (tested on KDE Plasma and niri). Text only, up to 1 MB.
+Browsers only allow clipboard access over HTTPS, so use the tailnet URL. On
+the plain `http://` LAN address you get a box to paste into and a block of
+text to select instead.
+
+Clipboards often hold passwords, so the hub clipboard is stricter than files:
+it works over the tailnet, or on the LAN after entering `DROPLET_PIN`, and
+refuses LAN guests on a hub without a PIN. What you send stays on the hub's
+clipboard until something replaces it, or until the droplet service restarts
+(systemd stops wl-copy's background process along with the service).
+`DROPLET_CLIPBOARD=0` turns it off.
+
+### Hub commands
+
+Like KDE Connect's **Run command**: the hub's owner lists commands in a file,
+and each gets a button. Tap one to see its output and exit code. Devices only
+say *which* command to run. What runs comes from the file on the hub, so a
+phone can't run anything that isn't listed.
+
+```bash
+cp deploy/commands.example.json ~/.config/droplet/commands.json
+# edit it; droplet picks up changes on its own, no restart
+```
+
+The file is a JSON list. Each entry:
+
+| Key | | Meaning |
+|---|---|---|
+| `name` | required | button label (also its id, so keep names unique) |
+| `run` | required | the program and its arguments, as a list: `["df", "-h"]` |
+| `icon` | optional | an emoji for the button |
+| `confirm` | optional | `true` = ask "are you sure?" first |
+| `timeout` | optional | seconds before it's killed (default 30, max 300) |
+
+- `run` is **not** a shell line. Pipes, `~` and `$VARS` need a shell, so ask
+  for one explicitly: `["bash", "-lc", "..."]`.
+- Commands run as droplet's user, in their home folder, with no input and
+  without droplet's own `DROPLET_*` settings (so the PIN isn't passed on).
+  The output shown is the last 8 KB of stdout and stderr together. On
+  timeout, everything the command started is killed.
+- One run of each command at a time.
+- A broken entry is skipped and the rest still work. The reason goes to the
+  log (`journalctl --user -u droplet`) and to `GET /api/hub/commands` under
+  `errors`. No file means no card.
+- From a script:
+  `curl -X POST -H 'X-Droplet-Run: 1' https://<hub>/api/hub/commands/uptime/run`.
+  The header is required.
+
+**Locking the screen.** The example uses `loginctl lock-session`, which only
+works if something listens for it (Plasma and GNOME do). On niri or sway,
+start the locker yourself, in its own session so the command's timeout can't
+kill it:
+`["bash", "-lc", "setsid -f gtklock -d >/dev/null 2>&1 </dev/null"]`.
+
+Anyone who can open droplet can press these, so only list commands you'd let
+any of your devices run. The example deliberately has no suspend or
+power-off: the hub is meant to stay awake.
+
+### Find a device
+
+A button for every other device, plus **Ring the hub**.
+
+- **Ringing a device** makes it loud for up to a minute:
+  - **droplet open on it:** a full-screen alert with a big **Stop**, a ringing
+    tone and vibration. If the browser blocks sound until the page is
+    touched, it says "Tap anywhere to hear it".
+  - **droplet closed** (with notifications on): a notification that stays up
+    and vibrates. Tapping it, its **Stop ringing** button, or swiping it away
+    stops the ring.
+
+  The sender's button pulses until the other side answers. Either side can
+  stop it, and it stops by itself after 60 s.
+- **Ringing the hub** plays the freedesktop "incoming call" sound on the hub
+  four times, using the first of `pw-play`, `paplay` or `canberra-gtk-play`
+  it finds, at the hub's current volume.
+
+**Limits:** a closed web app can't play its own sound, so on a phone with
+droplet closed the ring is the notification's sound and vibration, which
+silent mode and Do Not Disturb mute. The [Android app](#android-app) rings
+through the alarm channel instead, which isn't muted by silent mode. Rings
+live in memory, so restarting the hub forgets them.
+
+### Cross-site protection
+
+Tailnet devices are trusted by network, not by cookie. Without a guard, any
+website you visit could make your browser post to droplet (delete files, run
+a command). So droplet refuses any write whose `Origin` isn't droplet itself.
+Browsers always send `Origin` on cross-site posts. curl and the native apps
+don't send it and aren't affected.
+
+**Verified** on the T15 hub (niri): commands ran from slim over the tailnet,
+the media card read the KDE Connect player, the volume and all five outputs,
+and the clipboard read works under niri. Also tested in desktop browsers
+against real `playerctl`/`wl-clipboard`, with no sound played and nothing
+changed on the hub. Not yet tried: ringing a real phone, and the hub's ring
+sound.
+
 ## Config (env vars)
 
 | Var | Default | Meaning |
@@ -281,6 +419,8 @@ chat, and one device can't read another's inbox.
 | `DROPLET_TAILSCALE` | *(off)* | `1` = also serve at `https://<machine>.<tailnet>.ts.net` with a real certificate, via `tailscale serve` (see [Tailnet](#tailnet-real-https-from-anywhere)) |
 | `DROPLET_TAILNET_TRUST` | `1` | with `DROPLET_PIN` set, tailnet devices skip the PIN. `0` = they enter it like everyone else |
 | `DROPLET_PUSH` | `1` | `0` = no push notifications (nothing goes through Google/Mozilla); devices see new items while droplet is open. See [Devices](#devices-send-to-one-chat-get-notified) |
+| `DROPLET_COMMANDS` | `~/.config/droplet/commands.json` | preset commands for the Hub tab (see [Hub commands](#hub-commands)) |
+| `DROPLET_CLIPBOARD` | `1` | `0` = no shared hub clipboard (see [Shared clipboard](#shared-clipboard)) |
 
 ## How files flow
 
