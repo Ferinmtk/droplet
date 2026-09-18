@@ -784,8 +784,9 @@ import media  # noqa: E402
 import phone  # noqa: E402
 import remote  # noqa: E402
 import ring  # noqa: E402
+import tv  # noqa: E402
 
-FEATURES: list = [clipboard, commands, media, phone, remote, ring]
+FEATURES: list = [clipboard, commands, media, phone, remote, ring, tv]
 
 
 
