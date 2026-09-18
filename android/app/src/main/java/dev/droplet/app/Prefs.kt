@@ -154,4 +154,28 @@ object Prefs {
     var remoteTarget: String?
         get() = sp.getString("remote_target", null)
         set(v) = sp.edit { putString("remote_target", v) }
+
+    // --- Bluetooth mouse and keyboard (see BtHid) -----------------------------------
+    // Not about the hub, so forgetting the hub leaves these alone.
+
+    /** The Bluetooth address of the computer or TV used last, for Reconnect. */
+    var btLastHost: String?
+        get() = sp.getString("bt_last_host", null)
+        set(v) = sp.edit { putString("bt_last_host", v) }
+
+    var btLastHostName: String?
+        get() = sp.getString("bt_last_host_name", null)
+        set(v) = sp.edit { putString("bt_last_host_name", v) }
+
+    /** What this phone's firmware did when asked to be a HID device: [BT_SUPPORTED], [BT_UNSUPPORTED], [BT_REFUSED], or null (never tried). */
+    var btSupport: String?
+        get() = sp.getString("bt_support", null)
+        set(v) = sp.edit { putString("bt_support", v) }
+
+    const val BT_SUPPORTED = "yes"
+    const val BT_UNSUPPORTED = "no"
+    const val BT_REFUSED = "refused"
+
+    /** Presentation remote targets that are Bluetooth hosts are stored as this prefix and the address. */
+    const val BT_TARGET = "bt:"
 }

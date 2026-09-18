@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the Bluetooth screen's tabs: the chosen one filled with aqua -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/r_accent" android:state_checked="true" />
+    <item android:color="@color/r_card" />
+</selector>
