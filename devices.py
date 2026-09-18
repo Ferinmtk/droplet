@@ -196,3 +196,65 @@ class Pusher:
             print(f"  push to {dev['name']} failed: {status or e}")
         except Exception as e:  # network down, push service hiccup
             print(f"  push to {dev['name']} failed: {e}")
+
+
+class Chats:
+    """Text messages between pairs of devices: one append-only JSON-lines file per pair."""
+
+    KEEP = 500  # messages returned per thread; older ones stay on disk
+
+    def __init__(self, home: Path):
+        self.root = home / "chats"
+        self._lock = threading.Lock()
+
+    def _file(self, a: str, b: str) -> Path:
+        # ids are hex from DeviceStore, so they're safe in a filename
+        x, y = sorted((a, b))
+        return self.root / f"{x}__{y}.jsonl"
+
+    @staticmethod
+    def _read(path: Path) -> list[dict]:
+        out = []
+        try:
+            with path.open(encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        out.append(json.loads(line))
+                    except ValueError:
+                        pass  # a torn last line after a crash
+        except FileNotFoundError:
+            pass
+        return out
+
+    def add(self, sender: dict, recipient: dict, text: str) -> dict:
+        msg = {
+            "id": secrets.token_hex(6),
+            "from": sender["id"],
+            "to": recipient["id"],
+            "text": text,
+            "ts": time.time(),
+        }
+        with self._lock:
+            self.root.mkdir(parents=True, exist_ok=True)
+            with self._file(sender["id"], recipient["id"]).open("a", encoding="utf-8") as f:
+                f.write(json.dumps(msg) + "\n")
+        return msg
+
+    def thread(self, a: str, b: str) -> list[dict]:
+        return self._read(self._file(a, b))[-self.KEEP:]
+
+    def unread(self, me: str, read: dict[str, float]) -> dict[str, int]:
+        """Messages to `me` newer than when each thread was last opened, per sender."""
+        counts: dict[str, int] = {}
+        if not self.root.is_dir():
+            return counts
+        for path in self.root.glob(f"*{me}*.jsonl"):
+            for m in self._read(path):
+                if m.get("to") == me and m.get("ts", 0) > read.get(m.get("from"), 0):
+                    counts[m["from"]] = counts.get(m["from"], 0) + 1
+        return counts
+
+    def forget(self, device_id: str):
+        with self._lock:
+            for path in self.root.glob(f"*{device_id}*.jsonl"):
+                path.unlink(missing_ok=True)

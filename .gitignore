@@ -19,6 +19,7 @@ received/*
 shared/*
 !shared/.gitkeep
 inbox/
+chats/
 
 # Docker Compose bind-mount target (DROPLET_HOME inside the container)
 data/

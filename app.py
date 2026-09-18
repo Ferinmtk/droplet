@@ -29,7 +29,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from devices import DeviceStore, Pusher
+from devices import Chats, DeviceStore, Pusher
 
 # --- config (env-driven so any machine can be the hub) -----------------------
 
@@ -82,6 +82,7 @@ app.secret_key = _secret_key()
 DEVICE_COOKIE = "droplet_device"
 devices = DeviceStore(BASE_DIR)
 pusher = Pusher(BASE_DIR, devices, USE_PUSH)
+chats = Chats(BASE_DIR)
 URL_ONLY = re.compile(r"^https?://\S+$")
 
 
@@ -265,30 +266,32 @@ def destination(to: str | None) -> tuple[Path, dict | None]:
     return inbox, dev
 
 
-def deliver(dev: dict | None, paths: list[Path], text: str | None = None):
-    """Label items sent to a device with their sender, then notify the device."""
+def deliver(dev: dict | None, paths: list[Path]):
+    """Label files sent to a device with their sender, then notify the device."""
     if dev is None or not paths:
         return
     sender = sender_name()
     for p in paths:
         meta_path(p).write_text(json.dumps({"from": sender, "sent": int(time.time())}))
-    if text is not None:
-        link = URL_ONLY.match(text)
-        payload = {
-            "title": f"{sender} sent {'a link' if link else 'a note'}",
-            "body": text[:200],
-            # a bare link opens straight away when the notification is tapped
-            "url": text if link else "/#inbox",
-        }
-    else:
-        names = [p.name for p in paths]
-        payload = {
-            "title": f"{sender} sent {len(names)} file{'s' if len(names) != 1 else ''}",
-            "body": ", ".join(names[:3]) + (f" +{len(names) - 3} more" if len(names) > 3 else ""),
-            "url": "/#inbox",
-        }
-    payload["tag"] = f"droplet-{int(time.time() * 1000)}"
-    pusher.send(dev["id"], payload)
+    names = [p.name for p in paths]
+    pusher.send(dev["id"], {
+        "title": f"{sender} sent {len(names)} file{'s' if len(names) != 1 else ''}",
+        "body": ", ".join(names[:3]) + (f" +{len(names) - 3} more" if len(names) > 3 else ""),
+        "url": "/#inbox",
+        "tag": f"droplet-{int(time.time() * 1000)}",
+    })
+
+
+def send_message(me: dict, dev: dict, text: str) -> dict:
+    msg = chats.add(me, dev, text)
+    pusher.send(dev["id"], {
+        "title": me["name"],
+        "body": text[:200],
+        # a bare link opens straight away when tapped; anything else opens the chat
+        "url": text if URL_ONLY.match(text) else f"/#chat-{me['id']}",
+        "tag": f"chat-{me['id']}",  # one notification per sender, updated as messages arrive
+    })
+    return msg
 
 
 def save_files(directory: Path) -> list[Path]:
@@ -361,6 +364,7 @@ def api_files():
     me = current_device()
     out = {name: list_files(d) for name, d in FOLDERS.items()}
     out["inbox"] = list_files(devices.inbox(me["id"])) if me else []
+    out["unread"] = chats.unread(me["id"], me.get("read") or {}) if me else {}
     out["devices"] = devices.listing(me["id"] if me else None)
     # tailnet machines that haven't opened droplet yet, so people know what's missing
     known = devices.nodes()
@@ -405,6 +409,7 @@ def api_device_remove(device_id):
     if devices.get(device_id) is None:
         abort(404)
     devices.remove(device_id)
+    chats.forget(device_id)
     resp = jsonify({"removed": device_id})
     me = current_device()
     if me and me["id"] == device_id:
@@ -446,9 +451,30 @@ def share_text():
     if not text:
         return jsonify({"error": "empty"}), 400
     directory, dev = destination(request.form.get("to"))
+    if dev is not None:
+        # text to a device is a chat message; it needs a named sender to reply to
+        me = current_device()
+        if me is None:
+            return jsonify({"error": "Name this device first, so replies have somewhere to go."}), 400
+        if me["id"] == dev["id"]:
+            abort(400)
+        return jsonify({"message": send_message(me, dev, text)})
     dest = save_text(directory, text)
-    deliver(dev, [dest], text)
     return jsonify({"saved": dest.name})
+
+
+@app.route("/api/chat/<device_id>")
+def api_chat(device_id):
+    me = current_device()
+    other = devices.get(device_id)
+    if me is None or other is None or other["id"] == me["id"]:
+        abort(404)
+    msgs = chats.thread(me["id"], other["id"])
+    # opening the thread marks it read (only written when something new arrived)
+    read = me.get("read") or {}
+    if msgs and msgs[-1]["ts"] > read.get(other["id"], 0):
+        devices.update(me["id"], read={**read, other["id"]: msgs[-1]["ts"]})
+    return jsonify({"with": {"id": other["id"], "name": other["name"]}, "messages": msgs})
 
 
 @app.route("/share", methods=["POST"])

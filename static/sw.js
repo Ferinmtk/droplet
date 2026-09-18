@@ -25,6 +25,7 @@ self.addEventListener("push", event => {
     body: d.body || "",
     icon: "/static/icon-192.png",
     tag: d.tag,
+    renotify: !!d.tag,  // a new chat message replaces the last one from that sender, but still rings
     data: { url: d.url || "/" },
   }));
 });

@@ -77,6 +77,19 @@
   .dot.online { background:#4ade80; }
   #devices li { padding:.5rem .3rem .5rem .7rem; }
   #devices .dname { flex:1; }
+  #chat { margin-top:1rem; }
+  #chat-log { max-height:55vh; overflow-y:auto; display:flex; flex-direction:column; gap:.3rem; padding:.5rem 0; }
+  .msg { max-width:80%; padding:.45rem .65rem; border-radius:14px; font-size:.9rem; line-height:1.35;
+         white-space:pre-wrap; word-break:break-word; cursor:pointer; }
+  .msg.mine { align-self:flex-end; background:var(--accent); color:var(--bg); border-bottom-right-radius:4px; }
+  .msg.theirs { align-self:flex-start; background:var(--bg); border:1px solid var(--line); border-bottom-left-radius:4px; }
+  .msg a { color:inherit; text-decoration:underline; }
+  .msg .time { display:block; font-size:.68rem; opacity:.7; text-align:right; margin-top:.15rem; }
+  .day { align-self:center; font-size:.72rem; color:var(--dim); margin:.4rem 0 .2rem; }
+  #chat-form { flex-wrap:nowrap; align-items:flex-end; }
+  #chat-input { flex:1; min-height:2.4rem; max-height:8rem; resize:none; }
+  .badge { background:var(--accent); color:var(--bg); border-radius:999px; font-size:.7rem; font-weight:700;
+           padding:0 .4rem; margin-left:.35rem; }
   #devices li.pending { border-style:dashed; color:var(--dim); }
   #devices .from { display:block; font-size:.75rem; margin-top:.1rem; word-break:break-all; }
 </style>
@@ -94,7 +107,7 @@
   <div id="bar-wrap"><div id="bar"></div></div>
   <p id="bar-text"></p>
 
-  <details>
+  <details id="text-box">
     <summary>Share text</summary>
     <div class="text-body">
       <textarea id="text" placeholder="Paste a link, a note, a wifi password…"></textarea>
@@ -102,6 +115,16 @@
       <span id="text-status" style="color:var(--dim);font-size:.8rem;margin-left:.5rem"></span></p>
     </div>
   </details>
+
+  <section id="chat" class="card" hidden>
+    <b id="chat-with"></b>
+    <div id="chat-log"></div>
+    <p id="chat-need-name" class="dim" hidden>Name this device (at the top) to chat.</p>
+    <div id="chat-form" class="row">
+      <textarea id="chat-input" rows="1" placeholder="Message"></textarea>
+      <button id="chat-send" class="primary">Send</button>
+    </div>
+  </section>
 
   <div class="toolbar">
     <input id="q" type="search" placeholder="Filter by name…" autocomplete="off">
@@ -261,6 +284,7 @@ function render() {
 }
 
 let inboxSeen = null;   // names already shown, so only new arrivals get flashed
+let lastUnread = {};
 
 async function refresh() {
   const res = await fetch("/api/files").catch(() => null);   // hub briefly unreachable
@@ -272,6 +296,13 @@ async function refresh() {
     if (fresh.length) flash(`New from ${fresh[0].from || "someone"}: ${fresh.map(f => f.name).join(", ")}`);
   }
   inboxSeen = names;
+  const unread = latest.unread || {};
+  for (const [id, n] of Object.entries(unread)) {
+    if (id !== chatWith && n > (lastUnread[id] || 0)) {
+      flash(`New message from ${(others().find(d => d.id === id) || {}).name || "a device"}`);
+    }
+  }
+  lastUnread = unread;
   render();
 }
 
@@ -384,6 +415,8 @@ function chips(selectedId, onPick) {
       className: "chip" + (selectedId === d.id ? " on" : ""),
       title: d.online ? "online" : "offline: it gets it when it's back",
     }, el("span", { className: "dot" + (d.online ? " online" : "") }), d.name);
+    const n = (latest.unread || {})[d.id];
+    if (n) c.append(el("span", { className: "badge", textContent: n }));
     c.onclick = () => onPick(d.id);
     out.push(c);
   }
@@ -407,6 +440,99 @@ function renderTargets() {
     box.append(el("span", { className: "dim", textContent: "Other devices show up here once droplet is opened on them and given a name." }));
   }
   drop.textContent = list.length ? `Drop files here or tap to choose (to ${targetName()})` : "Drop files here or tap to choose";
+  renderChatMode();
+}
+
+// --- chat with the selected device ---
+
+let chatWith = null;   // device id whose thread is showing
+let chatLast = null;   // id of the newest message rendered, to skip no-op redraws
+
+function renderChatMode() {
+  const dev = target !== "hub" && others().find(d => d.id === target);
+  document.getElementById("text-box").hidden = !!dev;
+  document.getElementById("chat").hidden = !dev;
+  if (!dev) { chatWith = null; return; }
+  document.getElementById("chat-with").textContent = `Chat with ${dev.name}`;
+  document.getElementById("chat-form").hidden = !me;
+  document.getElementById("chat-need-name").hidden = !!me;
+  if (chatWith !== dev.id) {
+    chatWith = dev.id;
+    chatLast = null;
+    document.getElementById("chat-log").innerHTML = "";
+    loadChat();
+  }
+}
+
+function linkify(text) {
+  const span = el("span");
+  const re = /https?:\/\/[^\s<]+/g;
+  let i = 0, m;
+  while ((m = re.exec(text))) {
+    span.append(text.slice(i, m.index), el("a", { href: m[0], textContent: m[0], target: "_blank", rel: "noopener noreferrer" }));
+    i = m.index + m[0].length;
+  }
+  span.append(text.slice(i));
+  return span;
+}
+
+async function loadChat() {
+  if (!chatWith || !me) return;
+  const id = chatWith;
+  const res = await fetch(`/api/chat/${id}`).catch(() => null);
+  if (!res || !res.ok || id !== chatWith) return;
+  const { messages } = await res.json();
+  const newest = messages.length ? messages[messages.length - 1].id : "";
+  if (newest === chatLast) return;
+  chatLast = newest;
+  const log = document.getElementById("chat-log");
+  log.innerHTML = "";
+  if (!messages.length) log.append(el("p", { className: "dim", textContent: "No messages yet. Say hi 👋" }));
+  let lastDay = "";
+  for (const m of messages) {
+    const d = new Date(m.ts * 1000);
+    if (d.toDateString() !== lastDay) {
+      lastDay = d.toDateString();
+      log.append(el("div", { className: "day", textContent: lastDay === new Date().toDateString() ? "Today" : d.toLocaleDateString() }));
+    }
+    const b = el("div", { className: "msg " + (m.from === me.id ? "mine" : "theirs"), title: "Tap to copy" },
+      linkify(m.text), el("span", { className: "time", textContent: d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }));
+    b.onclick = e => {
+      if (e.target.tagName === "A") return;
+      navigator.clipboard?.writeText(m.text).then(() => flash("Copied"), () => {});
+    };
+    log.append(b);
+  }
+  log.scrollTop = log.scrollHeight;
+  if ((latest.unread || {})[id]) { delete latest.unread[id]; renderTargets(); }
+}
+
+async function sendChat() {
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text || !chatWith) return;
+  const body = new FormData();
+  body.append("text", text);
+  body.append("to", chatWith);
+  const res = await fetch("/text", { method: "POST", body }).catch(() => null);
+  if (res && res.ok) {
+    input.value = "";
+    input.style.height = "";
+    loadChat();
+  } else {
+    flash((res && (await res.json().catch(() => ({}))).error) || "Didn't send, is the hub reachable?");
+  }
+}
+
+// deep link from a notification: /#chat-<device id>
+function openFromHash() {
+  const m = location.hash.match(/^#chat-([0-9a-f]+)$/);
+  if (!m || !others().some(d => d.id === m[1])) return;
+  target = m[1];
+  LS.set("droplet-target", target);
+  history.replaceState(null, "", location.pathname);
+  renderTargets();
+  document.getElementById("chat").scrollIntoView({ block: "start" });
 }
 
 function renderDevices() {
@@ -579,7 +705,17 @@ if (params.has("shared")) {
   if (n) flash(`Shared ${n} item(s) to the hub`);  // server fallback path
 }
 
-loadMe().then(refresh).then(drainInbox);
+const chatInput = document.getElementById("chat-input");
+document.getElementById("chat-send").onclick = sendChat;
+chatInput.addEventListener("input", () => { chatInput.style.height = ""; chatInput.style.height = chatInput.scrollHeight + "px"; });
+chatInput.addEventListener("keydown", e => {
+  // Enter sends on a keyboard; on touch screens Enter is a newline and the button sends
+  if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); sendChat(); }
+});
+window.addEventListener("hashchange", openFromHash);
+setInterval(() => { if (chatWith && !document.hidden) loadChat(); }, 2000);
+
+loadMe().then(refresh).then(() => { openFromHash(); drainInbox(); });
 setInterval(refresh, 5000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 </script>
