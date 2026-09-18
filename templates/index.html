@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <title>droplet 💧</title>
 <style>
   :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --dim:#94a3b8; --accent:#38bdf8; --danger:#f87171; }
@@ -11,7 +15,8 @@
   }
   * { box-sizing:border-box; margin:0; }
   body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; max-width:640px; margin:0 auto; padding:1.5rem 1rem 3rem; }
-  h1 { font-size:1.5rem; margin-bottom:.25rem; }
+  h1 { font-size:1.5rem; margin-bottom:.25rem; display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+  #install { font-size:.8rem; font-weight:500; }
   .sub { color:var(--dim); font-size:.85rem; margin-bottom:1.25rem; }
   #drop { border:2px dashed var(--line); border-radius:12px; padding:2.5rem 1rem; text-align:center;
           color:var(--dim); cursor:pointer; transition:border-color .15s, background .15s; }
@@ -58,7 +63,7 @@
 </style>
 </head>
 <body>
-  <h1>💧 droplet</h1>
+  <h1>💧 droplet <button id="install" hidden>Install app</button></h1>
   <p class="sub">hub: {{ host }}{% if tailnet_user %} · via tailnet as {{ tailnet_user }}{% endif %} — drop a file below to send it here</p>
 
   <div id="drop">Drop files here or tap to choose</div>
@@ -206,7 +211,8 @@ async function refresh() {
 }
 
 function upload(files) {
-  if (!files.length) return;
+  if (!files.length) return Promise.resolve(true);
+  return new Promise(resolve => {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   const xhr = new XMLHttpRequest();
@@ -226,8 +232,40 @@ function upload(files) {
     barWrap.style.display = "none";
     barText.textContent = "";
     refresh();
+    resolve(xhr.status === 200);
   };
   xhr.send(form);
+  });
+}
+
+function flash(msg) {
+  barText.textContent = msg;
+  setTimeout(() => { if (barText.textContent === msg) barText.textContent = ""; }, 4000);
+}
+
+// Items shared from another app wait in the service worker's inbox cache
+// until this page uploads them, so a PIN login in between doesn't lose them.
+async function drainInbox() {
+  if (!("caches" in window) || !(await caches.has("droplet-share-inbox"))) return;
+  const cache = await caches.open("droplet-share-inbox");
+  const keys = await cache.keys();
+  if (!keys.length) return;
+  const files = [], fileKeys = [];
+  for (const key of keys) {
+    const res = await cache.match(key);
+    if (res.headers.get("X-Kind") === "text") {
+      const body = new FormData();
+      body.append("text", await res.text());
+      if ((await fetch("/text", { method: "POST", body })).ok) await cache.delete(key);
+    } else {
+      const name = decodeURIComponent(res.headers.get("X-Name") || "shared");
+      files.push(new File([await res.blob()], name));
+      fileKeys.push(key);
+    }
+  }
+  if (await upload(files)) for (const key of fileKeys) await cache.delete(key);
+  const left = (await cache.keys()).length;
+  flash(left ? `${left} shared item(s) didn't send — they'll retry next time` : `Shared ${keys.length} item(s) to the hub`);
 }
 
 document.getElementById("send-text").onclick = async () => {
@@ -280,7 +318,24 @@ input.onchange = () => { upload(input.files); input.value = ""; };
 ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hover"); }));
 drop.addEventListener("drop", e => upload(e.dataTransfer.files));
 
+// service worker = installable app + "Share → droplet" (HTTPS or localhost only)
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+
+let installPrompt = null;
+const installBtn = document.getElementById("install");
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; installBtn.hidden = false; });
+installBtn.onclick = async () => { installBtn.hidden = true; await installPrompt?.prompt(); installPrompt = null; };
+window.addEventListener("appinstalled", () => { installBtn.hidden = true; });
+
+const params = new URLSearchParams(location.search);
+if (params.has("shared")) {
+  history.replaceState(null, "", "/");
+  const n = Number(params.get("shared"));
+  if (n) flash(`Shared ${n} item(s) to the hub`);  // server fallback path
+}
+
 refresh();
+drainInbox();
 setInterval(refresh, 5000);
 </script>
 </body>
