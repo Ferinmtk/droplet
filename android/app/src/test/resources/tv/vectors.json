@@ -1,0 +1,299 @@
+{
+ "library": "androidtvremote2 0.3.2",
+ "pairing": [
+  {
+   "client_pem": "-----BEGIN CERTIFICATE-----\nMIICxzCCAa+gAwIBAgICA+gwDQYJKoZIhvcNAQELBQAwEjEQMA4GA1UEAwwHZHJv\ncGxldDAeFw0yNjA5MTkxMTQ5MjRaFw0zNjA5MTYxMTQ5MjRaMBIxEDAOBgNVBAMM\nB2Ryb3BsZXQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCvSTKG5+ol\nVOnAUk+lAIVASxCgqumUU3M41izHk2rez89Y6vtFt3+f5rPF7e5cufeOD2BgtsCs\nq6EdlQ37r5L0b4/AvlsO4FeHNKbTLOcd/TKYqsqXW7qWQno0Hu8AdJvq7GNA/gsz\nflndzGepZTbgVQh/gZZsn8BCOM8kZqK4J8jUeyJLQWXVpRwNNIQZ3SqZ26O9QLmC\nQ70KJ05lMd60jkw6HmXAKtjGMlkhzv4M7UHTSxeqjqj1NeF3UYeY/HAPiM2zPSBT\nI9S3OokkLCU/cCOQ1KvM7fK07rHRZ1rN68VXNYcNNlN52bmin02rfDme0RyXOXij\n7lJL/TdJrI5rAgMBAAGjJzAlMA8GA1UdEwQIMAYBAf8CAQAwEgYDVR0RBAswCYIH\nZHJvcGxldDANBgkqhkiG9w0BAQsFAAOCAQEASHvgHogSJ6nvzviH3zZHlPpc41yL\nAqGGZPM0f5MU+PpNOnvbuxrUKrCXqvGSEyp1RsXHxHxLJkUfjdD68NScwCrU1C7C\n6qttSrjSYbniXuTqEou8uxlgjm9vkoNFWpYb36DcZJf/QIJvrXCVxvqWCmx0LIik\n0AgUVIZs+6SwxdTWyuxBzAjLbxLQ1qIe/0ysX6FQasbCKZa24qzNsFXb4muG9t+V\nz3S2uD8zeXAKrWDxtr0P4nIrkK8GWEpW2exkNgfEYrNcdF29vjvrPEr1jj2BxDV1\nIZWdDtitzu+8vCb/kQRNM3/40MVhyxSvgoZ4x69aVDC1x00M0b5H4edLYA==\n-----END CERTIFICATE-----\n",
+   "server_der": "MIIDADCCAeigAwIBAgIUQRvvn6p1I4BTkMDgO41buh1Uu+owDQYJKoZIhvcNAQELBQAwOjE4MDYGA1UEAwwvYXR2cmVtb3RlL2Zha2UvZmFrZS9WZWN0b3IgVFYvQUE6QkI6Q0M6REQ6RUU6MDIwHhcNMjYwOTE5MTE0OTI0WhcNMzYwOTE2MTE0OTI0WjA6MTgwNgYDVQQDDC9hdHZyZW1vdGUvZmFrZS9mYWtlL1ZlY3RvciBUVi9BQTpCQjpDQzpERDpFRTowMjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJ2swH0Vk9w6V2KEPOdOZD13VZ5S7gI0ItNDJ4kbZk9mtDvPtEh5PrMt/vE1oOUd0WRP0mi0fHZukqxp56SU2zbyTbx+gxXlZ7BY6Ejxl+BYaSlkAdVbDw5si+mcHfR6OYAcEKa4KjMHvppaCPzJv/9JUOmNzgKs0dRcPNpT+ZT7ebDHi4IWUEj29NkjCUO0QG0W85QCMgEmyjqI/mVN0i2xYQwzaN9nEAYJ5gy/cYXWSs+MhAY5bvjyFE3N+FneB+owlPwnuMUlKWm21iCBZP0vyf+1HQefFSDgYxiXhH5Ci4GyK+lttqsuw2CDsXgt3GLZ0lTw9LGcv8cnKwOlj38CAwEAATANBgkqhkiG9w0BAQsFAAOCAQEASmb2qfrHwCnOmQ86wg4FwJzJHbS9StcEwcmLmJ23BlhR+Ac8oH1w5cox1GWdXHqzWiIFt36Vv3S7rUMPmMEqVd837n46FjQ44OSA1hPKWwO7u83Nw4PDCgkQAAUngiDshSxPnkoIxYH68/O37Q2/RSMHZKsS5x/VUfKgRcgVN88R8N0wn5ypWGH9+r7YOwl2zIknkZsQUqrNTOejQSxxq1iogJPlOlCiTwnQ4/1a23vwnwMy8mhTM2m4hf5bhVtO2QmdFeDS3XJYCPvEm4/WKvxTl+tu14nfvqO6sPBsdlKjQGC13JH3i/tEcFtTebRMetFI3VdGjfH1/2paYvy3Zg==",
+   "good": [
+    {
+     "code": "E49BB8",
+     "secret": "e4240fd2375866c0ece5d9d44573d14dc9078aca0494c1f39e8e3824f139af56",
+     "framed": "2a080210c801c202220a20e4240fd2375866c0ece5d9d44573d14dc9078aca0494c1f39e8e3824f139af56"
+    },
+    {
+     "code": "D9F8AA",
+     "secret": "d915e588e0e72c5e778ac90e22822d7d0297da5a1fe33ed75d6f9a7b916309e5",
+     "framed": "2a080210c801c202220a20d915e588e0e72c5e778ac90e22822d7d0297da5a1fe33ed75d6f9a7b916309e5"
+    },
+    {
+     "code": "846FD9",
+     "secret": "84ceea95596fcd8dbed003fbb5c8c0b9e0dc6278bd5fcacc8d790281c1bf520f",
+     "framed": "2a080210c801c202220a2084ceea95596fcd8dbed003fbb5c8c0b9e0dc6278bd5fcacc8d790281c1bf520f"
+    },
+    {
+     "code": "929026",
+     "secret": "920ae3e9ffe8265200906236db2f13357dd64edc9982ce412c4398a4cc090777",
+     "framed": "2a080210c801c202220a20920ae3e9ffe8265200906236db2f13357dd64edc9982ce412c4398a4cc090777"
+    },
+    {
+     "code": "e49bb8",
+     "secret": "e4240fd2375866c0ece5d9d44573d14dc9078aca0494c1f39e8e3824f139af56",
+     "framed": "2a080210c801c202220a20e4240fd2375866c0ece5d9d44573d14dc9078aca0494c1f39e8e3824f139af56"
+    }
+   ],
+   "bad": [
+    "0D9BB8",
+    "199BB8",
+    "459BB8",
+    "679BB8",
+    "699BB8",
+    "8C9BB8"
+   ]
+  },
+  {
+   "client_pem": "-----BEGIN CERTIFICATE-----\nMIICxzCCAa+gAwIBAgICA+gwDQYJKoZIhvcNAQELBQAwEjEQMA4GA1UEAwwHZHJv\ncGxldDAeFw0yNjA5MTkxMTQ5MjZaFw0zNjA5MTYxMTQ5MjZaMBIxEDAOBgNVBAMM\nB2Ryb3BsZXQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCn9axZF9VF\nFTh3VwZXNdgZlAvgTc/4pyMMFg04mA1m5FQVZy07DUnBbphVouHKCvJXbeDsfo/x\nzO7+TE8Ibi9bvt6vAHGUCyQFBRYIkYe0jC4C9CYTzRnnaXyrNjuxGqW4a8Bxp5Zd\nloJyGL+ChUp9ZUCX/pBdmLkKJ8eiE7CGfMzJiCXcOsvNtOsz1VC2jq4VS9U1cVBD\n0LepeTnoZf/l2MjmROxZXK06iQ0fOjpthoKsv4S2yymV4hteYOHPzSd18Qhtp/9c\n7bBtg4/SoNrfcxfO9Bgnib/sDyzSq/OAyWin3WCPLYn5oKO0/+lxZcs3nWYyjTFD\nwd9zM5G5JzplAgMBAAGjJzAlMA8GA1UdEwQIMAYBAf8CAQAwEgYDVR0RBAswCYIH\nZHJvcGxldDANBgkqhkiG9w0BAQsFAAOCAQEAC2KwVanqJtmL7iSCWaKTaezx6S1m\n2/a3Q3p6Ngs4BYJtahUPQIwkekbj0ziTwOvOXFSR1NZqLUET1AC9eecumHGGS9Wd\nPLlqsuCWUhUejIslb0SXt8wfGmPX1ra/R6Ix4tDSJBCqU67Xx6IvERW/hOpE2aeM\nV/wkHwQnQymJWLS/vhyagBzUchWv2LLG69uKXTnXCcsALK0qavfQp+XZU5/eETqF\nezJZJZ2mG0AovKk+BgJFm5S6aRiVKcO1kFV5U6RVX+yOjAtUU7dpV5X9q/ORsEer\nuacxMeg4HPOAqXgxdmBEgaYHywB9LJKk/1AQyMhh5aXQWCQcKM3DyoMjSw==\n-----END CERTIFICATE-----\n",
+   "server_der": "MIIDADCCAeigAwIBAgIUTEt+X/YhE885e2HShh103SKmevMwDQYJKoZIhvcNAQELBQAwOjE4MDYGA1UEAwwvYXR2cmVtb3RlL2Zha2UvZmFrZS9WZWN0b3IgVFYvQUE6QkI6Q0M6REQ6RUU6MDIwHhcNMjYwOTE5MTE0OTI2WhcNMzYwOTE2MTE0OTI2WjA6MTgwNgYDVQQDDC9hdHZyZW1vdGUvZmFrZS9mYWtlL1ZlY3RvciBUVi9BQTpCQjpDQzpERDpFRTowMjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK1PpIDJ0i51ENHUnE5AUbAVtxhURx7+8/ItEm5QNQEJCOMiY2Ti35mu1SpBYQMyjKpdN8j3KrDNdI5rq+ZkcYlGlgWDCV3QCbzeZ2WDgzFhaXzrM3/v22b4ZUfldevynDAEKnL/+JJ2NIAmzAm3fr6mIUNDvTosKB762wCpwxdCGOAoQOCxSeGjxMwAIl6ybte1tz7l50ikNVLkPYoix18ZpObceJFroZAZymsNoUThfX7Ph3EMnKMO5KyrbaDF6KJj74VD1sECtm2JuAX/uQLDkfUCRg5xBr1hUUjoDKg2PUheQfZoUMPh20HSvWc03Os1c/FerX2Iv6YPa+eBMJ0CAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAFvaNZz8etFIfcsEl8gDZF9SjipvqSqxF3bF1CIDG+qV9jJ6sERFytaXrkv1v5Jcp9/YYrQdViiMtM+T5bSs+XOz2ZmCefu73J87In0E4Ck2OzeV9jTsFrodP7dI7SRQVJl5SS4aKiPIwdtTooTYWTEjtBbxQlZXJ3veyrZLpHKtAiNmzgUsQBEkyNLE2XNPpi3lLE3gZUhOa6eE2ROSpeRfN6HkgVeuTHJ0Rkg41LetejmJzYinzFFNeM4hzCb094M8fo/KLODHTpzyrrDTZdJIFmmJClleHcpyE/oGIigb0LdloMIvFJfH5fjSQgj9lLaR8CwIdtdMMyWAGLhiWfg==",
+   "good": [
+    {
+     "code": "CCE342",
+     "secret": "cc4663db506c0fc0bb055c7177a75fbdb55b57e87eaf9c3c4c94f10251dc75d3",
+     "framed": "2a080210c801c202220a20cc4663db506c0fc0bb055c7177a75fbdb55b57e87eaf9c3c4c94f10251dc75d3"
+    },
+    {
+     "code": "AA41B6",
+     "secret": "aa6a815c9736d112b6708dd230028b6c1f0fc6404cdf53b9f260b2ecca1882c2",
+     "framed": "2a080210c801c202220a20aa6a815c9736d112b6708dd230028b6c1f0fc6404cdf53b9f260b2ecca1882c2"
+    },
+    {
+     "code": "4D0188",
+     "secret": "4d74e8c1c939fa57fb387169e9582e010104aae9b00d2cd6d885863fbc0186fc",
+     "framed": "2a080210c801c202220a204d74e8c1c939fa57fb387169e9582e010104aae9b00d2cd6d885863fbc0186fc"
+    },
+    {
+     "code": "67CA64",
+     "secret": "679e996ba22434c5bf6bdc29e29e5369fd40dfed576a53b693ae514483e6be76",
+     "framed": "2a080210c801c202220a20679e996ba22434c5bf6bdc29e29e5369fd40dfed576a53b693ae514483e6be76"
+    },
+    {
+     "code": "cce342",
+     "secret": "cc4663db506c0fc0bb055c7177a75fbdb55b57e87eaf9c3c4c94f10251dc75d3",
+     "framed": "2a080210c801c202220a20cc4663db506c0fc0bb055c7177a75fbdb55b57e87eaf9c3c4c94f10251dc75d3"
+    }
+   ],
+   "bad": [
+    "04E342",
+    "09E342",
+    "16E342",
+    "4CE342",
+    "56E342",
+    "76E342"
+   ]
+  },
+  {
+   "client_pem": "-----BEGIN CERTIFICATE-----\nMIICxzCCAa+gAwIBAgICA+gwDQYJKoZIhvcNAQELBQAwEjEQMA4GA1UEAwwHZHJv\ncGxldDAeFw0yNjA5MTkxMTQ5MjhaFw0zNjA5MTYxMTQ5MjhaMBIxEDAOBgNVBAMM\nB2Ryb3BsZXQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDHCLTyE2nt\nFUwyqF32MruIgsxZS/VUoqGss1ynGxbPA8CU5jpKyXUyNEynxH4ge99TLAdjwvMa\nIDmal+hlYBDNM8BmIMnkPF0neylzyxQ06yQODq54MX9Ot/m7c0HVDF1SkkrN3enw\n00NOLmOuDcQVRXWvkw4IGmFTVWSlM4H5REFmtUBf/nRycM+aau5wyDxZVxGi0IJC\nGD/f878IEsMaA2UgDd/lFdQQ1cbewfeR++vErv1s6niwMochWlZdJdeyE6Is4ZRt\nL21gggOjZ8VUhA852Nr1R2U6J9H4qfsOkKygd3JCSXmyAMDHjxtshEqxvr3wnVLu\nstlpuz9c4nGnAgMBAAGjJzAlMA8GA1UdEwQIMAYBAf8CAQAwEgYDVR0RBAswCYIH\nZHJvcGxldDANBgkqhkiG9w0BAQsFAAOCAQEAc8zQnVbh99/mZGXUWtVCDqx/4bv9\n+cm0Ga+c+Dm5VpIl3rfRYvt3COqUH5en48zTEnsVn9yhkLaIlNNzWpvWvrle6KzS\nZbe+ku7DFqky7VGlwnusaPtHlhLZ6oi26ktzaNQGg5QXm6Y7z7ytaLvMbleLLEjr\nYFDm3RNz9+/Vacszeu1B7kxBbFGtDWf1/XgZ+tRPMcF+E2LbUtCg8U5aPzgGBz6F\n9abbasZ9RZW2/1hz2oURT4TLKkkHJY1hfboSckSGbJmCZrg1CBtzVOpUjEgZA7T0\n4srheKpAGNQgylB8eLuxMstptfagiohErUdaU1FQZ8FAze30OlbiX8dKIQ==\n-----END CERTIFICATE-----\n",
+   "server_der": "MIIDADCCAeigAwIBAgIUduxvkAMiLq64GlTBpQ5EwBKerMswDQYJKoZIhvcNAQELBQAwOjE4MDYGA1UEAwwvYXR2cmVtb3RlL2Zha2UvZmFrZS9WZWN0b3IgVFYvQUE6QkI6Q0M6REQ6RUU6MDIwHhcNMjYwOTE5MTE0OTI4WhcNMzYwOTE2MTE0OTI4WjA6MTgwNgYDVQQDDC9hdHZyZW1vdGUvZmFrZS9mYWtlL1ZlY3RvciBUVi9BQTpCQjpDQzpERDpFRTowMjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMr3enQNyGjVAMONv1q/Qp5t2HgRLQskuxgZ0nrfsM+xRkyiFrAH7V4xjOf+giha6FBepHNgFfo1QcZY9A0QqsIo7OGotRaJIo4A4fzEEUpOPUv1c3DmRj/nrnb5xH9DNBt8n6xeAiQULGqSShJvrIpuS718z6pKNzsOrkdC5N7EkV0MC2t8T8ZHWHiLWtvSZ6IwUxm6d0U7pbV3xn+yzVK9EWSSkW4vCNsWiaa/Bt2wOKcQ57xqgAwz998UEIwtYCGgqY2kweTTDK/ZPR0kn4/eOoNFDnMm11XntLe0cOqW5oehq9xpmPMRADgGBbTJAWhVFojy/AcYhkNfKpoSGfUCAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeDP/M2vP7GK8L5wSvn+IIiVE5A14weeK9YGNFOgyQJcDqq080f/q8Tg+xq20adUC8voARXIRWjzLDOozOzUCI/rgRnqvJiZm+oaIXsfOmE0ghAuQ21I5AFJOFvcOSCZzU6Qd6iZZ6b7+w0grR08UmmovSZbsBn0Sw5UTXzFSoxeztg1iaXQxie2br3QgwWzCkxTDCRJOUY3EF5jUTZagzIiG3rZY9pk7qWlQWKZ8U/SsBh19d90tBkQAHEJcyqTWmc0LTLkzPxuqCdaI/WjkrVM2r+mzvxy33dncUB9kE33btAlGLNvSEQWX9cRrvUtu/3dl6+iO3PZGLZDqCrQTuw==",
+   "good": [
+    {
+     "code": "51BB0F",
+     "secret": "51838ffc817b469947b92b5351b7319feb918e11e844208fce6e2eb469b170b0",
+     "framed": "2a080210c801c202220a2051838ffc817b469947b92b5351b7319feb918e11e844208fce6e2eb469b170b0"
+    },
+    {
+     "code": "48247D",
+     "secret": "48249e82af625bbf093770a87d911267716afe9217c249cc67ddee3ebf931fcf",
+     "framed": "2a080210c801c202220a2048249e82af625bbf093770a87d911267716afe9217c249cc67ddee3ebf931fcf"
+    },
+    {
+     "code": "37F966",
+     "secret": "37efd8e9d5926ed39e39c1a69969c4b1f695727b20a8531130aa92bdeb74f562",
+     "framed": "2a080210c801c202220a2037efd8e9d5926ed39e39c1a69969c4b1f695727b20a8531130aa92bdeb74f562"
+    },
+    {
+     "code": "F3590B",
+     "secret": "f35ce706877b2b40a5ad4beffb98a1e9141db90cfec12545428f009957167caa",
+     "framed": "2a080210c801c202220a20f35ce706877b2b40a5ad4beffb98a1e9141db90cfec12545428f009957167caa"
+    },
+    {
+     "code": "51bb0f",
+     "secret": "51838ffc817b469947b92b5351b7319feb918e11e844208fce6e2eb469b170b0",
+     "framed": "2a080210c801c202220a2051838ffc817b469947b92b5351b7319feb918e11e844208fce6e2eb469b170b0"
+    }
+   ],
+   "bad": [
+    "04BB0F",
+    "37BB0F",
+    "54BB0F",
+    "8DBB0F",
+    "8FBB0F",
+    "C2BB0F"
+   ]
+  }
+ ],
+ "polo": {
+  "pairing_request": {
+   "client_name": "droplet on Pixel 7",
+   "framed": "26080210c801521f0a0961747672656d6f7465121264726f706c6574206f6e20506978656c2037"
+  },
+  "in_pairing_request_ack": "17080210c8015a100a0e4c6976696e6720726f6f6d205456",
+  "options": "10080210c801a201080a04080310061801",
+  "in_options": "10080210c801a201080a04080310061801",
+  "configuration": "10080210c801f201080a04080310061001",
+  "in_configuration_ack": "08080210c801fa0100",
+  "in_secret_ack": "2a080210c801ca02220a20000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "in_bad_secret": "050802109203",
+  "in_error": "050802109003"
+ },
+ "remote": {
+  "handshake": [
+   {
+    "features": 615,
+    "in_configure": "4e0a4c08e70412470a06343350363335120354434c18012201312a24636f6d2e676f6f676c652e616e64726f69642e74762e72656d6f74652e73657276696365320d352e322e343733323534313333",
+    "configure": "1e0a1c08e704121718012201312a0961747672656d6f74653205312e302e30",
+    "in_set_active": "05120308ee04",
+    "set_active": "05120308e704",
+    "model": "43P635",
+    "vendor": "TCL",
+    "version": "5.2.473254133"
+   },
+   {
+    "features": 1023,
+    "in_configure": "4e0a4c08ff0712470a06343350363335120354434c18012201312a24636f6d2e676f6f676c652e616e64726f69642e74762e72656d6f74652e73657276696365320d352e322e343733323534313333",
+    "configure": "1e0a1c08e704121718012201312a0961747672656d6f74653205312e302e30",
+    "in_set_active": "05120308ee04",
+    "set_active": "05120308e704",
+    "model": "43P635",
+    "vendor": "TCL",
+    "version": "5.2.473254133"
+   },
+   {
+    "features": 67,
+    "in_configure": "4d0a4b084312470a06343350363335120354434c18012201312a24636f6d2e676f6f676c652e616e64726f69642e74762e72656d6f74652e73657276696365320d352e322e343733323534313333",
+    "configure": "1d0a1b0843121718012201312a0961747672656d6f74653205312e302e30",
+    "in_set_active": "05120308ee04",
+    "set_active": "0412020843",
+    "model": "43P635",
+    "vendor": "TCL",
+    "version": "5.2.473254133"
+   }
+  ],
+  "ping": {
+   "in": "07420508ac021009",
+   "reply": "054a0308ac02",
+   "val1": 300
+  },
+  "keys": [
+   {
+    "key": "DPAD_UP",
+    "direction": "SHORT",
+    "code": 19,
+    "dir": 3,
+    "framed": "06520408131003"
+   },
+   {
+    "key": "DPAD_CENTER",
+    "direction": "START_LONG",
+    "code": 23,
+    "dir": 1,
+    "framed": "06520408171001"
+   },
+   {
+    "key": "DPAD_CENTER",
+    "direction": "END_LONG",
+    "code": 23,
+    "dir": 2,
+    "framed": "06520408171002"
+   },
+   {
+    "key": "POWER",
+    "direction": "SHORT",
+    "code": 26,
+    "dir": 3,
+    "framed": "065204081a1003"
+   },
+   {
+    "key": "VOLUME_MUTE",
+    "direction": "SHORT",
+    "code": 164,
+    "dir": 3,
+    "framed": "07520508a4011003"
+   },
+   {
+    "key": "CHANNEL_UP",
+    "direction": "SHORT",
+    "code": 166,
+    "dir": 3,
+    "framed": "07520508a6011003"
+   },
+   {
+    "key": "TV_INPUT",
+    "direction": "SHORT",
+    "code": 178,
+    "dir": 3,
+    "framed": "07520508b2011003"
+   },
+   {
+    "key": "0",
+    "direction": "SHORT",
+    "code": 7,
+    "dir": 3,
+    "framed": "06520408071003"
+   }
+  ],
+  "in_batch_edit": {
+   "framed": "07aa010408031005",
+   "ime": 3,
+   "field": 5
+  },
+  "texts": [
+   {
+    "ime": 0,
+    "field": 0,
+    "text": "hello",
+    "framed": "14aa01111a0f0801120b080410041a0568656c6c6f"
+   },
+   {
+    "ime": 3,
+    "field": 5,
+    "text": "hello",
+    "framed": "18aa0115080310051a0f0801120b080410041a0568656c6c6f"
+   },
+   {
+    "ime": 3,
+    "field": 5,
+    "text": "a",
+    "framed": "10aa010d080310051a07080112031a0161"
+   },
+   {
+    "ime": 3,
+    "field": 5,
+    "text": "Nairobi caf\u00e9 \u2713",
+    "framed": "24aa0121080310051a1b08011217080d100d1a114e6169726f626920636166c3a920e29c93"
+   },
+   {
+    "ime": 3,
+    "field": 5,
+    "text": "two words",
+    "framed": "1caa0119080310051a130801120f080810081a0974776f20776f726473"
+   },
+   {
+    "ime": 3,
+    "field": 5,
+    "text": "emoji \ud83d\ude00",
+    "framed": "1daa011a080310051a1408011210080610061a0a656d6f6a6920f09f9880"
+   }
+  ],
+  "links": [
+   {
+    "target": "com.netflix.ninja",
+    "framed": "29d205260a246d61726b65743a2f2f6c61756e63683f69643d636f6d2e6e6574666c69782e6e696e6a61"
+   },
+   {
+    "target": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "framed": "30d2052d0a2b68747470733a2f2f7777772e796f75747562652e636f6d2f77617463683f763d6451773477395767586351"
+   },
+   {
+    "target": "market://launch?id=com.plexapp.android",
+    "framed": "2bd205280a266d61726b65743a2f2f6c61756e63683f69643d636f6d2e706c65786170702e616e64726f6964"
+   }
+  ],
+  "in": {
+   "start_on": "05c202020801",
+   "start_off": "03c20200",
+   "volume": "1892031508031a0b54434c20737065616b65723064380c4001",
+   "volume_zero": "05920302303c",
+   "app": "2da2012a0a210804621d636f6d2e676f6f676c652e616e64726f69642e796f75747562652e747612051203616263",
+   "error": "0a1a08080112045202081a",
+   "unhandled_voice_begin": "05f201020805"
+  }
+ }
+}

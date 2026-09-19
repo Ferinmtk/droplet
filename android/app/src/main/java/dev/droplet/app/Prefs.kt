@@ -198,4 +198,21 @@ object Prefs {
 
     /** Presentation remote targets that are Bluetooth hosts are stored as this prefix and the address. */
     const val BT_TARGET = "bt:"
+
+    // --- the TV remote (dev.droplet.app.tv) ---------------------------------------------------
+
+    /** The paired TV the remote shows (its id in tv/tvs.json). */
+    var tvSelected: String?
+        get() = sp.getString("tv_selected", null)
+        set(v) = sp.edit { putString("tv_selected", v) }
+
+    /** The TV remote shows the touchpad rather than the D-pad. */
+    var tvTouchpad: Boolean
+        get() = sp.getBoolean("tv_touchpad", false)
+        set(v) = sp.edit { putBoolean("tv_touchpad", v) }
+
+    /** The TV remote vibrates on each press. */
+    var tvHaptics: Boolean
+        get() = sp.getBoolean("tv_haptics", true)
+        set(v) = sp.edit { putBoolean("tv_haptics", v) }
 }
