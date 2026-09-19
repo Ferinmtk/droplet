@@ -2,82 +2,83 @@ package dev.droplet.app
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.graphics.Color
 import android.os.Bundle
-import android.provider.OpenableColumns
 import android.text.InputType
 import android.view.View
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
 import dev.droplet.app.databinding.ActivityPeersBinding
 import dev.droplet.app.mesh.MeshNode
 import dev.droplet.app.mesh.MeshPairing
 import dev.droplet.app.mesh.Seen
-import dev.droplet.app.mesh.TrustList
-import dev.droplet.app.tv.Tv
-import dev.droplet.app.tv.TvActivity
-import dev.droplet.app.tv.TvPairActivity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Your devices (docs/mesh.md): the trusted peers with how each is reached
- * now, the droplet devices on this Wi-Fi that aren't paired, and pairing
- * requests waiting for an answer. Tap a device for what you can do with it.
+ * Pair a device (docs/mesh.md §4), like Bluetooth: droplet devices on this
+ * Wi-Fi that aren't paired yet, devices asking to pair with this phone, and
+ * pairing by address. Either way both screens show the same four-digit
+ * code, and the owner says whether they match. Paired devices then live on
+ * the home screen ([MainActivity]).
  */
 class PeersActivity : AppCompatActivity() {
+    private enum class Panel { LIST, CODE, DONE }
+
     private lateinit var b: ActivityPeersBinding
-    private var sendTo: TrustList.Entry? = null
+    private var panel = Panel.LIST
+    /** A pairing this phone started, while its code is on screen or it waits for the other side. */
+    private var outgoing: MeshPairing.Outgoing? = null
+    /** A request from another device, while its code is on screen. */
+    private var incoming: MeshPairing.Request? = null
     private var answering: String? = null
 
-    private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        val to = sendTo ?: return@registerForActivityResult
-        if (uris.isEmpty()) return@registerForActivityResult
-        lifecycleScope.launch {
-            val files = withContext(Dispatchers.IO) {
-                uris.mapNotNull { u ->
-                    // kept readable across restarts, for a file that has to wait for the peer
-                    runCatching { contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-                    describe(u)
-                }
-            }
-            if (files.isNotEmpty()) UploadService.start(this@PeersActivity, files, null, MESH_PREFIX + to.fp, to.name)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        edgeToEdge()
+        enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
         b = ActivityPeersBinding.inflate(layoutInflater)
         setContentView(b.root)
         b.root.padForSystemBars(keyboard = false)
-        b.toolbar.setNavigationOnClickListener { finish() }
+        b.back.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         b.pairAddress.setOnClickListener { askAddress() }
+        b.shareLink.setOnClickListener { shareDownloadLink() }
+        b.done.setOnClickListener { finish() }
+        b.doneAnother.setOnClickListener { show(Panel.LIST) }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when (panel) {
+                    Panel.CODE -> cancelCode()
+                    else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+                }
+            }
+        })
         answering = intent.getStringExtra(EXTRA_ANSWER)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { Mesh.state.collect { render() } }
                 launch { Mesh.changes.collect { render() } }
-                launch { Tv.changes.collect { render() } }
-                launch { Mesh.pairRequests.collect { answer(it.request) } }
+                launch { Mesh.pairRequests.collect { if (panel == Panel.LIST) answer(it.request) else render() } }
             }
         }
+        show(Panel.LIST)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.getStringExtra(EXTRA_ANSWER)?.let { answer(it) }
+        intent.getStringExtra(EXTRA_ANSWER)?.let { answering = it }
     }
 
     override fun onStart() {
@@ -91,7 +92,7 @@ class PeersActivity : AppCompatActivity() {
             answering = null
             // the node may still be starting when opened from the notification
             lifecycleScope.launch {
-                repeat(50) { _ -> if (Mesh.node == null) kotlinx.coroutines.delay(100) }
+                repeat(50) { _ -> if (Mesh.node == null) delay(100) }
                 answer(it)
             }
         }
@@ -102,132 +103,81 @@ class PeersActivity : AppCompatActivity() {
         super.onStop()
     }
 
-    // --- the lists -------------------------------------------------------------------
+    // --- panels ------------------------------------------------------------------------
+
+    private fun show(p: Panel) {
+        panel = p
+        b.panelList.visibility = if (p == Panel.LIST) View.VISIBLE else View.GONE
+        b.panelCode.visibility = if (p == Panel.CODE) View.VISIBLE else View.GONE
+        b.panelDone.visibility = if (p == Panel.DONE) View.VISIBLE else View.GONE
+        b.title.setText(if (p == Panel.DONE) R.string.pair_done_eyebrow else R.string.pair_title)
+        b.root.scrollTo(0, 0)
+        render()
+    }
 
     private fun render() {
+        if (panel != Panel.LIST) return
         val s = Mesh.state.value
         val n = Mesh.node
-        b.meName.text = Prefs.meshDeviceName ?: android.os.Build.MODEL
-        b.meState.text = when {
-            n != null && s.status == Mesh.Status.RUNNING -> getString(R.string.mesh_identity, n.identity.fp.chunked(4).take(4).joinToString(" "), s.port) +
-                (n.identity.fallbackReason?.let { "\n" + getString(R.string.mesh_identity_file, it) } ?: "")
-            s.status == Mesh.Status.STARTING -> getString(R.string.mesh_status_starting)
-            s.status == Mesh.Status.FAILED -> getString(R.string.mesh_status_failed, s.error.orEmpty())
-            else -> getString(R.string.mesh_status_off)
+        val name = Prefs.meshDeviceName ?: SetupActivity.suggestedName(this)
+        b.intro.text = getString(R.string.pair_intro, name)
+        b.off.visibility = View.GONE
+        when {
+            !Prefs.meshEnabled -> showOff(getString(R.string.mesh_status_off))
+            s.status == Mesh.Status.FAILED -> showOff(getString(R.string.mesh_status_failed, s.error.orEmpty()))
         }
         b.pairAddress.isEnabled = n != null
+        b.spinner.visibility = if (n != null || s.status == Mesh.Status.STARTING) View.VISIBLE else View.GONE
 
         val waiting = n?.incoming?.waiting().orEmpty()
         b.asking.removeAllViews()
         b.askingTitle.visibility = if (waiting.isEmpty()) View.GONE else View.VISIBLE
-        for (r in waiting) b.asking.addView(row(r.name, getString(R.string.mesh_pair_request_code, r.code), R.drawable.ic_device,
-            online = true) { answer(r.request) })
-
-        val peers = Mesh.peers()
-        b.trusted.removeAllViews()
-        b.trustedNone.visibility = if (peers.isEmpty()) View.VISIBLE else View.GONE
-        for (p in peers) {
-            val source = getString(if (p.entry.source == TrustList.SOURCE_PAIRED) R.string.mesh_source_paired else R.string.mesh_source_roster)
-            b.trusted.addView(row(p.entry.name, Mesh.describeRoute(this, p.route) + " · " + source, R.drawable.ic_device,
-                online = p.route in setOf("lan", "tailnet", "hub")) { actions(p.entry) })
+        for (r in waiting) {
+            b.asking.addView(row(r.name, getString(R.string.pair_asking_sub, osName(r.os)), iconFor(r.os),
+                getString(R.string.pair_answer_verb)) { answer(r.request) })
         }
 
-        renderTvs()
-
-        val trusted = peers.map { it.entry.fp }.toSet()
+        val trusted = n?.trust?.all().orEmpty().map { it.fp }.toSet()
         val nearby = n?.nearby().orEmpty().filter { it.fp !in trusted }.distinctBy { it.fp }
         b.nearby.removeAllViews()
         b.nearbyNone.visibility = if (nearby.isEmpty()) View.VISIBLE else View.GONE
-        for (s2 in nearby) {
-            b.nearby.addView(row(s2.name, listOf(s2.os.ifEmpty { "?" }, s2.addresses.firstOrNull().orEmpty()).joinToString(" · "),
-                R.drawable.ic_device, online = null) { pair(s2) })
+        for (d in nearby) {
+            val sub = listOf(osName(d.os), d.addresses.firstOrNull().orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
+            b.nearby.addView(row(d.name, sub, iconFor(d.os), getString(R.string.pair_verb)) { pair(d) })
         }
     }
 
-    /** The TVs this phone controls itself: tap one for its remote; the last row pairs another. */
-    private fun renderTvs() {
-        b.tvs.removeAllViews()
-        for (tv in Tv.tvs()) {
-            val sub = listOfNotNull(tv.model, tv.host, getString(R.string.tv_state_forgot).takeIf { !tv.paired }).joinToString(" · ")
-            b.tvs.addView(row(tv.name, sub, R.drawable.ic_tv, online = null) {
-                Tv.select(tv.id)
-                startActivity(TvActivity.intent(this))
-            })
-        }
-        b.tvs.addView(row(getString(R.string.mesh_tv_add), getString(R.string.mesh_tv_add_sub), R.drawable.ic_tv, online = null) {
-            startActivity(Intent(this, TvPairActivity::class.java).putExtra(TvPairActivity.EXTRA_FIND, true))
-        })
+    private fun showOff(text: String) {
+        b.off.text = text
+        b.off.visibility = View.VISIBLE
     }
 
-    private fun row(name: String, sub: String, icon: Int, online: Boolean?, onClick: () -> Unit): View {
-        val v = b.trusted.inflate(R.layout.item_target)
+    private fun row(name: String, sub: String, icon: Int, verb: String, onClick: () -> Unit): View {
+        val v = b.nearby.inflate(R.layout.item_nearby)
         v.findViewById<TextView>(R.id.name).text = name
         v.findViewById<TextView>(R.id.sub).text = sub
         v.findViewById<ImageView>(R.id.icon).setImageResource(icon)
-        v.findViewById<View>(R.id.dot).visibility = if (online == true) View.VISIBLE else View.GONE
-        v.findViewById<View>(R.id.last).visibility = View.GONE
+        v.findViewById<TextView>(R.id.verb).text = verb
         v.setOnClickListener { onClick() }
         return v
     }
 
-    // --- what you can do with a device ------------------------------------------------------
+    private fun iconFor(os: String) = if (os == "android") R.drawable.ic_phone else R.drawable.ic_laptop
 
-    private fun actions(e: TrustList.Entry) {
-        val items = mutableListOf<Pair<Int, () -> Unit>>(
-            R.string.mesh_act_text to { startActivity(ChatActivity.intent(this, e.fp)) },
-            R.string.mesh_act_file to {
-                sendTo = e
-                pickFiles.launch(arrayOf("*/*"))
-            },
-            R.string.mesh_act_ring to { background({ Mesh.node!!.ring(e.fp) }) { toast(getString(R.string.mesh_sent_route, Mesh.describeRoute(this, it))) } },
-            R.string.mesh_act_clip to {
-                // this screen has focus, so Android lets it read the clipboard now
-                val text = getSystemService(android.content.ClipboardManager::class.java).primaryClip
-                    ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
-                if (text.isNullOrEmpty()) toast(getString(R.string.clip_empty))
-                else background({ Mesh.node!!.clip(e.fp, text) }) { toast(getString(R.string.mesh_sent_route, Mesh.describeRoute(this, it))) }
-            },
-            R.string.mesh_act_ring_stop to { background({ Mesh.node!!.ring(e.fp, stop = true) }) { } },
-        )
-        if ("input" in e.caps) items += R.string.mesh_act_remote to {
-            Prefs.remoteTarget = MESH_PREFIX + e.fp
-            startActivity(Intent(this, RemoteActivity::class.java))
-        }
-        if (e.source == TrustList.SOURCE_PAIRED) items += R.string.mesh_act_unpair to { askUnpair(e) }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(e.name)
-            .setItems(items.map { getString(it.first) }.toTypedArray()) { _, i -> items[i].second() }
-            .show()
+    private fun osName(os: String): String = when (os) {
+        "android" -> "Android"
+        "windows" -> "Windows"
+        "linux" -> "Linux"
+        else -> ""
     }
 
-    private fun askUnpair(e: TrustList.Entry) {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(getString(R.string.mesh_unpair_title, e.name))
-            .setMessage(R.string.mesh_unpair_body)
-            .setPositiveButton(R.string.mesh_act_unpair) { _, _ ->
-                background({ Mesh.node!!.unpair(e.fp) }) { told ->
-                    toast(getString(if (told) R.string.mesh_unpaired else R.string.mesh_unpaired_untold, e.name))
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    /** Runs [work] off the main thread; its result, or its error as a toast. */
-    private fun <T> background(work: () -> T, ok: (T) -> Unit) {
-        lifecycleScope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { work() } }
-            r.onSuccess(ok).onFailure { toast(getString(R.string.mesh_failed, it.message ?: it.javaClass.simpleName)) }
-        }
-    }
-
-    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
+    private fun say(s: String) = Snackbar.make(b.root, s, Snackbar.LENGTH_LONG).show()
 
     // --- pairing: this phone asks -----------------------------------------------------------
 
     private fun pair(s: Seen) {
         val address = s.addresses.firstOrNull() ?: return
-        startPair(s.name, address, s.port, s.fp)
+        startPair(s.name, address, s.port, s.fp, s.os)
     }
 
     private fun askAddress() {
@@ -242,96 +192,151 @@ class PeersActivity : AppCompatActivity() {
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.mesh_pair_address)
+            .setMessage(R.string.pair_address_help)
             .setView(box)
-            .setPositiveButton(R.string.mesh_accept) { _, _ ->
+            .setPositiveButton(R.string.pair_verb) { _, _ ->
                 val (host, port) = parseAddress(input.text.toString()) ?: run {
-                    toast(getString(R.string.mesh_pair_bad_address))
+                    say(getString(R.string.mesh_pair_bad_address))
                     return@setPositiveButton
                 }
-                startPair(host, host, port, null)
+                startPair(host, host, port, null, "")
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
-    private fun startPair(label: String, host: String, port: Int, expect: String?) {
-        val waiting = MaterialAlertDialogBuilder(this).setMessage(getString(R.string.mesh_pairing_with, label))
-            .setCancelable(false).show()
+    private fun startPair(label: String, host: String, port: Int, expect: String?, os: String) {
+        outgoing = null
+        incoming = null
+        show(Panel.CODE)
+        b.codeTitle.text = getString(R.string.pair_with, label)
+        b.code.text = getString(R.string.pair_code_blank)
+        b.codeHelp.text = getString(R.string.mesh_pairing_with, label)
+        b.codeWait.visibility = View.GONE
+        b.codeYes.visibility = View.GONE
+        b.codeNo.setText(R.string.cancel)
+        b.codeNo.setOnClickListener { cancelCode() }
+        b.doneIcon.setImageResource(iconFor(os))
         lifecycleScope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { Mesh.node!!.pairStart(host, port, expect) } }
-            waiting.dismiss()
-            r.onSuccess { confirmCode(it) }.onFailure { toast(getString(R.string.mesh_pair_failed, it.message ?: "?")) }
+            val r = withContext(Dispatchers.IO) { runCatching { (Mesh.node ?: error(getString(R.string.mesh_off_now))).pairStart(host, port, expect) } }
+            if (panel != Panel.CODE || outgoing != null || incoming != null) {
+                // cancelled meanwhile
+                r.getOrNull()?.let { og -> Mesh.node?.pairConfirm(og.request!!, false) }
+                return@launch
+            }
+            r.onSuccess { showOutgoing(it) }.onFailure {
+                show(Panel.LIST)
+                say(getString(R.string.mesh_pair_failed, it.message ?: "?"))
+            }
         }
     }
 
     /** Both screens show the code; the owner says whether they match. */
-    private fun confirmCode(og: MeshPairing.Outgoing) {
-        var decided = false
-        MaterialAlertDialogBuilder(this)
-            .setTitle(getString(R.string.mesh_pair_check_title, og.peerName))
-            .setMessage(getString(R.string.mesh_pair_check, og.peerName, og.code))
-            .setCancelable(false)
-            .setPositiveButton(R.string.mesh_pair_matches) { _, _ ->
-                decided = true
-                val wait = MaterialAlertDialogBuilder(this).setMessage(getString(R.string.mesh_pair_waiting, og.peerName))
-                    .setNegativeButton(R.string.cancel) { _, _ -> Mesh.scope.launch { og.cancel() } }
-                    .show()
-                Mesh.node?.pairConfirm(og.request!!, true) { state ->
-                    runOnUiThread {
-                        if (!isDestroyed) wait.dismiss()
-                        toast(when (state) {
-                            MeshPairing.ACCEPTED -> getString(R.string.mesh_paired, og.peerName)
-                            MeshPairing.DENIED -> getString(R.string.mesh_pair_failed, getString(R.string.mesh_pair_state_denied, og.peerName))
-                            MeshPairing.CANCELLED -> getString(R.string.mesh_pair_failed, getString(R.string.mesh_pair_state_cancelled))
-                            else -> getString(R.string.mesh_pair_failed, getString(R.string.mesh_pair_state_expired))
-                        })
+    private fun showOutgoing(og: MeshPairing.Outgoing) {
+        outgoing = og
+        b.codeTitle.text = getString(R.string.pair_with, og.peerName)
+        b.code.text = og.code
+        b.codeHelp.text = getString(R.string.pair_check_out, og.peerName)
+        b.codeYes.visibility = View.VISIBLE
+        b.codeYes.setText(R.string.pair_they_match)
+        b.codeYes.setOnClickListener { confirmOutgoing(og) }
+        b.codeNo.setText(R.string.pair_no_match)
+        if (og.peerOs.isNotEmpty()) b.doneIcon.setImageResource(iconFor(og.peerOs))
+    }
+
+    private fun confirmOutgoing(og: MeshPairing.Outgoing) {
+        b.codeYes.visibility = View.GONE
+        b.codeNo.setText(R.string.cancel)
+        b.codeWait.visibility = View.VISIBLE
+        b.codeStatus.text = getString(R.string.mesh_pair_waiting, og.peerName)
+        b.codeHelp.text = getString(R.string.pair_accept_there, og.peerName)
+        val n = Mesh.node ?: return
+        runCatching {
+            n.pairConfirm(og.request!!, true) { state ->
+                runOnUiThread {
+                    if (isDestroyed || outgoing !== og) return@runOnUiThread
+                    outgoing = null
+                    when (state) {
+                        MeshPairing.ACCEPTED -> showDone(og.peerName)
+                        else -> {
+                            show(Panel.LIST)
+                            say(getString(R.string.mesh_pair_failed, when (state) {
+                                MeshPairing.DENIED -> getString(R.string.mesh_pair_state_denied, og.peerName)
+                                MeshPairing.CANCELLED -> getString(R.string.mesh_pair_state_cancelled)
+                                else -> getString(R.string.mesh_pair_state_expired)
+                            }))
+                        }
                     }
                 }
             }
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                decided = true
-                Mesh.node?.pairConfirm(og.request!!, false)
-            }
-            .setOnDismissListener { if (!decided) Mesh.node?.pairConfirm(og.request!!, false) }
-            .show()
+        }.onFailure {
+            show(Panel.LIST)
+            say(getString(R.string.mesh_pair_failed, it.message ?: "?"))
+        }
+    }
+
+    /** Cancel on the code screen: the codes didn't match, or the owner changed their mind. */
+    private fun cancelCode() {
+        outgoing?.let { og ->
+            outgoing = null
+            if (og.localOk) Mesh.scope.launch { runCatching { og.cancel() } }
+            else runCatching { Mesh.node?.pairConfirm(og.request!!, false) }
+        }
+        incoming?.let { r ->
+            incoming = null
+            decide(r, false)
+        }
+        show(Panel.LIST)
     }
 
     // --- pairing: another device asks ------------------------------------------------------
 
-    private var answerDialog: AlertDialog? = null
-
     private fun answer(request: String) {
         val r = Mesh.node?.incoming?.waiting()?.firstOrNull { it.request == request }
         if (r == null) {
-            toast(getString(R.string.mesh_answer_gone))
+            say(getString(R.string.mesh_answer_gone))
             return
         }
-        if (answerDialog?.isShowing == true) return
-        answerDialog = MaterialAlertDialogBuilder(this)
-            .setTitle(getString(R.string.mesh_answer_title, r.name))
-            .setMessage(getString(R.string.mesh_answer_body, r.name, r.os.ifEmpty { "?" }, r.code))
-            .setPositiveButton(R.string.mesh_accept) { _, _ -> decide(r, true) }
-            .setNegativeButton(R.string.mesh_deny) { _, _ -> decide(r, false) }
-            .show()
+        if (panel == Panel.CODE) return
+        incoming = r
+        outgoing = null
+        show(Panel.CODE)
+        b.codeTitle.text = getString(R.string.mesh_answer_title, r.name)
+        b.code.text = r.code
+        b.codeHelp.text = getString(R.string.pair_check_in, r.name)
+        b.codeWait.visibility = View.GONE
+        b.codeYes.visibility = View.VISIBLE
+        b.codeYes.setText(R.string.pair_they_match)
+        b.codeYes.setOnClickListener {
+            incoming = null
+            decide(r, true)
+        }
+        b.codeNo.setText(R.string.pair_no_match)
+        b.codeNo.setOnClickListener { cancelCode() }
+        b.doneIcon.setImageResource(iconFor(r.os))
     }
 
     private fun decide(r: MeshPairing.Request, accept: Boolean) {
-        background({ Mesh.node!!.pairAnswer(r.request, accept) }) {
-            if (accept) toast(getString(R.string.mesh_paired, r.name))
+        lifecycleScope.launch {
+            val res = withContext(Dispatchers.IO) { runCatching { (Mesh.node ?: error(getString(R.string.mesh_off_now))).pairAnswer(r.request, accept) } }
+            res.onSuccess { if (accept) showDone(r.name) }
+                .onFailure {
+                    if (accept) show(Panel.LIST)
+                    say(getString(R.string.mesh_failed, it.message ?: it.javaClass.simpleName))
+                }
         }
     }
 
-    private fun describe(uri: Uri): Outgoing? = runCatching {
-        var name: String? = null
-        var size = -1L
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
-            if (c.moveToFirst()) {
-                if (!c.isNull(0)) name = c.getString(0)
-                if (!c.isNull(1)) size = c.getLong(1)
-            }
-        }
-        Outgoing(uri, name ?: uri.lastPathSegment ?: "file", size, contentResolver.getType(uri))
-    }.getOrNull()
+    private fun showDone(name: String) {
+        show(Panel.DONE)
+        b.doneTitle.text = getString(R.string.mesh_paired, name)
+    }
+
+    private fun shareDownloadLink() {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, getString(R.string.home_share_link_text, MainActivity.RELEASES))
+        runCatching { startActivity(Intent.createChooser(send, getString(R.string.home_share_link))) }
+    }
 
     companion object {
         const val MESH_PREFIX = "mesh:"
