@@ -327,3 +327,57 @@ public sealed class FileIdentityStore(string directory) : IIdentityStore
         AtomicFile.WriteText(CertPath, Certificates.ToPem(identity.CertificateDer));
     }
 }
+
+/// <summary>Encrypts a secret for this user only (DPAPI's <c>ProtectedData</c> on Windows).</summary>
+public interface ISecretProtector
+{
+    /// <summary>Encrypts <paramref name="secret"/>.</summary>
+    byte[] Protect(byte[] secret);
+
+    /// <summary>Decrypts what <see cref="Protect"/> made. Throws <see cref="CryptographicException"/> when it can't.</summary>
+    byte[] Unprotect(byte[] sealedSecret);
+}
+
+/// <summary>
+/// The identity in one file whose private key is sealed by an <see cref="ISecretProtector"/>:
+/// on Windows, DPAPI for the current user (3b passes <c>ProtectedData.Protect</c> and
+/// <c>Unprotect</c> with <c>DataProtectionScope.CurrentUser</c>). The certificate and
+/// the local id are public and kept as they are. A key that can't be unsealed (another
+/// user, a restored profile) reads as no identity, so a new one is made.
+/// </summary>
+public sealed class ProtectedIdentityStore(string directory, ISecretProtector protector) : IIdentityStore
+{
+    string FilePath => Path.Combine(directory, "identity-sealed.json");
+
+    /// <inheritdoc/>
+    public StoredIdentity? Load()
+    {
+        var o = Json.ParseObject(AtomicFile.TryReadText(FilePath));
+        if (o?.Str("id") is not { } id)
+        {
+            return null;
+        }
+        try
+        {
+            var cert = Convert.FromBase64String(o.Str("cert") ?? "");
+            var key = protector.Unprotect(Convert.FromBase64String(o.Str("key") ?? ""));
+            return new StoredIdentity(id, cert, key);
+        }
+        catch (Exception e) when (e is FormatException or CryptographicException)
+        {
+            return new StoredIdentity(id, [], []);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void Save(StoredIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        var o = new System.Text.Json.Nodes.JsonObject
+        {
+            ["v"] = 1, ["id"] = identity.LocalId, ["cert"] = Convert.ToBase64String(identity.CertificateDer),
+            ["key"] = Convert.ToBase64String(protector.Protect(identity.PrivateKeyPkcs8)),
+        };
+        AtomicFile.WriteText(FilePath, Json.ToText(o) + "\n");
+    }
+}

@@ -553,3 +553,125 @@ public sealed class MdnsLoopbackTests
         Assert.Contains(IPAddress.Parse(lan[0]), inst.Addresses);
     }
 }
+
+public sealed class ProtectedIdentityTests : IDisposable
+{
+    readonly string dir = TestDirs.Make("sealed");
+
+    public void Dispose() => TestDirs.Remove(dir);
+
+    /// <summary>Stands in for DPAPI: reversible, keyed to "this user", and never the plain bytes.</summary>
+    sealed class FakeDpapi(byte user) : ISecretProtector
+    {
+        public byte[] Protect(byte[] secret) => [0xd9, user, .. secret.Select(b => (byte)(b ^ user))];
+
+        public byte[] Unprotect(byte[] sealedSecret) =>
+            sealedSecret is [0xd9, var u, ..] && u == user
+                ? sealedSecret[2..].Select(b => (byte)(b ^ user)).ToArray()
+                : throw new System.Security.Cryptography.CryptographicException("not this user's");
+    }
+
+    [Fact]
+    public void The_key_is_kept_sealed_and_another_user_gets_a_new_identity()
+    {
+        string fp, id;
+        using (var a = MeshIdentity.LoadOrCreate(new ProtectedIdentityStore(dir, new FakeDpapi(0x5a))))
+        {
+            (fp, id) = (a.Fingerprint, a.LocalId);
+        }
+        var file = File.ReadAllText(Path.Combine(dir, "identity-sealed.json"));
+        var stored = new ProtectedIdentityStore(dir, new FakeDpapi(0x5a)).Load()!;
+        Assert.DoesNotContain(Convert.ToBase64String(stored.PrivateKeyPkcs8), file, StringComparison.Ordinal);
+        using (var again = MeshIdentity.LoadOrCreate(new ProtectedIdentityStore(dir, new FakeDpapi(0x5a))))
+        {
+            Assert.Equal(fp, again.Fingerprint);
+        }
+        using var other = MeshIdentity.LoadOrCreate(new ProtectedIdentityStore(dir, new FakeDpapi(0x11)));
+        Assert.NotEqual(fp, other.Fingerprint);
+        Assert.Equal(id, other.LocalId);
+    }
+}
+
+public sealed class WatcherTests
+{
+    [Fact]
+    public async Task Media_state_is_published_when_it_changes_and_kept_for_new_links()
+    {
+        var media = new FakeMedia();
+        await using var states = new StatePublisher(media, () => true);
+        var published = new System.Collections.Concurrent.ConcurrentQueue<JsonNode?>();
+        states.Publish += (kind, data) =>
+        {
+            Assert.Equal("media", kind);
+            published.Enqueue(data);
+            return Task.CompletedTask;
+        };
+        states.Start();
+        states.Poke();
+        await Wait.For(() => published.Count == 1, 5, "the first state");
+        Assert.Equal("Test track", published.First()!["players"]![0]!["title"]!.GetValue<string>());
+        Assert.Equal(0.5, published.First()!["volume"]!["level"]!.GetValue<double>());
+        await media.PerformAsync(new MediaCommand("pause", null, null, null)); // raises Changed
+        media.Current = media.Current with { Volume = new Volume(0.8, true) };
+        states.Poke();
+        await Wait.For(() => published.Count == 2, 5, "the change");
+        Assert.True(states.Last["media"]!["volume"]!["muted"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task A_copy_is_sent_once_settled_and_nothing_while_sync_is_off()
+    {
+        var clip = new FakeClipboard();
+        var sync = new ClipboardSync();
+        var on = false;
+        await using var watcher = new ClipboardWatcher(clip, sync, () => on);
+        var sent = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        watcher.Copied += t =>
+        {
+            sent.Enqueue(t);
+            return Task.CompletedTask;
+        };
+        watcher.Start();
+        clip.Copy("while off");
+        await Task.Delay(1200);
+        Assert.Empty(sent);
+        on = true;
+        await Task.Delay(700);   // what's there when sync starts isn't news
+        clip.Copy("a password?");
+        await Wait.For(() => sent.Count == 1, 5, "the copy to be sent");
+        Assert.Equal("a password?", sent.Single());
+    }
+}
+
+public sealed class RouteWatchTests
+{
+    [Fact]
+    public async Task A_network_change_chooses_the_route_again()
+    {
+        var sig = "wifi=a";
+        var selections = 0;
+        var deps = new RouteDeps
+        {
+            Browse = (_, _, _) => Task.FromResult(new List<HubAnnouncement>()),
+            Info = (url, _, _) =>
+            {
+                Interlocked.Increment(ref selections);
+                return Task.FromResult(new HubInfo { Id = "9b16173d305cd15a" });
+            },
+        };
+        var routes = new RouteManager(() => new HubTarget("9b16173d305cd15a", "", [], "https://t15.ts.net"), deps)
+        {
+            NetSignature = () => Volatile.Read(ref sig),
+            NetPollEvery = TimeSpan.FromMilliseconds(50),
+            SettleDelay = TimeSpan.FromMilliseconds(50),
+        };
+        await routes.EnsureAsync();
+        Assert.Equal(1, selections);
+        using var cts = new CancellationTokenSource();
+        var run = routes.RunAsync(cts.Token);
+        Volatile.Write(ref sig, "wifi=b");
+        await Wait.For(() => Volatile.Read(ref selections) == 2, 5, "a new selection");
+        await cts.CancelAsync();
+        await run;
+    }
+}

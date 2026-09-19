@@ -198,13 +198,19 @@ public sealed partial class HubPoller : IAsyncDisposable
         }
     }
 
+    /// <summary>Keeps what a route selection learnt about the hub (saved only when something changed).</summary>
     void Remember(SelectResult res)
     {
-        store.Update(c =>
+        var c = store.Get();
+        if (c.Hub is not { } h || !HubIdentities.Remember(h, res, c.RemoteUrl))
         {
-            if (c.Hub is not null)
+            return;
+        }
+        store.Update(n =>
+        {
+            if (n.Hub?.Id == h.Id)
             {
-                HubIdentities.Remember(c.Hub, res, c.RemoteUrl);
+                n.Hub = h;
             }
         });
     }
@@ -446,6 +452,33 @@ public sealed partial class HubPoller : IAsyncDisposable
         NeedsPairing?.Invoke();
     }
 
+    /// <summary>
+    /// Where to open droplet in a browser, for <paramref name="path"/> (e.g. "/#inbox"). A
+    /// browser can't use the pinned LAN connection, so on the LAN it gets the tailnet URL
+    /// when this PC is on the tailnet (where its browser is likely signed in already),
+    /// else the hub's plain-HTTP LAN address.
+    /// </summary>
+    public string WebUrl(string path)
+    {
+        var cfg = store.Get();
+        var remote = cfg.RemoteUrl;
+        var r = routes.Current;
+        if (r?.Kind == RouteKind.Lan)
+        {
+            if (remote.Length > 0 && (!Route.IsTailnetUrl(remote) || Common.Addresses.TailscaleUp()))
+            {
+                return remote.TrimEnd('/') + path;
+            }
+            var port = cfg.Hub?.HttpPort is > 0 and var p ? p : 8000;
+            var colon = r.Addr.LastIndexOf(':');
+            if (colon > 0)
+            {
+                return $"http://{Common.Addresses.HostPort(r.Addr[..colon].Trim('[', ']'), port)}{path}";
+            }
+        }
+        return (r?.Base ?? remote).TrimEnd('/') + path;
+    }
+
     /// <summary>The hub's short name, e.g. "t15".</summary>
     public static string HubName(AppConfig cfg)
     {
@@ -521,7 +554,7 @@ public sealed partial class HubPoller : IAsyncDisposable
         }
         foreach (var group in fresh.GroupBy(f => string.IsNullOrEmpty(f.From) ? "Someone" : f.From))
         {
-            services.Notifications?.Show(FileNotification(group.Key, group.ToList(), saved, cfg));
+            services.Notifications?.Show(FileNotification(group.Key, group.ToList(), saved, cfg, WebUrl("/#inbox")));
         }
     }
 
@@ -560,7 +593,7 @@ public sealed partial class HubPoller : IAsyncDisposable
         }
     }
 
-    static Notification FileNotification(string from, List<HubFile> fs, Dictionary<string, string> saved, AppConfig cfg)
+    static Notification FileNotification(string from, List<HubFile> fs, Dictionary<string, string> saved, AppConfig cfg, string inboxUrl)
     {
         string title, body;
         if (fs.Count == 1)
@@ -598,6 +631,7 @@ public sealed partial class HubPoller : IAsyncDisposable
         return new Notification
         {
             Title = title, Body = (body.Length == 0 ? HumanSize(fs[0].Size) : body) + " · in your droplet inbox", Tag = "files-" + Guid.NewGuid().ToString("N"),
+            Click = new NotificationAction("Open droplet", NotificationActionKind.OpenUrl, inboxUrl),
         };
     }
 
@@ -664,12 +698,14 @@ public sealed partial class HubPoller : IAsyncDisposable
             var last = fresh[^1];
             var body = fresh.Count > 1 ? $"{last.Text}\n(+{fresh.Count - 1} earlier)" : last.Text;
             var link = last.Text.Trim();
+            var chat = new NotificationAction("Open chat", NotificationActionKind.OpenUrl, WebUrl("/#chat-" + from));
+            var bare = BareUrl().IsMatch(link);
             services.Notifications?.Show(new Notification
             {
                 Title = names.GetValueOrDefault(from) ?? "Someone", Body = body, Tag = "chat-" + from,
                 // a bare link opens straight away, as it does on the phone
-                Click = BareUrl().IsMatch(link) ? new NotificationAction("Open link", NotificationActionKind.OpenUrl, link) : null,
-                Buttons = BareUrl().IsMatch(link) ? [new NotificationAction("Open link", NotificationActionKind.OpenUrl, link)] : [],
+                Click = bare ? new NotificationAction("Open link", NotificationActionKind.OpenUrl, link) : chat,
+                Buttons = bare ? [new NotificationAction("Open link", NotificationActionKind.OpenUrl, link), chat] : [],
             });
         }
     }
@@ -698,28 +734,37 @@ public sealed partial class HubPoller : IAsyncDisposable
             log.LogInformation("ring check: {Error}", e.Message);
             return;
         }
-        if (ringId is not null && (ring is null || ring.Id != ringId))
+        string? current, stopped;
+        DateTimeOffset started;
+        lock (gate)
+        {
+            (current, started, stopped) = (ringId, ringStarted, stoppedRingId);
+            if (ring is null)
+            {
+                stoppedRingId = null;
+            }
+        }
+        if (current is not null && (ring is null || ring.Id != current))
         {
             Silence(); // stopped elsewhere (or replaced; picked up next poll)
         }
-        else if (ringId is not null && DateTimeOffset.UtcNow - ringStarted > RingLimit)
+        else if (current is not null && DateTimeOffset.UtcNow - started > RingLimit)
         {
             await StopRingAsync(ct).ConfigureAwait(false); // rings give up after a minute, like a phone
         }
-        else if (ringId is null && ring is not null && ring.Id != stoppedRingId)
+        else if (current is null && ring is not null && ring.Id != stopped)
         {
             StartRing(ring, cfg);
-        }
-        if (ring is null)
-        {
-            stoppedRingId = null;
         }
     }
 
     void StartRing(Ring ring, AppConfig cfg)
     {
         var from = string.IsNullOrEmpty(ring.From) ? "Someone" : ring.From;
-        (ringId, ringStarted) = (ring.Id, DateTimeOffset.UtcNow);
+        lock (gate)
+        {
+            (ringId, ringStarted) = (ring.Id, DateTimeOffset.UtcNow);
+        }
         if (cfg.RingSound)
         {
             services.Sound?.StartRing();
@@ -736,11 +781,14 @@ public sealed partial class HubPoller : IAsyncDisposable
     /// <summary>Stops the sound and the ringing state here.</summary>
     void Silence()
     {
-        if (ringId is null)
+        lock (gate)
         {
-            return;
+            if (ringId is null)
+            {
+                return;
+            }
+            ringId = null;
         }
-        ringId = null;
         services.Sound?.StopRing();
         services.Notifications?.Clear("ring");
         SetStatus(s => s with { RingingFrom = null });
@@ -749,9 +797,12 @@ public sealed partial class HubPoller : IAsyncDisposable
     /// <summary>Silences this PC and tells the hub the ring is answered.</summary>
     public async Task StopRingAsync(CancellationToken ct = default)
     {
-        if (ringId is not null)
+        lock (gate)
         {
-            stoppedRingId = ringId;
+            if (ringId is not null)
+            {
+                stoppedRingId = ringId;
+            }
         }
         Silence();
         var cfg = store.Get();

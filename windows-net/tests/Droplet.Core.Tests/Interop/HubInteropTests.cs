@@ -36,57 +36,51 @@ public sealed class HubInteropTests : IAsyncLifetime
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>The .NET app as the Windows shell will put it together, with fake platform services.</summary>
+    /// <summary>The .NET app as the Windows shell runs it (<see cref="DropletEngine"/>), with fake platform services.</summary>
     sealed class App : IAsyncDisposable
     {
-        public required ConfigStore Store { get; init; }
-        public required RouteManager Routes { get; init; }
-        public required RemoteDispatcher Dispatcher { get; init; }
-        public required HubLiveSession Live { get; init; }
-        public required HubMeshBridge Bridge { get; init; }
-        public required MeshNode Node { get; init; }
+        public required DropletEngine Engine { get; init; }
         public required FakePlatform Fakes { get; init; }
         public required TestLog Log { get; init; }
+        public MeshNode Node => Engine.Mesh!;
+        public HubLiveSession Live => Engine.Live;
+        public RouteManager Routes => Engine.Routes;
+        public string Downloads { get; init; } = "";
 
-        public static async Task<App> StartAsync(string dir, ConfigStore store)
+        /// <summary>Registers on the hub from this machine (loopback is trusted: no approval) and starts.</summary>
+        public static async Task<(App App, Device Device, HubInfo Info)> JoinAndStartAsync(string dir, LocalHub hub, string name)
         {
+            HubInfo info;
+            using (var anon = new HubClient(hub.Url))
+            {
+                info = await anon.HubInfoAsync();
+            }
+            using var reg = new HubClient(hub.Url);
+            var dev = await reg.RegisterAsync(name);
+            Assert.False(dev.Pending);
+            var paths = new AppPaths(dir);
+            var store = ConfigStore.Open(paths, "");
+            var downloads = Path.Combine(dir, "Downloads");
+            store.Update(c =>
+            {
+                c.HubUrl = hub.Url;
+                c.Hub = HubIdentities.FromInfo(info, PinSources.Lan, hub.Url);
+                (c.DeviceToken, c.DeviceId, c.DeviceName) = (reg.Token, dev.Id, dev.Name);
+                c.DownloadDir = downloads;
+                c.ClipboardSync = true;
+            });
             var log = new TestLog();
             var fakes = new FakePlatform();
-            var routes = new RouteManager(() => HubTarget.Of(store.Get()), logger: log.CreateLogger("droplet.route"));
-            var dispatcher = new RemoteDispatcher(fakes.Services, () => DotNetPeer.AllCaps, () => store.Get().DeviceName ?? "pc", log.CreateLogger("droplet.remote"));
-            HubLiveSession? live = null;
-            live = new HubLiveSession(() =>
+            var engine = await DropletEngine.StartAsync(new EngineOptions
             {
-                var cfg = store.Get();
-                return cfg.Registered && routes.Current is { } r
-                    ? new LiveParams(r.Base, r.Handler(), cfg.DeviceToken!, cfg.Session, cfg.DeviceName ?? "", dispatcher.Offered())
-                    : null;
-            }, dispatcher, "droplet-windows/test", log.CreateLogger("droplet.live"));
-            routes.RouteChanged += _ => live.Reload();
-            var bridge = new HubMeshBridge(store, routes, live, dispatcher, null, log.CreateLogger("droplet.mesh.hub"));
-            var node = new MeshNode(bridge, new MeshOptions
-            {
-                ConfigDir = Path.Combine(dir, "mesh"),
-                DataDir = Path.Combine(dir, "mesh", "data"),
-                Downloads = Path.Combine(dir, "Downloads"),
-                RetryEvery = TimeSpan.FromSeconds(2),
-                LoggerFactory = log,
-            }, dispatcher, fakes.Services);
-            bridge.Node = node;
-            await node.StartAsync();
-            bridge.Start();
-            live.Start();
-            await routes.EnsureAsync();
-            return new App { Store = store, Routes = routes, Dispatcher = dispatcher, Live = live, Bridge = bridge, Node = node, Fakes = fakes, Log = log };
+                Paths = paths, Store = store, Services = fakes.Services, LoggerFactory = log, MeshRetry = TimeSpan.FromSeconds(2),
+                App = "droplet-windows/test",
+            });
+            await engine.Routes.EnsureAsync();
+            return (new App { Engine = engine, Fakes = fakes, Log = log, Downloads = downloads }, dev, info);
         }
 
-        public async ValueTask DisposeAsync()
-        {
-            await Live.DisposeAsync();
-            await Bridge.DisposeAsync();
-            await Node.DisposeAsync();
-            await Dispatcher.DisposeAsync();
-        }
+        public ValueTask DisposeAsync() => Engine.DisposeAsync();
     }
 
     static Task SendAsync(System.Net.WebSockets.ClientWebSocket ws, JsonObject msg) =>
@@ -115,23 +109,8 @@ public sealed class HubInteropTests : IAsyncLifetime
         await using var hub = new LocalHub(HubPort, HubTlsPort);
         await hub.StartAsync();
 
-        // the .NET app joins from the hub machine itself (loopback is trusted: no approval)
-        HubInfo info;
-        using (var anon = new HubClient(hub.Url))
-        {
-            info = await anon.HubInfoAsync();
-        }
-        using var reg = new HubClient(hub.Url);
-        var dev = await reg.RegisterAsync("dotnet-net");
-        Assert.False(dev.Pending);
-        var store = ConfigStore.OpenFile(Path.Combine(root, "n", "config.json"));
-        store.Update(c =>
-        {
-            c.HubUrl = hub.Url;
-            c.Hub = HubIdentities.FromInfo(info, PinSources.Lan, hub.Url);
-            (c.DeviceToken, c.DeviceId, c.DeviceName) = (reg.Token, dev.Id, dev.Name);
-        });
-        await using var app = await App.StartAsync(Path.Combine(root, "n"), store);
+        var (app, dev, info) = await App.JoinAndStartAsync(Path.Combine(root, "n"), hub, "dotnet-net");
+        await using var _ = app;
         // the pinned LAN route wins over the plain URL
         Assert.Equal(RouteKind.Lan, app.Routes.Current!.Kind);
         await Wait.For(() => app.Live.IsLive, 20, "the live connection\n" + app.Log.Text);
@@ -155,6 +134,10 @@ public sealed class HubInteropTests : IAsyncLifetime
         // direct, not through the hub
         var job = app.Node.SendText(a.Fingerprint, "roster hello");
         Assert.Equal("lan", (await app.Node.WaitJobAsync(job.Id, TimeSpan.FromSeconds(30)))!.Route);
+
+        // clipboard sync: a copy here reaches the agent (over the hub and the open link)
+        app.Fakes.Clipboard.Copy("copied on windows");
+        await Wait.For(() => a.Log.Contains("would set 17 characters: 'copied on windows'", StringComparison.Ordinal), 10, "the agent's clipboard");
 
         // remote control through the hub's /ws reaches the same dispatch as over a link:
         // a controller (the agent's device, as a browser would be) sends input to this PC
@@ -214,6 +197,47 @@ public sealed class HubInteropTests : IAsyncLifetime
         var delivered = await app.Node.Outbox.WaitAsync(job.Id, j => j.State == JobState.Done, TimeSpan.FromSeconds(60));
         Assert.Equal((JobState.Done, "lan"), (delivered!.State, delivered.Route));
         Assert.Contains(a.Chat(), m => m.Str("body") == "kept in the outbox");
+    }
+
+    [Fact]
+    public async Task The_poll_loop_saves_the_inbox_shows_messages_and_rings()
+    {
+        await using var hub = new LocalHub(HubPort, HubTlsPort);
+        await hub.StartAsync();
+        var (app, dev, _) = await App.JoinAndStartAsync(Path.Combine(root, "p"), hub, "dotnet-poll");
+        await using var _ = app;
+        using var sender = new HubClient(hub.Url);
+        await sender.RegisterAsync("sender");
+
+        // a file for this PC: saved to the download folder, then removed from the hub
+        await sender.UploadDataAsync(dev.Id, "note.txt", "hello"u8.ToArray(), "text/plain");
+        app.Engine.Poller.Poke();
+        var saved = Path.Combine(app.Downloads, "note.txt");
+        await Wait.For(() => File.Exists(saved), 20, "the inbox file to be saved\n" + app.Log.Text);
+        Assert.Equal("hello", await File.ReadAllTextAsync(saved));
+        Assert.Contains(app.Fakes.Notifications.Shown, n => n.Title == "sender sent note.txt" && n.Buttons.Count == 2);
+        using (var asApp = new HubClient(hub.Url, app.Engine.Store.Get().DeviceToken))
+        {
+            await Wait.For(async () => (await asApp.FilesAsync()).Inbox.Count == 0, 10, "the hub's inbox to be emptied");
+        }
+        Assert.Contains("note.txt|", Assert.Single(app.Engine.Store.Get().InboxSeen), StringComparison.Ordinal);
+
+        // a message: shown once
+        await sender.SendTextAsync(dev.Id, "hi from sender");
+        app.Engine.Poller.Poke();
+        await Wait.For(() => app.Fakes.Notifications.Shown.Any(n => n.Title == "sender" && n.Body == "hi from sender"), 20, "the message");
+        app.Engine.Poller.Poke();
+        await Task.Delay(1000);
+        Assert.Single(app.Fakes.Notifications.Shown, n => n.Body == "hi from sender");
+
+        // a ring: sounds until it's stopped elsewhere
+        await sender.RingDeviceAsync(dev.Id);
+        app.Engine.Poller.Poke();
+        await Wait.For(() => app.Fakes.Sound.Rings == 1, 20, "the ring");
+        Assert.Equal("sender", app.Engine.Poller.Status.RingingFrom);
+        await sender.StopRingDeviceAsync(dev.Id);
+        await Wait.For(() => app.Fakes.Sound.Stops == 1, 20, "the ring to stop");
+        Assert.Null(app.Engine.Poller.Status.RingingFrom);
     }
 
     [Fact]
