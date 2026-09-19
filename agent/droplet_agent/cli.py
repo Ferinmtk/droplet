@@ -22,7 +22,7 @@ DISCOVER_FOR = 3  # seconds setup listens for hubs on the LAN
 
 
 def data_dir() -> Path:
-    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "droplet-agent"
+    return config.data_dir()
 
 
 def unit_path() -> Path:
@@ -246,37 +246,289 @@ def cmd_run(args) -> int:
     _setup_logging(args.verbose)
     log = logging.getLogger("droplet_agent")
     cfg = config.load()
-    if cfg.get("pending"):
-        print("This computer is still waiting to be let in. Run droplet-agent setup to see the code "
-              "and finish.", file=sys.stderr)
-        return 2
-    if not config.is_set_up(cfg):
-        print("Not set up yet. Run: droplet-agent setup", file=sys.stderr)
-        return 2
+    mesh_on = (cfg.get("mesh") or {}).get("enabled", True) is not False
+    linked = config.is_set_up(cfg)
+    if not linked:
+        if cfg.get("pending"):
+            why = ("This computer is still waiting to be let in. Run droplet-agent setup to see the code "
+                   "and finish.")
+        else:
+            why = "Not linked to a hub. Run: droplet-agent setup"
+        if not mesh_on:
+            print(why, file=sys.stderr)
+            return 2
+        log.info("%s Until then, only the mesh runs: devices you pair with directly still work.", why)
     from .agent import Agent
     from .connection import Connection
 
     agent = Agent(cfg, dry_run=args.dry_run, input_backend=args.input)
-    conn = Connection(agent, routes.Router(cfg), cfg["token"])
+    conn = Connection(agent, routes.Router(cfg), cfg["token"]) if linked else None
     stop = agent.stop
 
     def bye(*_):
         stop.set()
-        conn.reconnect()
+        if conn is not None:
+            conn.reconnect()
     signal.signal(signal.SIGTERM, bye)
     signal.signal(signal.SIGINT, bye)
 
     ident = cfg["hub_identity"]
-    log.info("droplet-agent %s for %s, hub %s%s", __version__, cfg["device"].get("name") or "?",
-             f"{ident['name'] or '?'} (id {ident['id']})" if ident.get("id") else cfg["hub"],
-             " (dry run)" if args.dry_run else "")
+    if linked:
+        log.info("droplet-agent %s for %s, hub %s%s", __version__, cfg["device"].get("name") or "?",
+                 f"{ident['name'] or '?'} (id {ident['id']})" if ident.get("id") else cfg["hub"],
+                 " (dry run)" if args.dry_run else "")
+    else:
+        log.info("droplet-agent %s, mesh only%s", __version__, " (dry run)" if args.dry_run else "")
     agent.start()
-    t = threading.Thread(target=conn.run, args=(stop,), name="connection", daemon=True)
-    t.start()
-    while t.is_alive():
-        t.join(0.5)
+    agent.hello()   # what works now; the hub's hello (and the mesh's) say the same
+    node = None
+    if mesh_on:
+        from .mesh_host import start_mesh
+        try:
+            node, host = start_mesh(agent, cfg, dry_run=args.dry_run)
+            host.connection = conn
+        except Exception as e:
+            log.error("the mesh couldn't start, so other devices can't reach this one directly: %s", e)
+    if conn is not None:
+        t = threading.Thread(target=conn.run, args=(stop,), name="connection", daemon=True)
+        t.start()
+        while t.is_alive():
+            t.join(0.5)
+    else:
+        while not stop.wait(0.5):
+            pass
+    if node is not None:
+        node.close()
     agent.close()
     log.info("stopped")
+    return 0
+
+
+# --- the mesh: peers, pairing and sending -----------------------------------
+
+def _ask_agent(request: dict, timeout: float = 30) -> dict | None:
+    from .mesh import control
+    try:
+        out = control.call(request, timeout=timeout)
+    except control.NotRunning:
+        print("The agent isn't running, and these commands go through it. Start it with:\n"
+              "  systemctl --user start droplet-agent     (or: droplet-agent run)", file=sys.stderr)
+        return None
+    except (OSError, ValueError) as e:
+        print(f"Couldn't talk to the agent: {e}", file=sys.stderr)
+        return None
+    if out.get("error"):
+        print(out["error"], file=sys.stderr)
+        return None
+    return out
+
+
+def _short(fp: str) -> str:
+    return fp[:16] if fp else "?"
+
+
+def cmd_peers(args) -> int:
+    st = _ask_agent({"cmd": "status"})
+    if st is None:
+        return 1
+    print(f"this device: {st['name']} (id {st['id']}), mesh port {st['port']}")
+    print(f"fingerprint: {st['fp']}")
+    print()
+    if st["peers"]:
+        print("Trusted:")
+        for p in st["peers"]:
+            how = "paired directly" if p["source"] == "paired" else "from the hub's roster"
+            where = p["link"] or ("on this network" if p["on_lan"] else "not seen")
+            print(f"  {p['name']:<20} {p['id']:<16} {_short(p['fp'])}  {how}; {where}")
+    else:
+        print("No trusted peers yet. Pair with: droplet-agent pair <name or address>")
+    if st["nearby"]:
+        print("\nOn this network, not paired:")
+        for p in st["nearby"]:
+            print(f"  {p['name']:<20} {p['id']:<16} {_short(p['fp'])}  {p['os'] or '?'}, "
+                  f"{', '.join(p['addresses'])} port {p['port']}")
+    if st["incoming"]:
+        print("\nAsking to pair (answer with droplet-agent pair):")
+        for r in st["incoming"]:
+            print(f"  {r['name']:<20} code {r['code']}  request {r['request'][:8]}")
+    if st["outbox"]:
+        print("\nWaiting to be sent:")
+        for j in st["outbox"]:
+            what = j["name"] if j["kind"] == "file" else "a message"
+            print(f"  {what} to {j['peer']}: {j['state']}{' (' + j['error'] + ')' if j.get('error') else ''}")
+    return 0
+
+
+def _pick_request(incoming: list, which: str | None) -> dict | None:
+    if which:
+        found = [r for r in incoming if r["request"].startswith(which) or r["code"] == which
+                 or r["name"].casefold() == which.casefold()]
+        if len(found) != 1:
+            print(f"No single pairing request matches {which!r}.", file=sys.stderr)
+            return None
+        return found[0]
+    if len(incoming) == 1:
+        return incoming[0]
+    print("More than one device is asking; say which (its name, code or request):", file=sys.stderr)
+    for r in incoming:
+        print(f"  {r['name']}  code {r['code']}  request {r['request'][:8]}", file=sys.stderr)
+    return None
+
+
+def _answer(r: dict, accept: bool) -> int:
+    out = _ask_agent({"cmd": "pair-answer", "request": r["request"], "accept": accept})
+    if out is None:
+        return 1
+    print(f"Paired with {out['name']}." if accept else f"Refused {out['name']}.")
+    return 0
+
+
+def cmd_pair(args) -> int:
+    import time as _time
+    if args.accept is not None or args.deny is not None:
+        st = _ask_agent({"cmd": "status"})
+        if st is None:
+            return 1
+        if not st["incoming"]:
+            print("No device is asking to pair right now.", file=sys.stderr)
+            return 1
+        accept = args.accept is not None
+        r = _pick_request(st["incoming"], (args.accept if accept else args.deny) or None)
+        return 1 if r is None else _answer(r, accept)
+    if not args.peer:
+        # the interactive way to answer: show each request and its code
+        st = _ask_agent({"cmd": "status"})
+        if st is None:
+            return 1
+        if not st["incoming"]:
+            print("No device is asking to pair right now. To pair with one: droplet-agent pair <name or address>")
+            return 0
+        for r in st["incoming"]:
+            print(f"{r['name']} ({r['id']}, {r['os'] or 'unknown system'}) wants to pair.")
+            print(f"\n    {r['code']}\n")
+            try:
+                ans = input(f"Does {r['name']} show the same code? Pair with it? [y/N] ").strip().lower()
+            except EOFError:
+                ans = ""
+            _answer(r, ans in ("y", "yes"))
+        return 0
+    out = _ask_agent({"cmd": "pair-start", "target": args.peer}, timeout=30)
+    if out is None:
+        return 1
+    peer = out["peer"]
+    print(f"Pairing with {peer['name']} (id {peer['id']}) at {out['address']}.")
+    print(f"Its certificate: {peer['fp']}")
+    print(f"\n    {out['code']}\n")
+    print(f"On {peer['name']}, accept the request (droplet-agent pair, or its app) if it shows this code.")
+    sys.stdout.flush()
+    try:
+        ans = input("Does it show the same code? [y/N] ").strip().lower()
+    except EOFError:
+        ans = ""
+    yes = ans in ("y", "yes")
+    if _ask_agent({"cmd": "pair-confirm", "request": out["request"], "yes": yes}) is None:
+        return 1
+    if not yes:
+        print("Cancelled; nothing was paired.")
+        return 1
+    print("Waiting for it to accept… (Ctrl+C to stop)", flush=True)
+    while True:
+        st = _ask_agent({"cmd": "pair-status", "request": out["request"]})
+        if st is None:
+            return 1
+        if st["state"] == "accepted":
+            print(f"Paired with {peer['name']}.")
+            return 0
+        if st["state"] != "waiting":
+            print(f"Not paired: the request was {st['state']}.", file=sys.stderr)
+            return 1
+        _time.sleep(1)
+
+
+def cmd_unpair(args) -> int:
+    out = _ask_agent({"cmd": "unpair", "peer": args.peer})
+    if out is None:
+        return 1
+    print(f"Unpaired {out['name']}" + ("; it was told too." if out["told"] else
+                                      "; it wasn't reachable, so it still lists this device until it's unpaired there."))
+    return 0
+
+
+ROUTE_TEXT = {"lan": "directly, over the LAN", "tailnet": "directly, over Tailscale",
+              "hub": "through the hub", "hub-mailbox": "to the hub's mailbox (it's offline)"}
+
+
+def _report_job(job: dict, what: str) -> int:
+    if job["state"] == "done":
+        print(f"{what} {ROUTE_TEXT.get(job['route'], job['route'])}.")
+        return 0
+    if job["state"] == "failed":
+        print(f"{what} failed: {job.get('why')}", file=sys.stderr)
+        return 1
+    print(f"{job['peer']} can't be reached right now ({job.get('why') or 'no route'}). "
+          "It's kept in the outbox and sent as soon as it or the hub can be reached.")
+    return 0
+
+
+def cmd_text(args) -> int:
+    out = _ask_agent({"cmd": "text", "peer": args.peer, "body": args.message, "wait": 30}, timeout=40)
+    return 1 if out is None else _report_job(out, "Sent")
+
+
+def cmd_send_file(args) -> int:
+    status = 0
+    for path in args.paths:
+        p = Path(path).expanduser()
+        if not p.is_file():
+            print(f"{path} isn't a file.", file=sys.stderr)
+            status = 1
+            continue
+        out = _ask_agent({"cmd": "send-file", "peer": args.peer, "path": str(p.resolve()), "wait": 3600},
+                         timeout=3700)
+        if out is None:
+            status = 1
+            continue
+        status |= _report_job(out, f"Sent {p.name}")
+    return status
+
+
+def cmd_ring(args) -> int:
+    out = _ask_agent({"cmd": "ring", "peer": args.peer, "stop": args.stop})
+    if out is None:
+        return 1
+    print(("Stopped ringing it" if args.stop else "Ringing it") + f", {ROUTE_TEXT.get(out['route'], out['route'])}.")
+    return 0
+
+
+def cmd_clip(args) -> int:
+    text = args.text
+    if text is None:
+        mode, why = clip.detect()
+        if mode is None:
+            print(f"Can't read this computer's clipboard: {why}. Or give it: --text '…'", file=sys.stderr)
+            return 1
+        text = clip.ClipboardSync(mode, lambda _t: True).reader()
+        if not text:
+            print("The clipboard holds no text (or a password manager marked it secret).", file=sys.stderr)
+            return 1
+    out = _ask_agent({"cmd": "clip", "peer": args.peer, "text": text})
+    if out is None:
+        return 1
+    print(f"Sent the clipboard, {ROUTE_TEXT.get(out['route'], out['route'])}.")
+    return 0
+
+
+def cmd_send(args) -> int:
+    import json as _json
+    try:
+        msg = _json.loads(args.message)
+    except ValueError as e:
+        print(f"Not JSON: {e}", file=sys.stderr)
+        return 2
+    out = _ask_agent({"cmd": "send", "peer": args.peer, "msg": msg})
+    if out is None:
+        return 1
+    print(f"Sent, {ROUTE_TEXT.get(out['route'], out['route'])}.")
     return 0
 
 
@@ -355,12 +607,57 @@ def cmd_status(args) -> int:
     else:
         print("not set up: run droplet-agent setup")
     print(f"service:  {_service_state()}")
+    _mesh_status(cfg)
     print(f"desktop:  {', '.join(sorted(env.desktops())) or 'unknown'}"
           f" ({'Wayland' if env.is_wayland() else 'X11' if env.x11_display() else 'no display'})")
     print()
     for cap, (ok, why) in _probe_caps(cfg).items():
         print(f"  {'✓' if ok else '✗'} {cap:<10} {why}")
     return 0
+
+
+def _mesh_status(cfg: dict):
+    """The mesh, from its files: nothing is made or changed here."""
+    if (cfg.get("mesh") or {}).get("enabled", True) is False:
+        print("mesh:     off (mesh.enabled is false in the config)")
+        return
+    from .mesh import control
+    from .mesh.identity import fingerprint, pem_to_der
+    cert = config.mesh_config_dir() / "cert.pem"
+    try:
+        fp = fingerprint(pem_to_der(cert.read_text()))
+    except (OSError, ValueError):
+        print("mesh:     no identity yet (made the first time the agent runs)")
+        return
+    try:
+        import json as _json
+        peers = (_json.loads((config.mesh_config_dir() / "trust.json").read_text()).get("peers") or {}).values()
+    except (OSError, ValueError, AttributeError):
+        peers = []
+    peers = list(peers)
+    paired = sum(1 for p in peers if isinstance(p, dict) and p.get("source") == "paired")
+    print(f"mesh:     fingerprint {fp}")
+    print(f"          {len(peers) - paired} peer(s) from the hub's roster, {paired} paired directly; "
+          f"files land in {config.downloads_dir(cfg)}")
+    try:
+        st = control.call({"cmd": "status"}, timeout=5)
+        print(f"          listening on port {st.get('port')}; `droplet-agent peers` for more")
+    except (control.NotRunning, OSError, ValueError):
+        print("          the agent isn't running")
+
+
+def _firewall_blocks_mesh() -> str | None:
+    """The command that opens the mesh ports, if firewalld is running and they're closed."""
+    if not env.which("firewall-cmd"):
+        return None
+    r = env.run(["firewall-cmd", "--state"], timeout=5)
+    if r is None or r.returncode != 0:
+        return None
+    r = env.run(["firewall-cmd", "--list-ports"], timeout=5)
+    listed = r.stdout.decode() if r is not None and r.returncode == 0 else ""
+    if "1739-1749/tcp" in listed:
+        return None
+    return ("sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --reload")
 
 
 # --- doctor ------------------------------------------------------------------
@@ -474,6 +771,14 @@ def cmd_doctor(args) -> int:
         print("  so clipboard sync from this computer may not work. Turn it off with")
         print('  "clipboard": false under "caps" in ' + str(config.config_path()) + "\n")
 
+    if (cfg.get("mesh") or {}).get("enabled", True) is not False:
+        fix = _firewall_blocks_mesh()
+        if fix:
+            problems += 1
+            print("• The firewall (firewalld) may block other devices from reaching this one directly")
+            print("  (the mesh listens on a port from 1739 to 1749). Open them:")
+            print(f"    {fix}\n")
+
     if env.which("systemctl"):
         r = env.run(["systemctl", "--user", "is-active", "--quiet", "graphical-session.target"])
         if r is not None and r.returncode != 0:
@@ -544,6 +849,41 @@ def main(argv=None) -> int:
     r.set_defaults(func=cmd_run)
 
     sub.add_parser("status", help="show what works here and why the rest doesn't").set_defaults(func=cmd_status)
+
+    sub.add_parser("peers", help="devices this one talks to directly, and who's nearby").set_defaults(func=cmd_peers)
+    pr = sub.add_parser("pair", help="pair directly with another device, or answer one asking",
+                        description="With a peer (its name as `peers` shows it, its id, or an address): ask it "
+                                    "to pair; both screens show the same code. With nothing: answer the devices "
+                                    "asking to pair with this one.")
+    pr.add_argument("peer", nargs="?", help="name, id or address[:port] of the device to pair with")
+    g = pr.add_mutually_exclusive_group()
+    g.add_argument("--accept", nargs="?", const="", metavar="WHICH",
+                   help="accept the device asking to pair (its name, code or request, if several ask)")
+    g.add_argument("--deny", nargs="?", const="", metavar="WHICH", help="refuse it")
+    pr.set_defaults(func=cmd_pair)
+    up = sub.add_parser("unpair", help="stop trusting a directly paired device")
+    up.add_argument("peer")
+    up.set_defaults(func=cmd_unpair)
+    tx = sub.add_parser("text", help="send a chat message to a device")
+    tx.add_argument("peer")
+    tx.add_argument("message")
+    tx.set_defaults(func=cmd_text)
+    sf = sub.add_parser("send-file", help="send files to a device")
+    sf.add_argument("peer")
+    sf.add_argument("paths", nargs="+", metavar="path")
+    sf.set_defaults(func=cmd_send_file)
+    rg = sub.add_parser("ring", help="ring a device to find it")
+    rg.add_argument("peer")
+    rg.add_argument("--stop", action="store_true", help="stop ringing it")
+    rg.set_defaults(func=cmd_ring)
+    cp = sub.add_parser("clip", help="send this computer's clipboard to a device")
+    cp.add_argument("peer")
+    cp.add_argument("--text", help="send this text instead of the clipboard")
+    cp.set_defaults(func=cmd_clip)
+    sn = sub.add_parser("send", help="send one input, media or cmd message (docs/remote.md), for scripting")
+    sn.add_argument("peer")
+    sn.add_argument("message", help='JSON, e.g. \'{"t":"input","ev":[{"k":"key","key":"ArrowRight"}]}\'')
+    sn.set_defaults(func=cmd_send)
     sub.add_parser("doctor", help="explain how to fix what's missing").set_defaults(func=cmd_doctor)
     u = sub.add_parser("uninstall", help="stop the service and remove the agent")
     u.add_argument("-y", "--yes", action="store_true", help="don't ask")

@@ -324,3 +324,69 @@ def upload(hub, token: str, to: str, name: str, data: bytes, mime: str = "image/
                              headers={"Authorization": f"Bearer {token}",
                                       "Content-Type": f"multipart/form-data; boundary={boundary}"})
     return _json(resp)
+
+
+# --- the mesh's routes 3 and 4: through the hub, and its mailbox ------------------
+
+def send_text(hub, token: str, to: str, text: str) -> dict:
+    """POST /text to=<device id>: a chat message, kept by the hub for a device that's off."""
+    body = urlencode({"text": text, "to": to}).encode()
+    _, _, resp, _ = _request("POST", hub, "/text", body=body, timeout=30,
+                             headers={"Authorization": f"Bearer {token}",
+                                      "Content-Type": "application/x-www-form-urlencoded"})
+    return _json(resp)
+
+
+class _Multipart:
+    """A multipart body streamed from a file, with its length known up front."""
+
+    def __init__(self, path, name: str, mime: str):
+        self.boundary = "droplet" + secrets.token_hex(12)
+        safe = name.replace('"', "").replace("\r", "").replace("\n", "")
+        self.head = (f"--{self.boundary}\r\nContent-Disposition: form-data; name=\"files\"; "
+                     f"filename=\"{safe}\"\r\nContent-Type: {mime}\r\n\r\n").encode()
+        self.tail = f"\r\n--{self.boundary}--\r\n".encode()
+        self.path = path
+        import os
+        self.length = len(self.head) + os.path.getsize(path) + len(self.tail)
+
+    def __iter__(self):
+        yield self.head
+        with open(self.path, "rb") as f:
+            while True:
+                chunk = f.read(256 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        yield self.tail
+
+
+def upload_file(hub, token: str, to: str, path, name: str, mime: str = "application/octet-stream") -> dict:
+    """POST /upload?to=<device id>, streaming the file rather than reading it into memory."""
+    body = _Multipart(path, name, mime)
+    _, _, resp, _ = _request("POST", hub, f"/upload?to={quote(to, safe='')}", body=body, timeout=600,
+                             headers={"Authorization": f"Bearer {token}",
+                                      "Content-Type": f"multipart/form-data; boundary={body.boundary}",
+                                      "Content-Length": str(body.length)})
+    return _json(resp)
+
+
+def ring(hub, token: str, to: str, stop: bool = False) -> dict:
+    path = f"/api/device/{quote(to, safe='')}/ring" + ("/stop" if stop else "")
+    _, _, resp, _ = _request("POST", hub, path, body=b"{}", timeout=15,
+                             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    return _json(resp)
+
+
+def mesh_announce(hub, token: str, body: dict) -> dict:
+    """POST /api/mesh/announce: this device's mesh identity, for the hub's roster."""
+    _, _, resp, _ = _request("POST", hub, "/api/mesh/announce", body=json.dumps(body).encode(), timeout=15,
+                             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    return _json(resp)
+
+
+def mesh_roster(hub, token: str) -> dict:
+    """GET /api/mesh/roster: every approved device's mesh identity."""
+    _, _, resp, _ = _request("GET", hub, "/api/mesh/roster", timeout=15,
+                             headers={"Authorization": f"Bearer {token}"})
+    return _json(resp)

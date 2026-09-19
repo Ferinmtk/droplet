@@ -924,12 +924,13 @@ import agent_dist  # noqa: E402
 import clipboard  # noqa: E402
 import commands  # noqa: E402
 import media  # noqa: E402
+import mesh  # noqa: E402
 import phone  # noqa: E402
 import remote  # noqa: E402
 import ring  # noqa: E402
 import tv  # noqa: E402
 
-FEATURES: list = [agent_dist, clipboard, commands, media, phone, remote, ring, tv]
+FEATURES: list = [agent_dist, clipboard, commands, media, mesh, phone, remote, ring, tv]
 
 
 
@@ -944,6 +945,10 @@ feature_ctx = SimpleNamespace(
     current_device=current_device,
     sender_name=sender_name,
     presence_hooks=PRESENCE_HOOKS,
+    hub_id=HUB_ID,
+    via_tailnet=via_tailnet,
+    tailnet_url=lambda: TAILNET_URL,
+    tailscale=_tailscale,
 )
 for _feature in FEATURES:
     _feature.register(feature_ctx)

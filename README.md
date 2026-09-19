@@ -158,6 +158,27 @@ trusted one is Tailscale's. So the web app is Tailscale-first. On the plain
 LAN address it still works for the basics, as its own device, once let in.
 The native apps are local-first.
 
+### Devices talk directly (the mesh)
+
+droplet's native apps are **peers**, like KDE Connect: they find each other
+on the Wi-Fi and talk directly over mutual TLS, and over Tailscale when
+you're away.
+
+The hub is an **optional helper**. When it's up, it vouches for your devices
+(every device you've let in trusts the others automatically), and it holds
+messages and files for devices that are off. **When it's down,** chat,
+files, ringing, the clipboard and remote control between your devices keep
+working.
+
+**Without a hub at all,** pair two devices directly: both screens show the
+same four-digit code, protected by a commit-then-reveal exchange so a
+machine in the middle can't fake it.
+
+The **Linux agent** is the first peer (`droplet-agent peers`, `pair`,
+`text`, `send-file`, `ring`, `clip`); Android and Windows follow. Browsers
+still go through the hub. Details: [agent/README.md](agent/README.md) and
+[docs/mesh.md](docs/mesh.md).
+
 ## Tailnet: real HTTPS from anywhere
 
 If the hub is on [Tailscale](https://tailscale.com), droplet can put itself

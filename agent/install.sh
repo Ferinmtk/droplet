@@ -6,7 +6,7 @@
 #
 # The hub fills in its own address below when it serves this script, and
 # the agent itself is downloaded from that hub. Only the agent's small
-# dependencies (websockets, jeepney, zeroconf) come from PyPI.
+# dependencies (websockets, jeepney, zeroconf, cryptography) come from PyPI.
 #
 # Fetched over the LAN's plain http, the agent reads the hub's certificate
 # fingerprint from it, then switches to the hub's LAN HTTPS with that
