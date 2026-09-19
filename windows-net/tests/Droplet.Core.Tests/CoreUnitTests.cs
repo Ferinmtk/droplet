@@ -675,3 +675,24 @@ public sealed class RouteWatchTests
         await run;
     }
 }
+
+public sealed class SetupTests
+{
+    [Fact]
+    public void A_paired_hubs_url_adds_to_its_identity_but_never_changes_the_pin()
+    {
+        var stored = new HubIdentity { Id = "abc", Name = "old", Fingerprint = new string('a', 64), PinSource = PinSources.Lan, Lan = ["10.0.0.2:8443"] };
+        var url = "https://t15.tail7375fe.ts.net";
+
+        var same = HubSetup.MergeUrlIdentity(stored, new HubIdentity { Id = "abc", Name = "t15", Fingerprint = new string('a', 64), PinSource = PinSources.Tailnet }, url);
+        Assert.Equal((url, "t15", PinSources.Tailnet), (same.Tailnet, same.Name, same.PinSource));
+        Assert.Equal(["10.0.0.2:8443"], same.Lan);
+
+        var other = HubSetup.MergeUrlIdentity(stored, new HubIdentity { Id = "abc", Fingerprint = new string('b', 64), PinSource = PinSources.Tailnet }, url);
+        Assert.Equal((new string('a', 64), PinSources.Lan, "old"), (other.Fingerprint, other.PinSource, other.Name));
+
+        var unpinned = HubSetup.MergeUrlIdentity(new HubIdentity { Id = "abc" }, new HubIdentity { Id = "abc", Fingerprint = new string('c', 64), PinSource = PinSources.Tailnet }, url);
+        Assert.Equal((new string('c', 64), PinSources.Tailnet), (unpinned.Fingerprint, unpinned.PinSource));
+        Assert.Empty(stored.Tailnet ?? ""); // the stored one is untouched
+    }
+}

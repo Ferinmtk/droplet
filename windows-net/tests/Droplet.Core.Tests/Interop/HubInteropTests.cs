@@ -311,4 +311,48 @@ public sealed class HubInteropTests : IAsyncLifetime
         Assert.Null(store2.Get().DeviceToken);
         Assert.False(store2.Get().Pending);
     }
+    [Fact]
+    public async Task Setting_up_by_address_registers_renames_and_refuses_a_taken_name()
+    {
+        await using var hub = new LocalHub(HubPort, HubTlsPort);
+        await hub.StartAsync();
+        var store = ConfigStore.OpenFile(Path.Combine(root, "s1", "config.json"));
+        var routes = new RouteManager(() => HubTarget.Of(store.Get()));
+        var setup = new HubSetup(store, routes);
+
+        // nothing set up and no address: the form says where to look
+        var none = await Assert.ThrowsAsync<FieldException>(() => setup.SetupAsync(null, "net-setup"));
+        Assert.Equal("hub_url", none.Field);
+
+        // by address (this machine is trusted by the hub, as tailnet members are): let in at once
+        var res = await setup.SetupAsync(hub.Url + "/", "net-setup");
+        Assert.False(res.Pending);
+        var cfg = store.Get();
+        Assert.True(cfg.Registered);
+        Assert.Equal(hub.Url, cfg.HubUrl);
+        Assert.Equal("net-setup", cfg.DeviceName);
+        var id = cfg.DeviceId;
+        using (var c = new HubClient(hub.Url, cfg.DeviceToken))
+        {
+            Assert.Equal(id, (await c.FilesAsync()).Self?.Id);
+        }
+
+        // renaming keeps the device, along the current route
+        res = await setup.SetupAsync(null, "net-renamed");
+        Assert.Equal("net-renamed", res.Name);
+        Assert.Equal((id, "net-renamed"), (store.Get().DeviceId, store.Get().DeviceName));
+        using (var c = new HubClient(hub.Url, store.Get().DeviceToken))
+        {
+            Assert.Equal("net-renamed", (await c.FilesAsync()).Self?.Name);
+        }
+
+        // another device's name is refused, and nothing changes
+        using (var other = new HubClient(hub.Url))
+        {
+            await other.RegisterAsync("net-other");
+        }
+        var taken = await Assert.ThrowsAsync<FieldException>(() => setup.SetupAsync(hub.Url, "net-other"));
+        Assert.Equal("name", taken.Field);
+        Assert.Equal("net-renamed", store.Get().DeviceName);
+    }
 }
