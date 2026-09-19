@@ -236,8 +236,18 @@
                 android:gravity="center"
                 android:orientation="horizontal" />
 
-            <!-- volume and channel rockers, mute and input between them -->
+            <!-- the simple view's volume: down, mute, up, big and side by side -->
             <LinearLayout
+                android:id="@+id/simple_volume"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:orientation="horizontal" />
+
+            <!-- volume and channel rockers, mute and input between them (the full view) -->
+            <LinearLayout
+                android:id="@+id/rockers"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
@@ -273,6 +283,22 @@
                 android:layout_marginTop="16dp"
                 android:gravity="center"
                 android:orientation="horizontal" />
+
+            <!-- More / Fewer buttons: the choice is remembered -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/more_toggle"
+                style="@style/Droplet.Teal.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:text="@string/tv_show_more" />
+
+            <!-- the full view: typing, apps, more buttons, this remote -->
+            <LinearLayout
+                android:id="@+id/more_sections"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
             <!-- typing -->
             <TextView
@@ -490,6 +516,7 @@
                     android:layout_marginTop="6dp"
                     android:text="@string/tv_forget"
                     android:textColor="@color/r_coral" />
+            </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </ScrollView>

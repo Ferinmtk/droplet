@@ -178,6 +178,21 @@
                 android:value="false" />
         </service>
 
+        <!-- the TV remote, one tap from the quick settings -->
+        <service
+            android:name=".tv.TvTileService"
+            android:exported="true"
+            android:icon="@drawable/tv_ic_tv"
+            android:label="@string/tv_title"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="false" />
+        </service>
+
         <activity
             android:name=".RingActivity"
             android:excludeFromRecents="true"

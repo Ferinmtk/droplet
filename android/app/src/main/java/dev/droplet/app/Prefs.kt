@@ -211,6 +211,11 @@ object Prefs {
         get() = sp.getBoolean("tv_touchpad", false)
         set(v) = sp.edit { putBoolean("tv_touchpad", v) }
 
+    /** The TV remote shows every button, not just the essentials. */
+    var tvMore: Boolean
+        get() = sp.getBoolean("tv_more", false)
+        set(v) = sp.edit { putBoolean("tv_more", v) }
+
     /** The TV remote vibrates on each press. */
     var tvHaptics: Boolean
         get() = sp.getBoolean("tv_haptics", true)

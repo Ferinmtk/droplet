@@ -416,15 +416,20 @@ connection state machine against a fake stack. They can't show:
 
 ## TV remote
 
-Settings → **TV remote**, the **TVs** list on the devices screen, the
-**TV remote** shortcut on droplet's launcher icon (long-press it), or **TV
-remote** on the "can't reach the hub" screen. The phone talks to the TV
+One tap from anywhere: the **TV remote** quick-settings tile (add it from
+the tile editor), the **TV remote** shortcut on droplet's launcher icon
+(long-press it), Settings → **TV remote**, the **TVs** list on the devices
+screen, or **TV remote** on the "can't reach the hub" screen. It opens on the
+last TV and connects by itself; the header says "Connecting…" meanwhile. The phone talks to the TV
 itself, over Google's Android TV Remote protocol v2 (what the Google TV
 phone app uses), so it works when the hub is off or away.
 
 **Pairing.** The first time, **Find my TV** lists the Android TV and Google
 TV sets announcing themselves on the Wi-Fi (`_androidtvremote2._tcp`); tap
-yours, and the TV shows a 6-character code (digits and A-F). Type it in. A
+yours. When nothing is paired yet and there's exactly one TV around, it's
+asked without a tap. "Look at your TV": it shows 6 characters (digits and
+A-F); type them into the six boxes (they advance by themselves, and a paste
+works). The sixth character sends the code, and a match opens the remote. A
 TV that doesn't show up (mDNS blocked by the router, another subnet) can be
 added by its IP address; only private, link-local and Tailscale addresses
 are accepted, as on the hub.
@@ -444,7 +449,10 @@ working as before; the phone is paired separately, with its own certificate,
 and the TV lists it as a remote of its own, named "droplet (<phone>)".
 Pairing or forgetting one doesn't touch the other.
 
-**The remote:** a round D-pad with OK (hold OK for a long press), or a
+**The remote** opens in a **simple view**: just the round D-pad with OK,
+Back, Home, volume down, mute and volume up, and Power in the header, large
+enough for a thumb. **More buttons** adds everything else, and the choice is
+remembered: a D-pad with OK (hold OK for a long press), or a
 touchpad (swipe to move, one step every 34 dp, tap for OK, hold for a long
 OK); Back and Home (both long-press when held), Menu; volume and channel
 rockers and arrows that repeat while held; mute and input; rewind, previous,
@@ -455,8 +463,8 @@ hub's) and an https link box; numbers, Info, Guide, TV settings and Stop.
 While the screen is open, the phone's **volume keys** set the TV's volume
 (the phone's own volume when the TV isn't connected). The header shows the
 TV's state: on and the app in front, standby, connecting, can't reach, or
-needs pairing, with the volume under it. Presses vibrate (a switch turns
-that off).
+needs pairing, with the volume under it. Every press vibrates as the finger
+lands (a switch in the full view turns that off).
 
 **Power.** Connected, Power toggles the TV between on and standby. Not
 connected, it sends a Wake-on-LAN packet to the MAC in the TV's certificate
@@ -513,15 +521,18 @@ Home and Back work on a TV paired over Bluetooth; the TV remote links to it.
 The JVM tests pair with and drive `tests/fake_tv.py`, a pretend Google TV
 built from the library's own protobufs, over real TLS. What it can't show:
 
-1. **Find my TV** on the phone lists the TCL (as "Living room TV") on the
-   home Wi-Fi.
-2. Tap it: a code appears on the TV. Type one character wrong: the phone
-   says the code doesn't match and the TV keeps showing it. Type it right:
-   "Paired with Living room TV".
+1. Open the TV remote (the tile, the shortcut or Settings). With the TCL the
+   only TV on the Wi-Fi, it's asked for a code by itself; otherwise **Find my
+   TV** lists it as "Living room TV".
+2. A code appears on the TV. Type one character wrong: the phone says the
+   code didn't match, clears the boxes, and the TV keeps showing it. Type it
+   right: the remote opens, "Paired with Living room TV".
 3. On the TV, Settings → Remotes & Accessories (or System → About → the
    remote list, depending on the firmware): droplet on the phone shows as a
    remote next to the hub's.
-4. The remote: the header says "On · Home" and shows the volume. Try the
+4. The remote opens in the simple view. The header says "On · Home" and
+   shows the volume. Close and reopen it: it connects by itself. In **More
+   buttons**, try the
    D-pad (each arrow held repeats), OK, OK held (a long press: options on a
    tile), Back, Home, Home held, Menu, the rockers, mute, input, the media
    keys in YouTube, the touchpad, and the phone's volume keys.
@@ -707,9 +718,11 @@ adb shell cmd notification post -t 'Title' tag 'Some text'
   TV forgetting droplet (then pairing again); another TV at the same address;
   and the app's TV list marking a TV that forgot it.
 - **`TvScreensTest`**: with the fake TV, pairing and driving it through the
-  screens themselves (Find my TV, a mistyped then a right code, the D-pad,
-  Home, play/pause, the phone's volume keys, typing, an app tile, power,
-  "Pair again"); with `DROPLET_SHOTS`, the TV screens as PNGs.
+  screens themselves (the only TV asked without a tap, a mistyped code
+  refused and cleared, the right one sent by its sixth character, then the
+  D-pad, Home, play/pause, the phone's volume keys, typing, an app tile,
+  power, "Pair again"); the simple and full views; with `DROPLET_SHOTS`,
+  the TV screens as PNGs.
 - **`ScreensTest`** renders the remote, Settings, setup, the pairing code,
   the offline screen and the Bluetooth screens to PNGs for review.
 

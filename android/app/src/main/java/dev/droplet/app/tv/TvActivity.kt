@@ -81,11 +81,18 @@ class TvActivity : AppCompatActivity() {
 
         setUpStage()
         setUpNav()
+        setUpSimpleVolume()
         setUpRockers()
         setUpMedia()
         setUpTyping()
         setUpApps()
         setUpMore()
+        b.moreToggle.setOnClickListener {
+            Prefs.tvMore = !Prefs.tvMore
+            applyView()
+            haptic(it, HapticFeedbackConstants.KEYBOARD_TAP)
+        }
+        applyView()
 
         b.haptics.isChecked = Prefs.tvHaptics
         b.haptics.setOnCheckedChangeListener { v, on ->
@@ -210,6 +217,7 @@ class TvActivity : AppCompatActivity() {
                     main.postDelayed(again, REPEAT_DELAY_MS)
                 }
                 Mode.HOLD -> {
+                    haptic(v, HapticFeedbackConstants.KEYBOARD_TAP)
                     val timer = Runnable {
                         holdTimer = null
                         val l = link()
@@ -235,7 +243,7 @@ class TvActivity : AppCompatActivity() {
                 if (pending != null) {
                     main.removeCallbacks(pending)
                     holdTimer = null
-                    if (!cancelled) send(key, feedback = v)
+                    if (!cancelled) send(key, feedback = null)   // felt already, on touch
                 }
                 long?.let { lp -> Tv.link.value?.endLong(lp) }
                 long = null
@@ -332,12 +340,11 @@ class TvActivity : AppCompatActivity() {
         }
         controls += b.dpad
         controls += b.pad
-        showMode(Prefs.tvTouchpad)
         b.mode.check(if (Prefs.tvTouchpad) R.id.mode_pad else R.id.mode_buttons)
         b.mode.addOnButtonCheckedListener { _, id, checked ->
             if (!checked) return@addOnButtonCheckedListener
             Prefs.tvTouchpad = id == R.id.mode_pad
-            showMode(Prefs.tvTouchpad)
+            showMode(Prefs.tvMore && Prefs.tvTouchpad)
         }
     }
 
@@ -356,8 +363,47 @@ class TvActivity : AppCompatActivity() {
             val k = roundKey(icon, label, 60)
             // Back and Home long-press, as on the TV's own remote (Home held: the quick settings on Google TV)
             bind(k, key, if (key == "MENU") Mode.TAP else Mode.HOLD)
-            b.nav.addView(captioned(k, label), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            val cell = captioned(k, label)
+            if (key == "MENU") menuCell = cell
+            b.nav.addView(cell, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
+    }
+
+    private var menuCell: View? = null
+
+    /** The simple view's volume: down, mute and up, big, on one row. */
+    private fun setUpSimpleVolume() {
+        val keys = listOf(
+            Triple(R.drawable.tv_ic_minus, R.string.tv_vol_down, "VOLUME_DOWN"),
+            Triple(R.drawable.tv_ic_muted, R.string.tv_mute, "MUTE"),
+            Triple(R.drawable.tv_ic_plus, R.string.tv_vol_up, "VOLUME_UP"),
+        )
+        for ((icon, label, key) in keys) {
+            val k = roundKey(icon, label, 64)
+            bind(k, key, if (key == "MUTE") Mode.TAP else Mode.REPEAT)
+            if (key == "MUTE") muteKeys += k
+            b.simpleVolume.addView(captioned(k, label), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+    }
+
+    /**
+     * The simple view (the default) shows only the essentials, big: the
+     * D-pad, Back and Home, volume and mute, and power in the header.
+     * "More buttons" adds the rest; the choice is remembered.
+     */
+    private fun applyView() {
+        val more = Prefs.tvMore
+        val full = if (more) View.VISIBLE else View.GONE
+        val simple = if (more) View.GONE else View.VISIBLE
+        b.mode.visibility = full
+        b.rockers.visibility = full
+        b.media.visibility = full
+        b.moreSections.visibility = full
+        menuCell?.visibility = full
+        b.simpleVolume.visibility = simple
+        b.moreToggle.setText(if (more) R.string.tv_show_fewer else R.string.tv_show_more)
+        // the touchpad is part of the full view
+        showMode(more && Prefs.tvTouchpad)
     }
 
     private fun setUpRockers() {
@@ -384,7 +430,7 @@ class TvActivity : AppCompatActivity() {
             R.string.tv_ch_up, R.string.tv_ch_down)
         val mute = roundKey(R.drawable.tv_ic_muted, R.string.tv_mute, 52)
         bind(mute, "MUTE")
-        muteKey = mute
+        muteKeys += mute
         b.middle.addView(captioned(mute, R.string.tv_mute))
         val input = roundKey(R.drawable.tv_ic_input, R.string.tv_input, 52)
         bind(input, "TV_INPUT")
@@ -392,7 +438,7 @@ class TvActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = (14 * px).toInt() })
     }
 
-    private var muteKey: MaterialButton? = null
+    private val muteKeys = mutableListOf<MaterialButton>()
 
     private fun setUpMedia() {
         val keys = listOf(
@@ -713,7 +759,7 @@ class TvActivity : AppCompatActivity() {
             b.volumeIcon.setImageResource(if (v.muted) R.drawable.tv_ic_muted else R.drawable.tv_ic_vol)
             b.volumeRow.contentDescription = if (v.muted) getString(R.string.tv_volume_muted) else getString(R.string.tv_volume, v.level, v.max)
         }
-        muteKey?.iconTint = ColorStateList.valueOf(color(if (v?.muted == true) R.color.r_coral else R.color.r_text))
+        muteKeys.forEach { it.iconTint = ColorStateList.valueOf(color(if (v?.muted == true) R.color.r_coral else R.color.r_text)) }
 
         // the banner: pair again, or it isn't answering
         when {

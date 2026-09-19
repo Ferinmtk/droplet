@@ -13,6 +13,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -71,20 +72,24 @@ class TvPairActivity : AppCompatActivity() {
         b.code.setOnEditorActionListener { _, action, _ ->
             if (action == EditorInfo.IME_ACTION_DONE) { finishPairing(); true } else false
         }
+        makeBoxes()
         b.code.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
                 val up = s.toString().uppercase()
-                if (up != s.toString()) s?.replace(0, s.length, up)
+                if (up != s.toString()) {
+                    s?.replace(0, s.length, up)
+                    return   // this runs again with the capitals
+                }
                 b.codeError.visibility = View.GONE
+                showBoxes()
+                // the sixth character sends it: nothing more to tap
+                if (up.length == CODE_LENGTH && !busy) finishPairing()
             }
         })
+        b.code.setOnFocusChangeListener { _, _ -> showBoxes() }
         b.startAgain.setOnClickListener { lastTarget?.invoke() ?: showFind() }
-        b.openRemote.setOnClickListener {
-            startActivity(TvActivity.intent(this).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
-            finish()
-        }
 
         val s = session
         when {
@@ -110,7 +115,7 @@ class TvPairActivity : AppCompatActivity() {
     // --- find ----------------------------------------------------------------------------------
 
     private fun show(step: View) {
-        for (v in listOf(b.stepFind, b.stepBusy, b.stepCode, b.stepDone)) v.visibility = if (v === step) View.VISIBLE else View.GONE
+        for (v in listOf(b.stepFind, b.stepBusy, b.stepCode)) v.visibility = if (v === step) View.VISIBLE else View.GONE
     }
 
     private fun showFind(error: String? = null) {
@@ -134,6 +139,58 @@ class TvPairActivity : AppCompatActivity() {
             })
         }
         if (settled || b.foundNone.visibility == View.VISIBLE) b.foundNone.visibility = if (found.isEmpty()) View.VISIBLE else View.GONE
+        maybeAutoPair()
+    }
+
+    /**
+     * Nothing paired yet and exactly one TV on the Wi-Fi: that's the one.
+     * After a short wait (a second TV may still be answering), ask it for a
+     * code without a tap. Once per screen, and never over what the user is doing.
+     */
+    private fun maybeAutoPair() {
+        if (autoTried || intent.getBooleanExtra(EXTRA_FIND, false) || Tv.tvs().isNotEmpty()) return
+        if (found.size != 1 || b.ip.text.isNotEmpty()) return
+        autoTried = true
+        b.found.postDelayed({
+            val only = found.singleOrNull()
+            if (!isDestroyed && only != null && !busy && b.stepFind.visibility == View.VISIBLE && b.ip.text.isEmpty()) {
+                start(only.host, only.port, only.name, only.mac, only.service)
+            }
+        }, AUTO_PAIR_WAIT_MS)
+    }
+
+    private var autoTried = false
+
+    // --- the code boxes ------------------------------------------------------------------------
+
+    private val boxes = mutableListOf<TextView>()
+
+    private fun makeBoxes() {
+        val px = resources.displayMetrics.density
+        repeat(CODE_LENGTH) { i ->
+            val t = TextView(this).apply {
+                gravity = Gravity.CENTER
+                textSize = 30f
+                setTypeface(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+                setTextColor(ContextCompat.getColor(this@TvPairActivity, R.color.r_text))
+            }
+            boxes += t
+            b.codeBoxes.addView(t, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+                if (i > 0) marginStart = (8 * px).toInt()
+            })
+        }
+        showBoxes()
+    }
+
+    /** Each box shows its character; the next one to type has the aqua ring. */
+    private fun showBoxes() {
+        val text = b.code.text?.toString().orEmpty()
+        val focused = b.code.hasFocus()
+        boxes.forEachIndexed { i, t ->
+            t.text = text.getOrNull(i)?.toString() ?: ""
+            val current = focused && (i == text.length || (i == CODE_LENGTH - 1 && text.length == CODE_LENGTH))
+            t.background = ContextCompat.getDrawable(this, if (current) R.drawable.r_code else R.drawable.r_field)
+        }
     }
 
     private fun row(name: String, sub: String, onClick: () -> Unit): View {
@@ -235,6 +292,7 @@ class TvPairActivity : AppCompatActivity() {
     }
 
     private fun showCode(s: Session, error: String?, over: Boolean = false) {
+        if (b.stepCode.visibility != View.VISIBLE) b.code.text = null
         show(b.stepCode)
         b.codeBody.text = getString(R.string.tv_code_body, s.name)
         b.codeError.text = error
@@ -242,6 +300,7 @@ class TvPairActivity : AppCompatActivity() {
         b.pair.visibility = if (over) View.GONE else View.VISIBLE
         b.code.isEnabled = !over
         b.startAgain.visibility = if (over) View.VISIBLE else View.GONE
+        showBoxes()
         if (!over) {
             b.code.requestFocus()
             getSystemService(InputMethodManager::class.java)?.showSoftInput(b.code, 0)
@@ -285,14 +344,16 @@ class TvPairActivity : AppCompatActivity() {
                         endSession()
                         showCode(s, getString(R.string.tv_err_wrong_code_last), over = true)
                     } else {
-                        b.code.selectAll()
+                        b.code.text = null   // first: an edit hides the error line
                         showCode(s, getString(R.string.tv_err_wrong_code))
                     }
                 } else {
+                    // paired: straight to the remote
                     session = null
                     hideKeyboard()
-                    b.doneTitle.text = getString(R.string.tv_paired_title, tv.name)
-                    show(b.stepDone)
+                    Toast.makeText(this@TvPairActivity, getString(R.string.tv_paired_title, tv.name), Toast.LENGTH_SHORT).show()
+                    startActivity(TvActivity.intent(this@TvPairActivity).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+                    finish()
                 }
             }.onFailure {
                 endSession()
@@ -322,6 +383,8 @@ class TvPairActivity : AppCompatActivity() {
         private const val PAIR_TTL_MS = 300_000L
         private const val MAX_TRIES = 5
         private const val NONE_FOUND_MS = 6_000L
+        private const val AUTO_PAIR_WAIT_MS = 1_500L
+        private const val CODE_LENGTH = 6
 
         /** One pairing at a time, for the whole app. */
         @Volatile private var session: Session? = null

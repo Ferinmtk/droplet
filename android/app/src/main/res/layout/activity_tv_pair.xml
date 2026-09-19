@@ -207,26 +207,35 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" />
 
-                <EditText
-                    android:id="@+id/code"
+<!-- six boxes; the field on top takes the typing (and a paste) and is invisible -->
+                <FrameLayout
                     android:layout_width="match_parent"
-                    android:layout_height="80dp"
-                    android:layout_marginTop="22dp"
-                    android:autofillHints=""
-                    android:background="@drawable/r_code"
-                    android:digits="0123456789abcdefABCDEF"
-                    android:fontFamily="monospace"
-                    android:gravity="center"
-                    android:hint="@string/tv_code_hint"
-                    android:imeOptions="actionDone"
-                    android:inputType="textCapCharacters|textNoSuggestions|textVisiblePassword"
-                    android:letterSpacing="0.35"
-                    android:maxLength="6"
-                    android:textColor="@color/r_text"
-                    android:textColorHint="@color/r_line_2"
-                    android:textSize="34sp"
-                    android:textStyle="bold"
-                    tools:ignore="TextFields" />
+                    android:layout_height="72dp"
+                    android:layout_marginTop="22dp">
+
+                    <LinearLayout
+                        android:id="@+id/code_boxes"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:importantForAccessibility="noHideDescendants"
+                        android:orientation="horizontal" />
+
+                    <EditText
+                        android:id="@+id/code"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:autofillHints=""
+                        android:background="@null"
+                        android:contentDescription="@string/tv_code_desc"
+                        android:cursorVisible="false"
+                        android:digits="0123456789abcdefABCDEF"
+                        android:imeOptions="actionDone"
+                        android:inputType="textCapCharacters|textNoSuggestions|textVisiblePassword"
+                        android:maxLength="6"
+                        android:textColor="@android:color/transparent"
+                        android:textIsSelectable="false"
+                        tools:ignore="TextFields" />
+                </FrameLayout>
 
                 <TextView
                     android:id="@+id/code_error"
@@ -263,36 +272,6 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
-            <!-- ============ done ============ -->
-            <LinearLayout
-                android:id="@+id/step_done"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingTop="24dp"
-                android:visibility="gone">
-
-                <TextView
-                    android:id="@+id/done_title"
-                    style="@style/Droplet.Teal.Title"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-
-                <TextView
-                    style="@style/Droplet.Teal.Body"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="@string/tv_paired_body" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/open_remote"
-                    style="@style/Droplet.Teal.Primary"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="22dp"
-                    android:text="@string/tv_open_remote" />
-            </LinearLayout>
         </FrameLayout>
     </ScrollView>
 </LinearLayout>

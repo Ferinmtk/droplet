@@ -128,22 +128,35 @@ class TvScreensTest {
         find.findViewById<View>(R.id.step_find).visibility = View.GONE
         find.findViewById<View>(R.id.step_code).visibility = View.VISIBLE
         find.findViewById<TextView>(R.id.code_body).text = find.getString(R.string.tv_code_body, "Living room TV")
+        find.findViewById<View>(R.id.code).requestFocus()
         find.findViewById<TextView>(R.id.code).text = "4F2"
         find.findViewById<TextView>(R.id.code_error).apply { setText(R.string.tv_err_wrong_code); visibility = View.VISIBLE }
         shoot(find, "tv-code")
 
         Tv.store.put(PairedTv("a1b2c3d4", "Living room TV", "192.0.2.1", mac = "0c:79:55:8f:ef:36", pin = "ab".repeat(32),
             model = "TCL 43P635"))
+        Prefs.tvMore = false
         val remoteCtl = Robolectric.buildActivity(TvActivity::class.java).setup()
         val remote = remoteCtl.get()
+        // the simple view first: the essentials only
+        assertFalse(remote.findViewById<View>(R.id.more_sections).isShown)
+        assertFalse(remote.findViewById<View>(R.id.mode).isShown)
+        assertTrue(remote.findViewById<View>(R.id.simple_volume).isShown)
+        shoot(remote, "tv-remote-simple")
         waitFor("the unreachable banner", 15_000) { remote.findViewById<View>(R.id.banner).isShown }
-        shoot(remote, "tv-remote-unreachable")
+        shoot(remote, "tv-remote-simple-unreachable")
+        remote.findViewById<View>(R.id.more_toggle).performClick()
+        assertTrue(Prefs.tvMore)
+        assertTrue(remote.findViewById<View>(R.id.more_sections).isShown)
+        assertFalse(remote.findViewById<View>(R.id.simple_volume).isShown)
+        shoot(remote, "tv-remote-full")
         remote.findViewById<android.widget.ScrollView>(R.id.scroll).scrollTo(0, 2000)
         shoot(remote, "tv-remote-lower")
         remote.findViewById<android.widget.ScrollView>(R.id.scroll).scrollTo(0, 0)
         remote.findViewById<View>(R.id.mode_pad).performClick()
         shoot(remote, "tv-remote-touchpad")
         Prefs.tvTouchpad = false
+        Prefs.tvMore = false
         remoteCtl.pause().stop().destroy()
     }
 
@@ -183,35 +196,37 @@ class TvScreensTest {
         val next = shadowOf(first.get()).nextStartedActivity
         assertEquals(TvPairActivity::class.java.name, next.component?.className)
 
-        // Find my TV: tap the fake, and it shows a code
+        // Find my TV: the only TV on the Wi-Fi is asked for a code without a tap
         val pair = Robolectric.buildActivity(TvPairActivity::class.java, next).setup().get()
-        one(pair, "Fake Google TV").let { row -> (generateSequence(row) { it.parent as? View }.first { it.hasOnClickListeners() }).performClick() }
+        one(pair, "Fake Google TV")
+        idleFor(2_000)
         waitFor("the code step") { pair.findViewById<View>(R.id.step_code).isShown }
+        shoot(pair, "tv-code-live")
         waitFor("a code on the TV") { state().optString("code").length == 6 }
         val code = state().getString("code")
 
         // a typo: refused on the phone, the TV keeps its code up
         val codeField = pair.findViewById<TextView>(R.id.code)
-        codeField.text = (if (code[0] == 'F') "0" else "F") + code.substring(1)
-        pair.findViewById<View>(R.id.pair).performClick()
+        codeField.text = (if (code[0] == 'F') "0" else "F") + code.substring(1)   // the sixth character sends it
         waitFor("the wrong-code message") { pair.findViewById<TextView>(R.id.code_error).isShown }
+        assertEquals("", codeField.text.toString())   // cleared for another try
         assertEquals(pair.getString(R.string.tv_err_wrong_code), pair.findViewById<TextView>(R.id.code_error).text.toString())
         assertEquals(code, state().optString("code"))
 
         // typed again, in lower case: it pairs
         codeField.text = code.lowercase()
         assertEquals(code, codeField.text.toString())   // shown in capitals
-        pair.findViewById<View>(R.id.pair).performClick()
-        waitFor("paired") { pair.findViewById<View>(R.id.step_done).isShown }
+        waitFor("paired") { pair.isFinishing }
         assertTrue(state().getBoolean("paired"))
         val saved = Tv.tvs().single()
         assertEquals("Fake Google TV", saved.name)
         assertEquals("aa:bb:cc:dd:ee:01", saved.mac)   // from the TV's certificate, for Wake-on-LAN
-        pair.findViewById<View>(R.id.open_remote).performClick()
+        // straight to the remote
         val open = shadowOf(pair).nextStartedActivity
         assertEquals(TvActivity::class.java.name, open.component?.className)
 
-        // the remote: connects, shows the TV's state
+        // the remote: connects, shows the TV's state; the full view, for the media keys, typing and apps
+        Prefs.tvMore = true
         val ctl = Robolectric.buildActivity(TvActivity::class.java, open).setup()
         val remote = ctl.get()
         waitFor("connected") { remote.findViewById<TextView>(R.id.state).text.toString().startsWith("On") }
@@ -261,5 +276,6 @@ class TvScreensTest {
         assertEquals(TvPairActivity::class.java.name, again.component?.className)
         assertEquals("127.0.0.1", again.getStringExtra(TvPairActivity.EXTRA_HOST))
         ctl.pause().stop().destroy()
+        Prefs.tvMore = false
     }
 }
