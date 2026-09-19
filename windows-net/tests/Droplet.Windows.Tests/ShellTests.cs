@@ -1,3 +1,4 @@
+using System.IO;
 using System.Buffers.Binary;
 using System.Xml.Linq;
 using Droplet.Core.Config;

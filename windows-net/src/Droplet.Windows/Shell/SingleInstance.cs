@@ -19,6 +19,8 @@ internal sealed class SingleInstance : IDisposable
     /// <summary>The Go app's mutex: the two shouldn't run at once.</summary>
     const string GoAppMutex = @"Local\droplet-companion";
 
+    static readonly byte[] Ok = [1];
+
     readonly Mutex mutex;
     readonly CancellationTokenSource stop = new();
 
@@ -106,7 +108,7 @@ internal sealed class SingleInstance : IDisposable
                     {
                         handle(req with { Cwd = req.Cwd ?? "" });
                     }
-                    await server.WriteAsync(new byte[] { 1 }, timeout.Token).ConfigureAwait(false);
+                    await server.WriteAsync(Ok, timeout.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (stop.IsCancellationRequested)
                 {

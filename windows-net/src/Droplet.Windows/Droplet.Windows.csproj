@@ -30,12 +30,19 @@
     <!--
       WPF0001: ThemeMode (the Fluent theme that follows the system's light and dark
       setting) is marked experimental in the SDK; it's the supported way to get it.
-      CA1416 is kept: everything here targets Windows 10 2004 and later.
+      CA2007: UI code must come back to the dispatcher after an await, so no ConfigureAwait(false)
+      there (the background services use it).
+      CA1515: WPF binds only to public types, and XAML classes are public.
     -->
-    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+    <NoWarn>$(NoWarn);WPF0001;CA2007;CA1515</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Droplet.Core/Droplet.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Program.Main starts the app (single instance first), so App.xaml mustn't generate a Main of its own -->
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\droplet.ico" />
