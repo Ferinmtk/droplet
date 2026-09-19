@@ -30,7 +30,9 @@ import org.json.JSONObject
 import java.io.IOException
 
 /**
- * "Stay connected": a foreground service that asks the hub every 15 seconds
+ * "Stay connected": a foreground service that runs the mesh peer server (so
+ * paired devices reach the phone directly, with or without a hub) and, with
+ * a hub, asks the hub every 15 seconds
  * whether another device is ringing this phone, and (optionally) whether
  * files or messages have arrived for it. It also reports the battery.
  *
@@ -80,6 +82,10 @@ class ConnectionService : Service() {
                 if (came) kick()
             }
         }
+        // with no hub, the notification follows the mesh (a device paired, the server up)
+        scope.launch {
+            Mesh.state.collect { if (!Prefs.hasHub && networkUp) setState(directState()) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -128,8 +134,8 @@ class ConnectionService : Service() {
             return
         }
         if (!Prefs.hasHub) {
-            // no hub: only direct connections to paired devices
-            setState(getString(R.string.conn_mesh_only))
+            // no hub: this phone is a peer for its directly paired devices, and that's all it needs
+            setState(directState())
             Mesh.node?.kick()
             return
         }
@@ -164,6 +170,18 @@ class ConnectionService : Service() {
         }
     }
 
+    /** What the notification says with no hub: ready, and for how many devices. */
+    private fun directState(): String {
+        val n = Mesh.state.value
+        return when {
+            !Prefs.meshEnabled -> getString(R.string.mesh_status_off)
+            n.status == Mesh.Status.FAILED -> getString(R.string.mesh_status_failed, n.error.orEmpty())
+            n.status != Mesh.Status.RUNNING -> getString(R.string.conn_connecting)
+            n.peers == 0 -> getString(R.string.conn_direct_none)
+            else -> resources.getQuantityString(R.plurals.conn_direct, n.peers, n.peers)
+        }
+    }
+
     // --- files and messages for this phone ----------------------------------
 
     @SuppressLint("MissingPermission")
@@ -178,7 +196,7 @@ class ConnectionService : Service() {
         val seen = Prefs.seenInbox
         val seenUnread = Prefs.seenUnread
         // the page flashes these itself while it's open
-        val quiet = !primed || MainActivity.visible || !Notifs.allowed(this)
+        val quiet = !primed || HubActivity.visible || !Notifs.allowed(this)
         val nm = NotificationManagerCompat.from(this)
 
         if (!quiet) {

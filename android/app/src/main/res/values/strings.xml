@@ -118,7 +118,6 @@
     <!-- stay connected -->
     <string name="conn_title">droplet connected</string>
     <string name="conn_connecting">Connecting…</string>
-    <string name="conn_mesh_only">Direct connections only (no hub)</string>
     <string name="conn_ok">Listening for rings %1$s</string>
     <string name="conn_not_let_in">Not let in to %1$s yet: open droplet</string>
     <string name="conn_no_network">Waiting for the network</string>
@@ -155,7 +154,7 @@
     <string name="s_find_again">Find hub again</string>
     <string name="s_forget">Forget this hub</string>
     <string name="s_forget_title">Forget %1$s?</string>
-    <string name="s_forget_body">droplet forgets the hub, this phone\'s identity on it, and how to reach it. To use it again you\'ll pair again. The hub keeps its files, and this phone stays in its device list until you remove it there.</string>
+    <string name="s_forget_body">droplet forgets the hub, this phone\'s identity on it, and how to reach it, and the devices it knows through the hub. Devices you paired directly stay, and keep working. To use the hub again you\'ll pair with it again. The hub keeps its files, and this phone stays in its device list until you remove it there.</string>
     <string name="s_identity">The hub\'s identity changed, so droplet won\'t use it on the Wi-Fi.</string>
     <string name="s_repair">Pair again</string>
     <string name="s_this_phone">This phone</string>
@@ -191,7 +190,7 @@
 
     <!-- live connection (remote control) -->
     <string name="live_off">Off. Turn on Stay connected so other devices can reach this phone.</string>
-    <string name="live_no_hub">Set up a hub first.</string>
+    <string name="live_no_hub">No hub: your paired devices connect directly.</string>
     <string name="live_unnamed">Open droplet and name this phone first.</string>
     <string name="live_alone">Connected · no other devices online</string>
     <plurals name="live_online">
@@ -481,7 +480,7 @@
     <string name="s_mesh_desc">Your devices talk to this phone directly, over the Wi-Fi or Tailscale, so sending, ringing and remote control keep working when the hub is down. Other devices reach the phone while Stay connected is on.</string>
     <string name="s_mesh_switch">Talk to my devices directly</string>
     <string name="s_mesh_state">%1$s · port %2$d · %3$s</string>
-    <string name="s_mesh_open">Devices and pairing</string>
+    <string name="s_mesh_open">Pair a device</string>
     <plurals name="s_mesh_peers">
         <item quantity="one">%d device</item>
         <item quantity="other">%d devices</item>
@@ -609,4 +608,128 @@
     <string name="mesh_tv_add">Add a TV</string>
     <string name="mesh_tv_add_sub">Pair an Android TV or Google TV on this Wi-Fi</string>
     <string name="offline_tv">TV remote (works without the hub)</string>
+
+    <!-- the home screen (MainActivity) -->
+    <string name="ok">OK</string>
+    <string name="home_me">This phone: %1$s</string>
+    <string name="home_devices">Your devices</string>
+    <string name="home_devices_n">Your devices · %1$d</string>
+    <string name="home_pair">Pair a device</string>
+    <string name="home_pair_first">Pair your first device</string>
+    <string name="home_more">More for this device</string>
+    <string name="home_act_files">Files</string>
+    <string name="home_act_message">Message</string>
+    <string name="home_act_ring">Ring</string>
+    <string name="home_act_clip">Clipboard</string>
+    <string name="home_act_remote">Remote</string>
+    <string name="home_route_lan">Connected on Wi-Fi</string>
+    <string name="home_route_tailnet">Connected via Tailscale</string>
+    <string name="home_route_seen">On this Wi-Fi</string>
+    <string name="home_route_hub">Via the hub</string>
+    <string name="home_route_offline">Offline: what you send waits for it</string>
+    <string name="home_route_looking">Looking for it…</string>
+    <plurals name="home_waiting">
+        <item quantity="one">%1$d waiting to send</item>
+        <item quantity="other">%1$d waiting to send</item>
+    </plurals>
+    <plurals name="home_sending_files">
+        <item quantity="one">Sending %1$d file to %2$s</item>
+        <item quantity="other">Sending %1$d files to %2$s</item>
+    </plurals>
+    <string name="home_ringing">%1$s is ringing this phone</string>
+    <string name="home_ringing_them">Ringing %1$s</string>
+    <string name="home_clip_sent">Clipboard sent to %1$s</string>
+    <string name="home_about_device">About this device</string>
+    <string name="home_about_source">Trusted: %1$s</string>
+    <string name="home_about_os">System: %1$s</string>
+    <string name="home_about_addresses">Last seen at: %1$s</string>
+    <string name="home_about_fp">Fingerprint: %1$s…</string>
+    <string name="home_about_roster">Your hub vouches for this device. To remove it, remove it on the hub, and every device stops trusting it.</string>
+    <string name="home_request_sub">Check that both screens show the same code</string>
+    <string name="home_request_answer">Answer</string>
+    <string name="home_notice_mesh_off">Direct connections are off, so your devices can\'t reach this phone.</string>
+    <string name="home_notice_turn_on">Turn them on</string>
+    <string name="home_notice_retry">Try again</string>
+    <string name="home_notice_stay">Your devices can reach this phone only while droplet is open. Stay connected keeps it reachable, for rings, files and messages.</string>
+    <string name="home_notice_stay_on">Stay connected</string>
+    <string name="home_empty_title">No devices yet</string>
+    <string name="home_empty_body">Pair this phone with another device: your computer, a tablet, or a friend\'s phone. Then you can send files and messages, ring it, and share the clipboard, straight over the Wi-Fi.</string>
+    <string name="home_empty_step1">1. Get droplet on the other device: the Android or Windows app, from github.com/Ferinmtk/droplet/releases.</string>
+    <string name="home_empty_step2">2. Open it there, on the same Wi-Fi as this phone. With no hub, choose to pair directly.</string>
+    <string name="home_empty_step3">3. Tap Pair your first device below, pick it, and check both screens show the same four digits.</string>
+    <string name="home_share_link">Send the download link</string>
+    <string name="home_share_link_text">droplet, to send files, messages and more between our devices, no cloud: %1$s</string>
+    <string name="home_tools">On this phone</string>
+    <string name="home_tile_tv">TV remote</string>
+    <string name="home_tile_tv_none">Pair a TV</string>
+    <string name="home_tile_bt">Mouse &amp; keyboard</string>
+    <string name="home_tile_bt_sub">Over Bluetooth</string>
+    <string name="home_tile_hub">Hub</string>
+    <string name="home_tile_hub_on">%1$s · connected</string>
+    <string name="home_received">Received</string>
+    <string name="home_received_from">from %1$s · %2$s</string>
+    <string name="home_share_file">Share</string>
+    <string name="home_open_in_files">Open it from the Files app: %1$s</string>
+    <string name="home_messages">Messages</string>
+    <string name="home_message_sub">%1$s · %2$s</string>
+    <string name="hub_title">Hub · %1$s</string>
+    <string name="hub_back_home">Back to droplet\'s home</string>
+
+    <!-- pairing (PeersActivity) -->
+    <string name="pair_title">Pair a device</string>
+    <string name="pair_intro">Other droplet devices see this phone as %1$s. Open droplet on the other device, on this same Wi-Fi, then pick it below (or pick this phone there).</string>
+    <string name="pair_asking">Asking to pair with this phone</string>
+    <string name="pair_asking_sub">%1$s · asking now</string>
+    <string name="pair_answer_verb">Answer</string>
+    <string name="pair_nearby">On this Wi-Fi</string>
+    <string name="pair_nearby_none">Looking for droplet devices… The other device needs droplet open, on this same Wi-Fi. Some routers and guest networks hide devices from each other: then pair by address.</string>
+    <string name="pair_verb">Pair</string>
+    <string name="pair_by_address">Pair by address</string>
+    <string name="pair_address_help">The other device\'s IP address on this Wi-Fi or Tailscale. droplet on it shows the address in its settings.</string>
+    <string name="pair_get_droplet">Doesn\'t have droplet yet? The Android and Windows apps are at github.com/Ferinmtk/droplet/releases.</string>
+    <string name="pair_check_eyebrow">Check the code</string>
+    <string name="pair_with">Pair with %1$s?</string>
+    <string name="pair_code_blank">····</string>
+    <string name="pair_check_out">Check that %1$s shows these same four digits. Then tap They match here, and accept on %1$s.</string>
+    <string name="pair_check_in">%1$s asks to pair with this phone. Pair only if %1$s shows these same four digits.</string>
+    <string name="pair_accept_there">Now accept on %1$s.</string>
+    <string name="pair_they_match">They match</string>
+    <string name="pair_no_match">They don\'t match</string>
+    <string name="pair_done_eyebrow">Paired</string>
+    <string name="pair_done_body">It\'s on your home screen now: send it files and messages, ring it, or share the clipboard.</string>
+    <string name="pair_done">Done</string>
+    <string name="pair_another">Pair another device</string>
+
+    <!-- setup: with a hub, or without one -->
+    <string name="setup_choose_title">How do you want to use droplet?</string>
+    <string name="setup_choose_body">Either way, your files and messages stay on your own devices.</string>
+    <string name="setup_choose_direct">No hub: pair directly</string>
+    <string name="setup_choose_direct_body">Pair this phone with your computer or a friend\'s phone, like Bluetooth. Nothing else to install.</string>
+    <string name="setup_choose_hub">I have a droplet hub</string>
+    <string name="setup_choose_hub_body">A computer at home running droplet\'s hub, for the web app and devices that are off.</string>
+    <string name="setup_choose_hub_found">%1$s is on this Wi-Fi.</string>
+    <string name="setup_choose_hub_found_some">%1$d hubs are on this Wi-Fi.</string>
+    <string name="setup_choose_later">You can add a hub later in Settings, or remove it, and keep the devices you paired.</string>
+    <string name="setup_direct_eyebrow">No hub</string>
+    <string name="setup_direct_body">Your other devices see this phone by this name when you pair.</string>
+    <string name="setup_direct_go">Continue</string>
+    <string name="setup_direct_busy">Getting ready…</string>
+    <string name="setup_find_back">Back: no hub instead</string>
+
+    <!-- settings without a hub -->
+    <string name="s_hub_none_title">No hub</string>
+    <string name="s_hub_none_state">Your paired devices connect directly</string>
+    <string name="s_hub_none">droplet works without one. A hub (droplet\'s hub on a computer that stays on) adds the web app for any browser, and keeps things for devices that are off.</string>
+    <string name="s_add_hub">Add a hub</string>
+    <string name="s_forgot">Forgot the hub. Your directly paired devices are still here.</string>
+    <string name="s_rename">Rename</string>
+    <string name="s_rename_title">Name this phone</string>
+    <string name="s_rename_go">Save</string>
+    <string name="s_named_direct">Your devices see it as %1$s</string>
+    <plurals name="conn_direct">
+        <item quantity="one">Ready for your %1$d device</item>
+        <item quantity="other">Ready for your %1$d devices</item>
+    </plurals>
+    <string name="conn_direct_none">Ready to pair with your devices</string>
+    <string name="share_no_devices">No devices paired yet. Pair one, then share again.</string>
 </resources>

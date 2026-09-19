@@ -61,6 +61,18 @@ object Prefs {
     /** True once a hub is known in any way. */
     val hasHub: Boolean get() = hubUrl != null || (hubId != null && hubFingerprint != null)
 
+    /**
+     * Chose "No hub" in setup (or forgot the hub later): the phone works with
+     * its directly paired devices alone. Not about the hub, so forgetting the
+     * hub leaves it alone (and sets it).
+     */
+    var noHub: Boolean
+        get() = sp.getBoolean("no_hub", false)
+        set(v) = sp.edit { putBoolean("no_hub", v) }
+
+    /** Set up either way: with a hub, or without one. Until then the app opens on setup. */
+    val isSetUp: Boolean get() = hasHub || noHub
+
     /** Forgets everything about the hub (Settings → Forget this hub). */
     fun forgetHub() = sp.edit {
         for (k in listOf("hub_url", "hub_id", "hub_fp", "pin_source", "hub_name", "lan_addrs", "device_token",

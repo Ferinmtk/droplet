@@ -1,132 +1,104 @@
 package dev.droplet.app
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.app.DownloadManager
 import android.content.ActivityNotFoundException
-import android.content.ContentValues
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
-import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.os.SystemClock
-import android.provider.MediaStore
-import android.util.Base64
+import android.provider.OpenableColumns
+import android.text.format.DateUtils
 import android.view.View
-import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
-import android.webkit.SslErrorHandler
-import android.webkit.ServiceWorkerClient
-import android.webkit.ServiceWorkerController
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import dev.droplet.app.databinding.ActivityMainBinding
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
+import dev.droplet.app.databinding.ActivityHomeBinding
+import dev.droplet.app.mesh.TrustList
+import dev.droplet.app.tv.Tv
+import dev.droplet.app.tv.TvActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
-import java.net.URLDecoder
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * The droplet web app, full screen, plus the native bits a browser tab can't do.
+ * The home screen, with or without a hub: your devices and what to do with
+ * each (send files, message, ring, send the clipboard, the presentation
+ * remote), pairing, the phone's own remotes (TV, Bluetooth mouse and
+ * keyboard), the hub's web app when there is a hub, and what arrived.
  *
- * The page loads on whatever route [Router] picked: the hub's LAN address
- * (HTTPS with the pinned certificate) at home, its tailnet URL away. When the
- * route changes the page moves with it, keeping where it was.
+ * Opens on setup until the phone is set up (with a hub, or without one).
+ * Notifications' links into the hub's web app ([EXTRA_PATH]) pass through
+ * here: see [DeepLink].
  */
 class MainActivity : AppCompatActivity() {
-    private lateinit var b: ActivityMainBinding
-    private val web get() = b.web
+    private lateinit var b: ActivityHomeBinding
+    private var sendTo: TrustList.Entry? = null
+    private val onRing: () -> Unit = { runOnUiThread { if (::b.isInitialized) renderRinging() } }
 
-    /** The origin the page is on now ("https://192.168.100.20:8443"), null before the first load. */
-    private var origin: String? = null
-    /** Where to go once there's a route (a notification's deep link, or the page before a restart). */
-    private var pendingPath: String? = null
-    private var clearHistoryOnLoad = false
-    private var resumed = false
-
-    private var fileCallback: ValueCallback<Array<Uri>>? = null
-    private var loadFailed = false
-    /** The device token the page was loaded with; Link with code swaps it. */
-    private var loadedToken: String? = null
-
-    private val pickFiles = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        val data = res.data
-        val uris = if (res.resultCode != RESULT_OK || data == null) null else {
-            data.clipData?.let { clip -> List(clip.itemCount) { clip.getItemAt(it).uri } }
-                ?: data.data?.let { listOf(it) }
+    private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val to = sendTo ?: return@registerForActivityResult
+        sendTo = null
+        if (uris.isEmpty()) return@registerForActivityResult
+        lifecycleScope.launch {
+            val files = withContext(Dispatchers.IO) {
+                uris.mapNotNull { u ->
+                    // kept readable across restarts, for a file that has to wait for the device
+                    runCatching { contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                    describe(u)
+                }
+            }
+            if (files.isEmpty()) return@launch
+            UploadService.start(this@MainActivity, files, null, PeersActivity.MESH_PREFIX + to.fp, to.name)
+            say(resources.getQuantityString(R.plurals.home_sending_files, files.size, files.size, to.name))
         }
-        fileCallback?.onReceiveValue(uris?.toTypedArray())
-        fileCallback = null
     }
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    private val askStorage = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        edgeToEdge()
+        // droplet's dark teal, whatever the system theme
+        enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
-        if (!Prefs.hasHub) {
+        if (!Prefs.isSetUp) {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
         }
-        b = ActivityMainBinding.inflate(layoutInflater)
+        b = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(b.root)
-        b.root.padForSystemBars()
+        b.root.padForSystemBars(keyboard = false)
 
-        setUpWebView()
-        b.retry.setOnClickListener { retry() }
-        b.offlineSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
-        b.offlineTv.setOnClickListener { startActivity(dev.droplet.app.tv.TvActivity.intent(this)) }
-        b.openTailscale.setOnClickListener { openTailscale() }
-
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (web.canGoBack() && b.offline.visibility != View.VISIBLE) web.goBack()
-                else { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
-            }
-        })
-
-        // after a restart, go back to the same place in the page (on whichever origin is right now)
-        pendingPath = intent.getStringExtra(EXTRA_PATH) ?: savedInstanceState?.getString(STATE_PATH)
-        b.progress.isIndeterminate = true
-        b.progress.visibility = View.VISIBLE
+        b.settings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        b.pair.setOnClickListener { startActivity(Intent(this, PeersActivity::class.java)) }
+        b.shareLink.setOnClickListener { shareDownloadLink() }
+        b.ringingStop.setOnClickListener { Ringer.stop(this, tellHub = true) }
+        b.tileTv.setOnClickListener { startActivity(TvActivity.intent(this)) }
+        b.tileBt.setOnClickListener { startActivity(Intent(this, BluetoothActivity::class.java)) }
+        b.tileHub.setOnClickListener { openHub(null) }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch { Router.state.collect { routeState(it) } }
-                launch {
-                    Router.pairing.collect { needed ->
-                        if (!needed) return@collect
-                        // the hub doesn't know this phone (any more): pair natively, once per refusal
-                        Router.pairingNeeded(false)
-                        startActivity(Intent(this@MainActivity, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_PAIR, true))
-                    }
-                }
+                launch { Mesh.state.collect { render() } }
+                launch { Mesh.changes.collect { render() } }
+                launch { Tv.changes.collect { renderTiles() } }
+                launch { Live.state.collect { renderTiles() } }
+                launch { Router.state.collect { renderTiles() } }
+                launch { Mesh.pairRequests.collect { render() } }
             }
         }
 
@@ -135,47 +107,53 @@ class MainActivity : AppCompatActivity() {
             Prefs.askedNotifications = true
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        if (savedInstanceState == null) followLink(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val path = intent.getStringExtra(EXTRA_PATH) ?: return
-        val o = origin
-        if (o != null && Router.current()?.base == o) web.loadUrl(o + path) else pendingPath = path
+        followLink(intent)
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        if (::b.isInitialized) pagePath()?.let { outState.putString(STATE_PATH, it) }
+    override fun onStart() {
+        super.onStart()
+        if (!::b.isInitialized) return
+        Mesh.hold(MESH_TAG)
+        Ringer.addListener(onRing)
+        render()
     }
 
     override fun onResume() {
         super.onResume()
         if (!::b.isInitialized) return
-        if (!Prefs.hasHub) {
-            // forgotten in Settings
+        if (!Prefs.isSetUp) {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
         }
-        visible = true
-        resumed = true
-        web.onResume()
-        // keeps the route fresh while the app is on screen; looks again if it's been a while
-        Router.hold(ROUTER_TAG)
         // MIUI and force-stop kill the service; opening the app brings it back
         if (Prefs.stayConnected && !ConnectionService.running) runCatching { ConnectionService.start(this) }
-        // the page may have just named this phone (a new device token)
-        Live.refresh()
-        // a route change while paused: move now
-        routeState(Router.state.value)
-        // linked to another device in Settings: show the page as that device
-        val token = Hub.deviceToken()
-        if (loadedToken != null && token != null && token != loadedToken && origin != null) {
-            Hub.installCookie(origin!!)
-            web.reload()
+        if (Prefs.hasHub) {
+            // the hub tile says how the hub is reached: keep that fresh while on screen
+            Router.hold(ROUTER_TAG)
+            Live.refresh()
         }
-        loadedToken = token
+        // who's really reachable now (links only open when something's sent otherwise)
+        Mesh.probe()
+        render()
+    }
+
+    override fun onPause() {
+        if (::b.isInitialized) Router.release(ROUTER_TAG)
+        super.onPause()
+    }
+
+    override fun onStop() {
+        if (::b.isInitialized) {
+            Ringer.removeListener(onRing)
+            Mesh.release(MESH_TAG)
+        }
+        super.onStop()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -184,533 +162,355 @@ class MainActivity : AppCompatActivity() {
         if (hasFocus && ::b.isInitialized) runCatching { ClipBridge.onForeground(this) }
     }
 
-    override fun onPause() {
-        super.onPause()
-        if (!::b.isInitialized) return
-        visible = false
-        resumed = false
-        web.onPause()
-        Router.release(ROUTER_TAG)
-        // the services read the device cookie from disk-backed storage
-        CookieManager.getInstance().flush()
-    }
+    // --- links from notifications ------------------------------------------------------
 
-    override fun onDestroy() {
-        if (::b.isInitialized) {
-            fileCallback?.onReceiveValue(null)
-            web.destroy()
+    private fun followLink(intent: Intent?) {
+        val path = intent?.getStringExtra(EXTRA_PATH) ?: return
+        intent.removeExtra(EXTRA_PATH)
+        when (val t = DeepLink.target(path, Prefs.hasHub, Ringer.ringing != null) { id -> Mesh.peerById(id)?.fp }) {
+            is DeepLink.Target.Hub -> openHub(t.path)
+            is DeepLink.Target.Chat -> startActivity(ChatActivity.intent(this, t.fp))
+            DeepLink.Target.Ring -> startActivity(Intent(this, RingActivity::class.java))
+            DeepLink.Target.Home -> Unit
         }
-        super.onDestroy()
     }
 
-    // --- following the route ---------------------------------------------------
+    private fun openHub(path: String?) {
+        if (!Prefs.hasHub) return
+        val i = Intent(this, HubActivity::class.java)
+        if (path != null) i.putExtra(EXTRA_PATH, path)
+        startActivity(i)
+    }
 
-    private fun routeState(s: Router.State) {
+    // --- drawing ---------------------------------------------------------------------
+
+    private fun render() {
         if (!::b.isInitialized || isFinishing) return
-        val r = s.route
-        when {
-            // not looked yet, or looking: keep what's on screen
-            r == null && !s.unreachable -> if (origin == null && b.offline.visibility != View.VISIBLE) showLooking()
-            r == null -> showOffline(if (s.identityChanged != null) Offline.IDENTITY else Offline.UNREACHABLE, null, s.identityChanged)
-            // moves only while on screen: a reload behind the user's back loses nothing, but can wait
-            r.base != origin -> if (resumed || origin == null) switchTo(r)
-            // back after being out of reach (at most every few seconds, so a page that keeps failing can't loop)
-            b.offline.visibility == View.VISIBLE && !s.searching && offlineKind != Offline.IDENTITY &&
-                SystemClock.elapsedRealtime() - lastAutoRetry > AUTO_RETRY_MS -> {
-                lastAutoRetry = SystemClock.elapsedRealtime()
-                retry()
+        val s = Mesh.state.value
+        val n = Mesh.node
+        val name = Prefs.meshDeviceName ?: SetupActivity.suggestedName(this)
+        b.me.text = getString(R.string.home_me, name)
+        renderRinging()
+        renderNotice(s)
+
+        // pairing requests waiting for an answer
+        b.requests.removeAllViews()
+        for (r in n?.incoming?.waiting().orEmpty()) {
+            val v = b.requests.inflate(R.layout.item_request)
+            v.findViewById<TextView>(R.id.title).text = getString(R.string.mesh_pair_request, r.name)
+            v.findViewById<TextView>(R.id.sub).text = getString(R.string.home_request_sub)
+            v.findViewById<View>(R.id.answer).setOnClickListener { startActivity(PeersActivity.answerIntent(this, r.request)) }
+            b.requests.addView(v)
+        }
+
+        val peers = Mesh.peers()
+        b.devices.removeAllViews()
+        for (p in peers) b.devices.addView(deviceCard(p))
+        // with the mesh still starting, "no devices" would be a lie for a moment
+        val known = n != null || s.status == Mesh.Status.FAILED || s.status == Mesh.Status.OFF && !Prefs.meshEnabled
+        b.empty.visibility = if (peers.isEmpty() && known) View.VISIBLE else View.GONE
+        b.devicesTitle.text = if (peers.isEmpty()) getString(R.string.home_devices)
+            else getString(R.string.home_devices_n, peers.size)
+        b.pair.setText(if (peers.isEmpty()) R.string.home_pair_first else R.string.home_pair)
+
+        renderTiles()
+        renderReceived()
+        renderMessages()
+    }
+
+    private fun renderRinging() {
+        val ring = Ringer.ringing
+        b.ringing.visibility = if (ring != null) View.VISIBLE else View.GONE
+        if (ring != null) b.ringingText.text = getString(R.string.home_ringing, ring.from)
+    }
+
+    /** Only when something stands between the phone and its devices. */
+    private fun renderNotice(s: Mesh.Snapshot) {
+        val (text, button, action) = when {
+            !Prefs.meshEnabled -> Triple(getString(R.string.home_notice_mesh_off), getString(R.string.home_notice_turn_on)) {
+                Prefs.meshEnabled = true
+                Mesh.enabledChanged()
+                if (!ConnectionService.running && Prefs.stayConnected) runCatching { ConnectionService.start(this) }
             }
+            s.status == Mesh.Status.FAILED -> Triple(getString(R.string.mesh_status_failed, s.error.orEmpty()),
+                getString(R.string.home_notice_retry)) { Mesh.enabledChanged() }
+            !Prefs.stayConnected -> Triple(getString(R.string.home_notice_stay), getString(R.string.home_notice_stay_on)) {
+                Prefs.stayConnected = true
+                runCatching { ConnectionService.start(this) }
+                render()
+            }
+            else -> Triple(null, null, null)
+        }
+        b.notice.visibility = if (text != null) View.VISIBLE else View.GONE
+        if (text != null) {
+            b.noticeText.text = text
+            b.noticeButton.text = button
+            b.noticeButton.setOnClickListener { action?.invoke() }
         }
     }
 
-    /** Loads the page on [r], keeping the path and #hash it was on. */
-    private fun switchTo(r: Router.Route) {
-        val path = pendingPath ?: pagePath() ?: "/"
-        pendingPath = null
-        // cookies are per origin: the LAN origin needs the device cookie before the page asks who it is
-        Hub.installCookie(r.base)
-        clearHistoryOnLoad = origin != null
-        origin = r.base
-        loadedToken = Hub.deviceToken()
-        showWeb()
-        web.loadUrl(r.base + path)
+    private fun deviceCard(p: Mesh.PeerView): View {
+        val e = p.entry
+        val v = b.devices.inflate(R.layout.item_device)
+        v.findViewById<TextView>(R.id.name).text = e.name
+        v.findViewById<ImageView>(R.id.icon).setImageResource(if (e.os == "android") R.drawable.ic_phone else R.drawable.ic_laptop)
+        val waiting = Mesh.node?.outbox?.forPeer(e.fp)?.size ?: 0
+        val looking = p.route in setOf("seen", "offline") && Mesh.isProbing(e.fp)
+        val route = if (looking) getString(R.string.home_route_looking) else routeText(p.route)
+        v.findViewById<TextView>(R.id.route).text = if (waiting > 0) {
+            route + " · " + resources.getQuantityString(R.plurals.home_waiting, waiting, waiting)
+        } else route
+        v.findViewById<View>(R.id.dot).setBackgroundResource(when (p.route) {
+            "lan", "tailnet", "seen" -> R.drawable.r_dot_on
+            "hub", "hub-mailbox" -> R.drawable.r_dot_hub
+            else -> R.drawable.r_dot
+        })
+        v.findViewById<View>(R.id.act_files).setOnClickListener {
+            sendTo = e
+            try {
+                pickFiles.launch(arrayOf("*/*"))
+            } catch (x: ActivityNotFoundException) {
+                sendTo = null
+                say(getString(R.string.no_file_picker))
+            }
+        }
+        v.findViewById<View>(R.id.act_message).setOnClickListener { startActivity(ChatActivity.intent(this, e.fp)) }
+        v.findViewById<View>(R.id.act_ring).setOnClickListener { ring(e) }
+        v.findViewById<View>(R.id.act_clip).apply {
+            visibility = if ("clipboard" in e.caps || e.caps.isEmpty()) View.VISIBLE else View.GONE
+            setOnClickListener { sendClipboard(e) }
+        }
+        v.findViewById<View>(R.id.act_remote).apply {
+            visibility = if ("input" in e.caps) View.VISIBLE else View.GONE
+            setOnClickListener {
+                Prefs.remoteTarget = PeersActivity.MESH_PREFIX + e.fp
+                startActivity(Intent(this@MainActivity, RemoteActivity::class.java))
+            }
+        }
+        v.findViewById<View>(R.id.more).setOnClickListener { more(e) }
+        return v
     }
 
-    /** The page's path, query and #hash, if it's on one of the hub's origins. */
-    private fun pagePath(): String? {
-        val url = web.url?.let { Uri.parse(it) } ?: return null
-        if (url.scheme !in listOf("http", "https") || !Hub.isHubUrl(url)) return null
-        return (url.encodedPath?.ifEmpty { "/" } ?: "/") +
-            (url.encodedQuery?.let { "?$it" } ?: "") + (url.encodedFragment?.let { "#$it" } ?: "")
-    }
+    private fun routeText(route: String): String = getString(when (route) {
+        "lan" -> R.string.home_route_lan
+        "tailnet" -> R.string.home_route_tailnet
+        "seen" -> R.string.home_route_seen
+        "hub", "hub-mailbox" -> R.string.home_route_hub
+        else -> R.string.home_route_offline
+    })
 
-    // --- WebView --------------------------------------------------------------
-
-    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
-    private fun setUpWebView() {
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
-
-        with(web.settings) {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            allowFileAccess = false
-            setSupportZoom(false)
-            userAgentString = "$userAgentString ${Hub.userAgent}"
-        }
-        // the page registers a service worker (offline page, share parking);
-        // WebView only runs service workers once a client is set. (Chromium
-        // won't register one on the LAN origin, whose certificate is pinned
-        // rather than publicly trusted; the page works without it.)
-        runCatching {
-            ServiceWorkerController.getInstance().setServiceWorkerClient(object : ServiceWorkerClient() {
-                override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse? = null
-            })
-        }
-        web.addJavascriptInterface(Bridge(), "DropletApp")
-
-        web.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                openElsewhere(request.url)
-
-            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                loadFailed = false
-            }
-
-            override fun onPageFinished(view: WebView, url: String?) {
-                b.progress.visibility = View.GONE
-                if (clearHistoryOnLoad) {
-                    // the old origin's pages are gone: Back mustn't lead there
-                    clearHistoryOnLoad = false
-                    view.clearHistory()
-                }
-                if (loadFailed) return
-                // the service worker's own offline page: show ours instead
-                if (view.title?.contains("offline") == true && url?.let { Hub.isHubUrl(Uri.parse(it)) } == true) {
-                    showOffline(Offline.LOAD_FAILED, null)
-                    return
-                }
-                showWeb()
-                adoptPageToken()
-                view.evaluateJavascript(PAGE_SCRIPT) { matchPageColour(it) }
-            }
-
-            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (!request.isForMainFrame) return
-                showOffline(Offline.LOAD_FAILED, error.description?.toString())
-                // the route may have gone (left the Wi-Fi, Tailscale off): look again
-                Router.refresh()
-            }
-
-            override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
-                // 502/503/504: tailscale serve is up but droplet isn't
-                if (request.isForMainFrame && response.statusCode in 502..504) {
-                    showOffline(Offline.LOAD_FAILED, getString(R.string.offline_not_running, response.statusCode))
-                }
-            }
-
-            /**
-             * The LAN origin's certificate is self-signed: go on only if it's
-             * exactly the pinned one (docs/local-first.md §5). Anything else,
-             * including a publicly valid certificate with some other problem,
-             * is refused.
-             */
-            @SuppressLint("WebViewClientOnReceivedSslError")
-            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-                if (Pinning.webViewMayProceed(error.certificate, Prefs.hubFingerprint)) {
-                    handler.proceed()
-                } else {
-                    handler.cancel()
-                    if (error.url?.let { Hub.isHubUrl(Uri.parse(it)) } == true) {
-                        // our hub's address, but not our hub's certificate
-                        showOffline(Offline.LOAD_FAILED, getString(R.string.live_err_identity))
-                        Router.refresh()
-                    }
-                }
-            }
-        }
-
-        web.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView, newProgress: Int) {
-                if (origin == null) return  // still looking for the hub: the bar keeps spinning
-                b.progress.isIndeterminate = false
-                b.progress.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
-                b.progress.setProgressCompat(newProgress, true)
-            }
-
-            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
-                fileCallback?.onReceiveValue(null)
-                fileCallback = callback
-                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = params.acceptTypes.firstOrNull { it.isNotBlank() } ?: "*/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
-                }
-                return try {
-                    pickFiles.launch(intent)
-                    true
-                } catch (e: ActivityNotFoundException) {
-                    fileCallback = null
-                    toast(getString(R.string.no_file_picker))
-                    false
-                }
-            }
-        }
-
-        web.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-            download(url, userAgent, contentDisposition, mimeType)
+    private fun renderTiles() {
+        if (!::b.isInitialized) return
+        val tv = Tv.tvs().firstOrNull { it.id == Prefs.tvSelected } ?: Tv.tvs().firstOrNull()
+        b.tileTvSub.text = tv?.name ?: getString(R.string.home_tile_tv_none)
+        b.tileHub.visibility = if (Prefs.hasHub) View.VISIBLE else View.GONE
+        if (Prefs.hasHub) {
+            val live = Live.state.value
+            b.tileHubSub.text = if (live.connected) getString(R.string.home_tile_hub_on, Router.hubLabel())
+                else Router.hubLabel()
         }
     }
 
-    /**
-     * The page named or re-linked this phone on the current origin: that
-     * token is now the phone's identity, on every origin and for the
-     * native parts.
-     */
-    private fun adoptPageToken() {
-        val o = origin ?: return
-        val fromPage = Hub.cookieToken(o) ?: return
-        if (fromPage == Prefs.deviceToken) return
-        Hub.setToken(fromPage)
-        loadedToken = fromPage
-        Live.refresh()
+    private fun renderReceived() {
+        val items = Received.recent(RECENT)
+        b.received.removeAllViews()
+        b.receivedTitle.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        b.received.visibility = b.receivedTitle.visibility
+        for (it in items) {
+            val v = b.received.inflate(R.layout.item_home_row)
+            v.findViewById<ImageView>(R.id.icon).setImageResource(R.drawable.ic_file)
+            v.findViewById<TextView>(R.id.title).text = it.name
+            v.findViewById<TextView>(R.id.sub).text = getString(R.string.home_received_from, it.from, ago(it.ts))
+            v.setOnClickListener { _ -> openFile(it) }
+            v.findViewById<View>(R.id.action).setOnClickListener { _ -> shareFile(it) }
+            b.received.addView(v)
+        }
     }
 
-    /** Hub pages stay in the app; everything else opens in its own app or the browser. */
-    private fun openElsewhere(url: Uri): Boolean {
-        if ((url.scheme == "http" || url.scheme == "https") && Hub.isHubUrl(url)) return false
-        if (url.scheme == "blob" || url.scheme == "data" || url.scheme == "about") return false
+    private fun renderMessages() {
+        val n = Mesh.node
+        // the newest message from each device
+        val latest = n?.chat?.recent(null, 400).orEmpty().filter { it.optString("dir") == "in" }
+            .groupBy { it.optString("fp") }.mapNotNull { (_, list) -> list.maxByOrNull { it.optDouble("ts") } }
+            .sortedByDescending { it.optDouble("ts") }.take(RECENT)
+        b.messages.removeAllViews()
+        b.messagesTitle.visibility = if (latest.isEmpty()) View.GONE else View.VISIBLE
+        b.messages.visibility = b.messagesTitle.visibility
+        for (m in latest) {
+            val fp = m.optString("fp")
+            val v = b.messages.inflate(R.layout.item_home_row)
+            v.findViewById<ImageView>(R.id.icon).setImageResource(R.drawable.ic_message)
+            v.findViewById<TextView>(R.id.title).text = n?.trust?.get(fp)?.name ?: m.optString("name")
+            v.findViewById<TextView>(R.id.sub).text = getString(R.string.home_message_sub,
+                m.optString("body").replace('\n', ' '), ago((m.optDouble("ts") * 1000).toLong()))
+            v.findViewById<View>(R.id.action).visibility = View.GONE
+            v.setOnClickListener { startActivity(ChatActivity.intent(this, fp)) }
+            b.messages.addView(v)
+        }
+    }
+
+    private fun ago(ms: Long): String =
+        DateUtils.getRelativeTimeSpanString(ms, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+
+    // --- what you can do with a device -------------------------------------------------
+
+    private fun ring(e: TrustList.Entry) {
+        background({ Mesh.node?.ring(e.fp) ?: error(getString(R.string.mesh_off_now)) }) {
+            Snackbar.make(b.root, getString(R.string.home_ringing_them, e.name), Snackbar.LENGTH_LONG)
+                .setAction(R.string.stop) { background({ Mesh.node?.ring(e.fp, stop = true) }) { } }
+                .show()
+        }
+    }
+
+    private fun sendClipboard(e: TrustList.Entry) {
+        // this screen has focus, so Android lets it read the clipboard now
+        val text = getSystemService(ClipboardManager::class.java).primaryClip
+            ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        if (text.isNullOrEmpty()) return say(getString(R.string.clip_empty))
+        if (text.toByteArray().size > 256 * 1024) return say(getString(R.string.clip_too_big))
+        background({ Mesh.node?.clip(e.fp, text) ?: error(getString(R.string.mesh_off_now)) }) {
+            say(getString(R.string.home_clip_sent, e.name))
+        }
+    }
+
+    private fun more(e: TrustList.Entry) {
+        val items = mutableListOf<Pair<String, () -> Unit>>(
+            getString(R.string.mesh_act_ring_stop) to { background({ Mesh.node?.ring(e.fp, stop = true) }) { } },
+        )
+        if (e.source == TrustList.SOURCE_PAIRED) items += getString(R.string.mesh_act_unpair) to { askUnpair(e) }
+        items += getString(R.string.home_about_device) to { about(e) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(e.name)
+            .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
+            .show()
+    }
+
+    private fun about(e: TrustList.Entry) {
+        val source = getString(if (e.source == TrustList.SOURCE_PAIRED) R.string.mesh_source_paired else R.string.mesh_source_roster)
+        val lines = listOfNotNull(
+            getString(R.string.home_about_source, source),
+            e.os.takeIf { it.isNotEmpty() }?.let { getString(R.string.home_about_os, it) },
+            (e.lan + listOfNotNull(e.tailnetIp)).takeIf { it.isNotEmpty() }?.let { getString(R.string.home_about_addresses, it.joinToString(", ")) },
+            getString(R.string.home_about_fp, e.fp.chunked(4).take(8).joinToString(" ")),
+            getString(R.string.home_about_roster).takeIf { e.source != TrustList.SOURCE_PAIRED },
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle(e.name)
+            .setMessage(lines.joinToString("\n\n"))
+            .setPositiveButton(R.string.ok, null)
+            .show()
+    }
+
+    private fun askUnpair(e: TrustList.Entry) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.mesh_unpair_title, e.name))
+            .setMessage(R.string.mesh_unpair_body)
+            .setPositiveButton(R.string.mesh_act_unpair) { _, _ ->
+                background({ Mesh.node?.unpair(e.fp) ?: error(getString(R.string.mesh_off_now)) }) { told ->
+                    say(getString(if (told) R.string.mesh_unpaired else R.string.mesh_unpaired_untold, e.name))
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    // --- files that arrived ---------------------------------------------------------------
+
+    private fun fileUri(it: Received.Item): Uri? = it.uri?.let { u -> Uri.parse(u) }?.takeIf { u -> u.scheme == "content" }
+
+    private fun openFile(it: Received.Item) {
+        val uri = fileUri(it) ?: return say(getString(R.string.home_open_in_files, it.where))
         try {
-            val intent = if (url.scheme == "intent") Intent.parseUri(url.toString(), Intent.URI_INTENT_SCHEME)
-            else Intent(Intent.ACTION_VIEW, url)
-            // links from the page may only reach apps that accept browser links
-            intent.addCategory(Intent.CATEGORY_BROWSABLE).setComponent(null)
-            intent.selector = null
-            startActivity(intent)
-        } catch (e: Exception) {
-            toast(getString(R.string.no_app_for_link))
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, it.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (x: Exception) {
+            say(getString(R.string.home_open_in_files, it.where))
         }
-        return true
     }
 
-    // --- out of reach ------------------------------------------------------------
-
-    private enum class Offline { UNREACHABLE, LOAD_FAILED, IDENTITY }
-
-    private var offlineKind: Offline? = null
-    private var lastAutoRetry = 0L
-
-    private fun showLooking() {
-        b.offline.visibility = View.GONE
-        b.progress.isIndeterminate = true
-        b.progress.visibility = View.VISIBLE
-    }
-
-    private fun showOffline(kind: Offline, detail: String?, identity: Router.IdentityChange? = Router.state.value.identityChanged) {
-        loadFailed = true
-        offlineKind = kind
-        val hub = Router.hubLabel()
-        val tailscale = Prefs.hubUrl?.let { Uri.parse(it).host?.endsWith(".ts.net") } == true
-        when (kind) {
-            Offline.IDENTITY -> {
-                b.offlineTitle.text = getString(R.string.offline_identity_title)
-                b.offlineBody.text = getString(R.string.offline_identity_body, identity?.address ?: hub, hub)
-                b.retry.setText(R.string.offline_repair)
-            }
-            else -> {
-                b.offlineTitle.text = getString(R.string.offline_title, hub)
-                b.offlineBody.text = getString(if (Prefs.hubUrl != null) R.string.offline_body else R.string.offline_body_lan, hub)
-                b.retry.setText(R.string.retry)
-            }
-        }
-        b.offlineDetail.text = detail?.let { friendlyError(it) } ?: getString(R.string.offline_body_retry)
-        b.openTailscale.visibility = if (kind != Offline.IDENTITY && tailscale && tailscaleIntent() != null) View.VISIBLE else View.GONE
-        b.offline.visibility = View.VISIBLE
-        b.progress.visibility = View.GONE
-        web.visibility = View.INVISIBLE
-        setBarColour(ContextCompat.getColor(this, R.color.r_bg))
-    }
-
-    private fun showWeb() {
-        b.offline.visibility = View.GONE
-        web.visibility = View.VISIBLE
-        offlineKind = null
-    }
-
-    private fun retry() {
-        if (offlineKind == Offline.IDENTITY) {
-            startActivity(Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_REPAIR, true))
-            return
-        }
-        val r = Router.current()
-        if (r == null) {
-            showLooking()
-            Router.refresh()
-            return
-        }
-        showWeb()
-        if (r.base != origin) switchTo(r) else web.loadUrl(r.base + (pagePath() ?: "/"))
-    }
-
-    private fun tailscaleIntent(): Intent? = packageManager.getLaunchIntentForPackage(TAILSCALE)
-
-    private fun openTailscale() {
-        val intent = tailscaleIntent() ?: return
+    private fun shareFile(it: Received.Item) {
+        val uri = fileUri(it) ?: return say(getString(R.string.home_open_in_files, it.where))
+        val send = Intent(Intent.ACTION_SEND).setType(it.mime).putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         try {
-            startActivity(intent)
-        } catch (e: ActivityNotFoundException) {
-            toast(getString(R.string.no_app_for_link))
+            startActivity(Intent.createChooser(send, it.name))
+        } catch (x: Exception) {
+            say(getString(R.string.no_app_for_link))
         }
     }
 
-    private fun friendlyError(raw: String): String = when {
-        "NAME_NOT_RESOLVED" in raw -> getString(R.string.offline_err_name)
-        "CONNECTION_REFUSED" in raw -> getString(R.string.offline_err_refused)
-        "TIMED_OUT" in raw || "ADDRESS_UNREACHABLE" in raw -> getString(R.string.offline_err_timeout)
-        "INTERNET_DISCONNECTED" in raw -> getString(R.string.offline_err_offline)
-        "CERT" in raw || "SSL" in raw -> getString(R.string.live_err_identity)
-        else -> raw
-    }
+    // --- the first device -------------------------------------------------------------------
 
-    /** Colour the status/navigation bar area like the page, and pick matching bar icons. */
-    private fun matchPageColour(result: String?) {
-        val nums = Regex("\\d+").findAll(result ?: return).map { it.value.toInt() }.toList()
-        if (nums.size < 3) return
-        setBarColour(Color.rgb(nums[0], nums[1], nums[2]))
-    }
-
-    private fun setBarColour(color: Int) {
-        b.root.setBackgroundColor(color)
-        window.decorView.setBackgroundColor(color)
-        val light = (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000 > 140
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = light
-            isAppearanceLightNavigationBars = light
-        }
-    }
-
-    // --- downloads ------------------------------------------------------------
-
-    private fun download(url: String, userAgent: String, contentDisposition: String?, mimeType: String?) {
-        if (!url.startsWith("http")) return  // blob: downloads go through the bridge
-        if (Build.VERSION.SDK_INT < 29 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            askStorage.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            return
-        }
-        val name = fileName(url, contentDisposition)
-        val route = Router.current()
-        if (route?.kind == Router.Kind.LAN && url.startsWith(route.base + "/")) {
-            // DownloadManager can't check a pinned certificate: fetch it here
-            downloadPinned(route, url, name, mimeType)
-            return
-        }
-        val request = DownloadManager.Request(Uri.parse(url)).apply {
-            CookieManager.getInstance().getCookie(url)?.let { addRequestHeader("Cookie", it) }
-            addRequestHeader("User-Agent", userAgent)
-            if (!mimeType.isNullOrBlank()) setMimeType(mimeType)
-            setTitle(name)
-            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-        }
+    /** The other device needs droplet too: the release page's link, to send it however suits. */
+    private fun shareDownloadLink() {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, getString(R.string.home_share_link_text, RELEASES))
         try {
-            getSystemService(DownloadManager::class.java).enqueue(request)
-            toast(getString(R.string.download_started, name))
-        } catch (e: Exception) {
-            toast(getString(R.string.download_failed, name))
+            startActivity(Intent.createChooser(send, getString(R.string.home_share_link)))
+        } catch (x: Exception) {
+            say(RELEASES)
         }
     }
 
-    /**
-     * A download from the LAN origin, over the pinned client, into Downloads.
-     * Runs in the app's scope, so leaving the screen doesn't stop it.
-     */
-    private fun downloadPinned(route: Router.Route, url: String, fallbackName: String, mimeType: String?) {
-        toast(getString(R.string.download_started, fallbackName))
-        val app = applicationContext
-        Router.scope.launch {
-            var name = fallbackName
-            val ok = runCatching {
-                val req = Hub.request(route, url.removePrefix(route.base)).build()
-                Router.clientFor(route).newBuilder().readTimeout(5, TimeUnit.MINUTES).build().newCall(req).execute().use { r ->
-                    if (!r.isSuccessful) throw java.io.IOException("The hub answered ${r.code}")
-                    name = fileName(url, r.header("Content-Disposition") ?: "attachment; filename=\"$fallbackName\"")
-                    val mime = mimeType?.takeIf { it.isNotBlank() } ?: r.body?.contentType()?.let { "${it.type}/${it.subtype}" }
-                        ?: "application/octet-stream"
-                    val tmp = File.createTempFile("dl", null, app.cacheDir)
-                    try {
-                        tmp.outputStream().use { out -> r.body!!.byteStream().use { it.copyTo(out) } }
-                        saveToDownloads(tmp, name, mime)
-                    } finally {
-                        tmp.delete()
-                    }
-                }
-            }.isSuccess
-            withContext(Dispatchers.Main) {
-                Toast.makeText(app, app.getString(if (ok) R.string.download_saved else R.string.download_failed, name), Toast.LENGTH_SHORT).show()
+    // --- helpers ------------------------------------------------------------------------------
+
+    private fun say(s: String) {
+        if (::b.isInitialized) Snackbar.make(b.root, s, Snackbar.LENGTH_LONG).show()
+        else Toast.makeText(this, s, Toast.LENGTH_LONG).show()
+    }
+
+    /** Runs [work] off the main thread; its result, or its error said plainly. */
+    private fun <T> background(work: () -> T, ok: (T) -> Unit) {
+        lifecycleScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { work() } }
+            r.onSuccess(ok).onFailure { say(getString(R.string.mesh_failed, it.message ?: it.javaClass.simpleName)) }
+        }
+    }
+
+    private fun describe(uri: Uri): Outgoing? = runCatching {
+        var name: String? = null
+        var size = -1L
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                if (!c.isNull(0)) name = c.getString(0)
+                if (!c.isNull(1)) size = c.getLong(1)
             }
         }
-    }
-
-    /** Flask sends `filename*=UTF-8''…` for non-ASCII names and `filename=` otherwise. */
-    private fun fileName(url: String, cd: String?): String {
-        val star = cd?.let { Regex("filename\\*=(?:UTF-8|utf-8)''([^;]+)").find(it)?.groupValues?.get(1) }
-        val plain = cd?.let { Regex("filename=\"?([^\";]+)\"?").find(it)?.groupValues?.get(1) }
-        val fromUrl = Uri.parse(url).lastPathSegment
-        val raw = star?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() } ?: plain ?: fromUrl ?: "download"
-        return raw.replace(Regex("[/\\\\:*?\"<>|]"), "_").trim().ifEmpty { "download" }
-    }
-
-    /**
-     * The page builds zips in JavaScript and "downloads" a blob: URL, which
-     * DownloadManager can't fetch. The injected script streams the blob here
-     * in base64 chunks, and it's saved to Downloads.
-     */
-    private inner class Bridge {
-        private val saves = ConcurrentHashMap<Int, Pair<File, String>>()
-        private val names = ConcurrentHashMap<Int, String>()
-        private val ids = AtomicInteger()
-
-        @JavascriptInterface
-        fun openSettings() {
-            runOnUiThread { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
-        }
-
-        /** The phone's own TV remote, which talks to the TV directly (for a web page link to it). */
-        @JavascriptInterface
-        fun openTvRemote() {
-            runOnUiThread { startActivity(dev.droplet.app.tv.TvActivity.intent(this@MainActivity)) }
-        }
-
-        @JavascriptInterface
-        fun beginSave(name: String, mime: String): Int {
-            val id = ids.incrementAndGet()
-            val tmp = File.createTempFile("blob", null, cacheDir)
-            saves[id] = tmp to mime
-            names[id] = fileName("x", "attachment; filename=\"$name\"")
-            return id
-        }
-
-        @JavascriptInterface
-        fun appendChunk(id: Int, base64: String) {
-            val (file, _) = saves[id] ?: return
-            FileOutputStream(file, true).use { it.write(Base64.decode(base64, Base64.DEFAULT)) }
-        }
-
-        @JavascriptInterface
-        fun finishSave(id: Int) {
-            val (file, mime) = saves.remove(id) ?: return
-            val name = names.remove(id) ?: "download"
-            val ok = runCatching { saveToDownloads(file, name, mime) }.isSuccess
-            file.delete()
-            runOnUiThread { toast(getString(if (ok) R.string.download_saved else R.string.download_failed, name)) }
-        }
-
-        @JavascriptInterface
-        fun failSave(name: String) {
-            runOnUiThread { toast(getString(R.string.download_failed, name)) }
-        }
-    }
-
-    private fun saveToDownloads(file: File, name: String, mime: String) {
-        if (Build.VERSION.SDK_INT >= 29) {
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, name)
-                put(MediaStore.Downloads.MIME_TYPE, mime)
-                put(MediaStore.Downloads.IS_PENDING, 1)
-            }
-            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!
-            contentResolver.openOutputStream(uri)!!.use { out -> file.inputStream().use { it.copyTo(out) } }
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            contentResolver.update(uri, values, null, null)
-        } else {
-            @Suppress("DEPRECATION")
-            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).apply { mkdirs() }
-            var dest = File(dir, name)
-            var i = 1
-            while (dest.exists()) dest = File(dir, "${name.substringBeforeLast('.')}-${i++}.${name.substringAfterLast('.', "")}")
-            file.copyTo(dest)
-        }
-    }
-
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        Outgoing(uri, name ?: uri.lastPathSegment ?: "file", size, contentResolver.getType(uri))
+    }.getOrNull()
 
     companion object {
+        /** A path in the hub's web app ("/#chat-<id>", "/"), from a notification. */
         const val EXTRA_PATH = "path"
-        private const val STATE_PATH = "page_path"
-        private const val ROUTER_TAG = "main"
-        private const val TAILSCALE = "com.tailscale.ipn"
-        private const val AUTO_RETRY_MS = 5_000L
+        const val RELEASES = "https://github.com/Ferinmtk/droplet/releases/latest"
+        private const val MESH_TAG = "home"
+        private const val ROUTER_TAG = "home"
+        private const val RECENT = 4
 
-        /** Whether the web app is on screen (its own page flashes new items then). */
-        @Volatile
-        var visible = false
+        fun intent(context: Context): Intent = Intent(context, MainActivity::class.java)
+    }
+}
 
-        /**
-         * Runs after every page load: adds an app-settings button to the header,
-         * routes blob: downloads through the bridge, and returns the page's
-         * background colour for the system bars.
-         */
-        private val PAGE_SCRIPT = """
-            (function () {
-              if (!window.__dropletApp) {
-                window.__dropletApp = true;
-                var revoke = URL.revokeObjectURL.bind(URL);
-                // the page revokes its zip URL straight after clicking it; give the save time to read it
-                URL.revokeObjectURL = function (u) { setTimeout(function () { revoke(u); }, 120000); };
-                var b64 = function (buf) {
-                  var s = "", bytes = new Uint8Array(buf);
-                  for (var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-                  return btoa(s);
-                };
-                var save = function (url, name) {
-                  fetch(url).then(function (r) { return r.blob(); }).then(async function (blob) {
-                    var id = DropletApp.beginSave(name || "download", blob.type || "application/octet-stream");
-                    for (var i = 0; i < blob.size; i += 786432) DropletApp.appendChunk(id, b64(await blob.slice(i, i + 786432).arrayBuffer()));
-                    DropletApp.finishSave(id);
-                  }).catch(function () { DropletApp.failSave(name || "download"); });
-                };
-                var click = HTMLAnchorElement.prototype.click;
-                HTMLAnchorElement.prototype.click = function () {
-                  if (this.href && this.href.indexOf("blob:") === 0) return save(this.href, this.download);
-                  return click.call(this);
-                };
-                document.addEventListener("click", function (e) {
-                  var a = e.target.closest && e.target.closest('a[href^="blob:"]');
-                  if (a) { e.preventDefault(); save(a.href, a.download); }
-                }, true);
-              }
-              // app settings button: at the right of the redesigned header's bar,
-              // or inside the <h1> on hubs running the older page
-              var bar = document.querySelector(".appbar-in");
-              var h1 = document.querySelector("h1");
-              if ((bar || h1) && !document.getElementById("app-settings")) {
-                var btn = document.createElement("button");
-                btn.id = "app-settings";
-                btn.type = "button";
-                btn.title = "App settings";
-                btn.setAttribute("aria-label", "App settings");
-                btn.onclick = function () { DropletApp.openSettings(); };
-                if (bar) {
-                  btn.className = "icon-btn ghost";
-                  btn.style.marginLeft = "auto";
-                  if (document.getElementById("i-gear")) {
-                    btn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#i-gear"/></svg>';
-                  } else {
-                    btn.textContent = "⚙";
-                  }
-                  var install = document.getElementById("install");
-                  bar.insertBefore(btn, install ? install.nextSibling : null);
-                } else {
-                  btn.textContent = "⚙";
-                  btn.style.cssText = "font-size:1.05rem;line-height:1;padding:.35rem .55rem;margin-left:auto";
-                  h1.appendChild(btn);
-                }
-              }
-              return getComputedStyle(document.body).backgroundColor;
-            })();
-        """.trimIndent()
+/**
+ * Where a notification's link into the hub's web app goes (docs: the hub's
+ * `/#chat-<device>`, `/#ring`, `/#inbox`, `/`). With a hub it's the web app,
+ * as before; without one, the native screen that matches, or home.
+ */
+object DeepLink {
+    sealed class Target {
+        data class Hub(val path: String) : Target()
+        data class Chat(val fp: String) : Target()
+        object Ring : Target()
+        object Home : Target()
+    }
+
+    @VisibleForTesting
+    fun target(path: String, hasHub: Boolean, ringing: Boolean, peerFp: (String) -> String?): Target {
+        if (hasHub) return Target.Hub(path)
+        val hash = path.substringAfter('#', "")
+        return when {
+            hash.startsWith("chat-") -> peerFp(hash.removePrefix("chat-"))?.let { Target.Chat(it) } ?: Target.Home
+            hash == "ring" && ringing -> Target.Ring
+            else -> Target.Home
+        }
     }
 }
