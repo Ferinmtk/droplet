@@ -27,6 +27,17 @@ public static class Json
     /// <summary>A JSON object as compact UTF-8.</summary>
     public static byte[] ToUtf8(JsonNode node) => JsonSerializer.SerializeToUtf8Bytes(node, Compact);
 
+    /// <summary>
+    /// A request body of JSON with a Content-Length. (<c>JsonContent</c> streams chunked,
+    /// which the reference peer refuses and which not every server takes.)
+    /// </summary>
+    public static ByteArrayContent Content<T>(T value)
+    {
+        var body = new ByteArrayContent(JsonSerializer.SerializeToUtf8Bytes(value, Compact));
+        body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        return body;
+    }
+
     /// <summary>A JSON object as a compact string.</summary>
     public static string ToText(JsonNode node) => node.ToJsonString(Compact);
 

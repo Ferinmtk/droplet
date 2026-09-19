@@ -2,13 +2,11 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <OutputType>Exe</OutputType>
-    <!-- test names read as sentences -->
-    <NoWarn>$(NoWarn);CA1707;CA2007</NoWarn>
+    <!-- tests: sentence names, raw TLS probes that accept any server, Linux-only helpers, public counters on fakes -->
+    <NoWarn>$(NoWarn);CA1707;CA2007;CA1711;CA5359;CA1051;CA1725;CA1416;CA1515;CA2000;xUnit1051</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="xunit.v3" Version="4.0.1" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Droplet.Core/Droplet.Core.csproj" />

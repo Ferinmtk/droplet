@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Globalization;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -472,7 +471,7 @@ public sealed class OutgoingPairing : IDisposable
         {
             Version = System.Net.HttpVersion.Version11,
             VersionPolicy = HttpVersionPolicy.RequestVersionExact,
-            Content = body is null ? null : JsonContent.Create(body, options: Json.Compact),
+            Content = body is null ? null : Json.Content(body),
         };
         req.Headers.TryAddWithoutValidation("User-Agent", MeshProtocol.UserAgent);
         HttpResponseMessage resp;

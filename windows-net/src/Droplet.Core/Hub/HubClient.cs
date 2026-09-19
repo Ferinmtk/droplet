@@ -256,7 +256,7 @@ public sealed class HubClient : IDisposable
         using var resp = await SendAsync(api, NewRequest(HttpMethod.Post, path, content), ct).ConfigureAwait(false);
     }
 
-    static JsonContent Body(object value) => JsonContent.Create(value, options: Common.Json.Compact);
+    static ByteArrayContent Body<T>(T value) => Common.Json.Content(value);
 
     // --- who the hub is, who we are -------------------------------------------------------
 
@@ -554,7 +554,7 @@ public sealed class HubClient : IDisposable
     /// <summary><c>POST /api/mesh/announce</c>: this device's mesh identity. Returns whether it changed.</summary>
     public async Task<bool> MeshAnnounceAsync(JsonObject body, CancellationToken ct = default)
     {
-        var o = await PostJsonAsync<JsonObject>("/api/mesh/announce", JsonContent.Create(body, options: Common.Json.Compact), ct)
+        var o = await PostJsonAsync<JsonObject>("/api/mesh/announce", Body(body), ct)
             .ConfigureAwait(false);
         return Common.Json.Bool(o, "changed") == true;
     }
