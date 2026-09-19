@@ -27,6 +27,7 @@
       publishing (see the README and the workflow), not here.
     -->
     <PublishTrimmed>false</PublishTrimmed>
+    <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
     <!--
       WPF0001: ThemeMode (the Fluent theme that follows the system's light and dark
       setting) is marked experimental in the SDK; it's the supported way to get it.
