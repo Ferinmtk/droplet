@@ -101,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         setUpWebView()
         b.retry.setOnClickListener { retry() }
         b.offlineSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        b.offlineTv.setOnClickListener { startActivity(dev.droplet.app.tv.TvActivity.intent(this)) }
         b.openTailscale.setOnClickListener { openTailscale() }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -574,6 +575,12 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun openSettings() {
             runOnUiThread { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+        }
+
+        /** The phone's own TV remote, which talks to the TV directly (for a web page link to it). */
+        @JavascriptInterface
+        fun openTvRemote() {
+            runOnUiThread { startActivity(dev.droplet.app.tv.TvActivity.intent(this@MainActivity)) }
         }
 
         @JavascriptInterface
