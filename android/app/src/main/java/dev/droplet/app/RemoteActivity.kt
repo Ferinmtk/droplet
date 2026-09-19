@@ -40,6 +40,8 @@ class RemoteActivity : AppCompatActivity() {
     private var names: Map<String, String> = emptyMap()
     private var loadingNames = false
     private var candidates: List<String> = emptyList()
+    private var meshNames: Map<String, String> = emptyMap()
+    private var meshRoutes: Map<String, String> = emptyMap()
     /** A droplet device id, or [Prefs.BT_TARGET] and a Bluetooth address. */
     private var target: String? = Prefs.remoteTarget
     private var live = Live.Snapshot()
@@ -97,6 +99,7 @@ class RemoteActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { Live.state.collect { live = it; render() } }
                 launch { BtHid.state.collect { render() } }
+                launch { Mesh.changes.collect { render() } }
                 launch {
                     Live.events.collect { e ->
                         if (e.optString("re") == "input") showStatus(e.optString("error"), bad = true)
@@ -110,6 +113,7 @@ class RemoteActivity : AppCompatActivity() {
         super.onStart()
         // brings the connection up even when Stay connected is off
         Live.hold(TAG)
+        Mesh.hold(TAG)
         btHost()?.let { useBluetooth(it) }
         if (timerRunning) main.post(tick)
     }
@@ -117,6 +121,7 @@ class RemoteActivity : AppCompatActivity() {
     override fun onStop() {
         main.removeCallbacks(tick)
         Live.release(TAG)
+        Mesh.release(TAG)
         BtHid.release(BT_TAG)
         super.onStop()
     }
@@ -160,11 +165,18 @@ class RemoteActivity : AppCompatActivity() {
         v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         btHost()?.let { return pressBluetooth(it, key) }
         val to = target?.takeIf { it in candidates }
+        val ev = JSONArray().put(JSONObject().put("k", "key").put("key", key))
+        if (to != null && to.startsWith(PeersActivity.MESH_PREFIX)) {
+            // directly (or through the hub if that's the only way), in order, off the main thread
+            Mesh.sendLive(to.removePrefix(PeersActivity.MESH_PREFIX), JSONObject().put("t", "input").put("ev", ev)) { r ->
+                r.onFailure { if (!isDestroyed) showStatus(it.message, bad = true) }
+            }
+            return true
+        }
         if (to == null) {
             showStatus(getString(if (Live.state.value.connected) R.string.remote_no_target else R.string.remote_offline), bad = true)
             return false
         }
-        val ev = JSONArray().put(JSONObject().put("k", "key").put("key", key))
         if (!Live.send(JSONObject().put("t", "input").put("to", to).put("ev", ev))) {
             showStatus(getString(R.string.remote_offline), bad = true)
             return false
@@ -205,13 +217,19 @@ class RemoteActivity : AppCompatActivity() {
 
     private fun render() {
         val s = live
-        candidates = s.peers.values.filter { it.id != s.deviceId && "input" in it.caps }.map { it.id }.sorted()
+        // mesh peers that take input go directly; hub devices the mesh doesn't know go through the hub
+        val mesh = Mesh.peers().filter { "input" in it.entry.caps }
+        meshNames = mesh.associate { PeersActivity.MESH_PREFIX + it.entry.fp to it.entry.name }
+        meshRoutes = mesh.associate { PeersActivity.MESH_PREFIX + it.entry.fp to it.route }
+        candidates = mesh.map { PeersActivity.MESH_PREFIX + it.entry.fp } +
+            s.peers.values.filter { p -> p.id != s.deviceId && "input" in p.caps && mesh.none { it.entry.id == p.id } }.map { it.id }.sorted()
         val bt = btHost()
         if (bt == null && target !in candidates) {
             target = candidates.firstOrNull { it == Prefs.remoteTarget } ?: candidates.firstOrNull()
         }
-        if (candidates.any { it !in names }) loadNames()
+        if (candidates.any { it !in names && !it.startsWith(PeersActivity.MESH_PREFIX) }) loadNames()
         if (bt != null) return renderBluetooth(bt)
+        target?.takeIf { it.startsWith(PeersActivity.MESH_PREFIX) }?.let { return renderMesh(it) }
 
         b.liveDot.setBackgroundResource(when {
             s.connected -> R.drawable.r_dot_on
@@ -228,6 +246,17 @@ class RemoteActivity : AppCompatActivity() {
         }
         b.target.setTextColor(ContextCompat.getColor(this, if (t != null) R.color.r_text else R.color.r_coral))
         showReady(t != null)
+    }
+
+    /** Aimed at a mesh peer: how it's reached now. */
+    private fun renderMesh(t: String) {
+        val route = meshRoutes[t] ?: "offline"
+        val up = route in setOf("lan", "tailnet", "hub", "seen")
+        b.liveDot.setBackgroundResource(if (route in setOf("lan", "tailnet", "hub")) R.drawable.r_dot_on else if (up) R.drawable.r_dot else R.drawable.r_dot_bad)
+        b.live.text = Mesh.describeRoute(this, route)
+        b.target.text = getString(R.string.remote_mesh_target, meshNames[t] ?: "?")
+        b.target.setTextColor(ContextCompat.getColor(this, R.color.r_text))
+        showReady(up)
     }
 
     private fun renderBluetooth(host: HidHost) {
@@ -271,7 +300,7 @@ class RemoteActivity : AppCompatActivity() {
         }
         val bonded = BtHid.controller.bonded()
         val ids = candidates + bonded.map { Prefs.BT_TARGET + it.address }
-        val labels = candidates.map { names[it] ?: it } +
+        val labels = candidates.map { meshNames[it]?.let { n -> getString(R.string.remote_mesh_target, n) } ?: names[it] ?: it } +
             bonded.map { getString(R.string.remote_bt_target, it.name) } +
             getString(if (bonded.isEmpty()) R.string.remote_bt_setup else R.string.remote_bt_pair)
         MaterialAlertDialogBuilder(this)

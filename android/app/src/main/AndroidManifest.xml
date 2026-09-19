@@ -113,6 +113,17 @@
         </activity>
 
         <activity
+            android:name=".PeersActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:label="@string/mesh_title" />
+
+        <activity
+            android:name=".ChatActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".RemoteActivity"
             android:exported="false"
             android:label="@string/remote_title"
@@ -168,7 +179,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keeps a connection to the user's own droplet hub so their other devices can ring this phone (find my phone), send it files, and control its media, SMS, files and clipboard." />
+                android:value="Keeps a connection to the user's own droplet hub, and listens for direct connections from the user's own paired devices, so their other devices can ring this phone (find my phone), send it files and messages, and control its media, SMS, files and clipboard." />
         </service>
 
         <service

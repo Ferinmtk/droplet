@@ -69,6 +69,8 @@ class ConnectionService : Service() {
         watchNetwork()
         // the live connection (remote control) lives as long as this service
         Live.hold(LIVE_TAG)
+        // and the mesh: other devices reach this phone directly while this runs
+        Mesh.hold(MESH_TAG)
         scope.launch {
             Live.state.collect { s ->
                 val came = s.connected && !live.connected
@@ -81,7 +83,7 @@ class ConnectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!Prefs.stayConnected || !Prefs.hasHub) {
+        if (!Prefs.stayConnected || !(Prefs.hasHub || Prefs.meshEnabled)) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -91,6 +93,7 @@ class ConnectionService : Service() {
 
     override fun onDestroy() {
         running = false
+        Mesh.release(MESH_TAG)
         Live.release(LIVE_TAG)
         Router.release(ROUTER_TAG)
         cancelAlarm(this)
@@ -124,10 +127,17 @@ class ConnectionService : Service() {
             setState(getString(R.string.conn_no_network))
             return
         }
+        if (!Prefs.hasHub) {
+            // no hub: only direct connections to paired devices
+            setState(getString(R.string.conn_mesh_only))
+            Mesh.node?.kick()
+            return
+        }
         if (!Hub.hasDevice()) {
             setState(getString(R.string.conn_unnamed))
             return
         }
+        Mesh.node?.kick()
         // an exact alarm is what still fires in Doze; use it to retry a dropped socket too
         Live.kick()
         try {
@@ -287,6 +297,7 @@ class ConnectionService : Service() {
         private const val ACTION_POLL = "dev.droplet.app.POLL"
         private const val LIVE_TAG = "service"
         private const val ROUTER_TAG = "service"
+        private const val MESH_TAG = "service"
 
         @Volatile
         var running = false

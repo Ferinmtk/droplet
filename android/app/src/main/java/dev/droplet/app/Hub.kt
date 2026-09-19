@@ -277,6 +277,18 @@ object Hub {
         post("/api/ring/stop", ByteArray(0).toRequestBody(null), idempotent = true)
     }
 
+    /** Rings another device through the hub (which also reaches a closed app by push), or stops it. */
+    fun ringDevice(id: String, stop: Boolean) {
+        post("/api/device/" + Uri.encode(id) + "/ring" + (if (stop) "/stop" else ""),
+            "{}".toRequestBody("application/json".toMediaType()), idempotent = stop)
+    }
+
+    /** POST /api/mesh/announce: this phone's mesh identity, for the hub's roster (docs/mesh.md §9.6). */
+    fun meshAnnounce(body: JSONObject): JSONObject = postJson("/api/mesh/announce", body)
+
+    /** GET /api/mesh/roster: every other approved device's mesh identity. */
+    fun meshRoster(): JSONObject = get("/api/mesh/roster")
+
     fun sendText(text: String, to: String) {
         post("/text", FormBody.Builder().add("text", text).add("to", to).build())
     }

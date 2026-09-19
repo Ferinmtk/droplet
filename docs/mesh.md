@@ -8,9 +8,14 @@
   outbox, and the `droplet-agent peers | pair | unpair | text | send-file |
   ring | clip | send` commands.
 - **The hub's roster** (`mesh.py`): §3.1 and §9.
+- **The Android app is a peer** (`android/app/src/main/java/dev/droplet/app/mesh/`
+  and `Mesh.kt`): the same protocol, tested against the Linux agent both
+  ways (§9.8). Its features use direct links: sharing files and text,
+  chat, ring, clipboard, the presentation remote, and the media, SMS and
+  files bridges answering over a link. See `android/README.md`.
 
-Not yet: the Android and Windows apps as peers, chat history merged on
-the hub (§6), and the TV remote in the apps (§7).
+Not yet: the Windows app as a peer, chat history merged on the hub (§6),
+and the TV remote in the apps (§7).
 
 Where the design changed while it was built, this document says so, and why.
 §9 is the exact wire protocol, for implementing a peer.
@@ -214,14 +219,15 @@ As built:
    agent comes first, as the reference and test peer. **Linux: done.**
 2. The roster on the hub, which is the hub vouching. **Done.**
 3. The Android app as a peer: server, routing, and the existing features
-   over direct links.
+   over direct links. **Done.**
 4. The Windows app as a peer.
 5. Direct files, chat, ring, notifications and clipboard; routing fallback;
    the outbox. **Linux: done** (it receives notifications; it has none to
    mirror).
 6. The TV remote in the Android app.
 7. Tests: each pair of platforms directly, with the hub off. **Linux–Linux:
-   done** (`agent/tests/e2e_mesh.py`).
+   done** (`agent/tests/e2e_mesh.py`). **Android–Linux: done**
+   (`MeshInteropTest`, §9.8), and Android–Android on the JVM (`MeshUnitTest`).
 
 ## 9. The wire protocol, v1 (for implementing a peer)
 
@@ -395,3 +401,45 @@ and never trusts its own.
 talk to the running agent over `$XDG_RUNTIME_DIR/droplet-agent/control.sock`
 (owner-only, and the peer's uid is checked). Without a hub, `droplet-agent
 run` runs the mesh alone. See `agent/README.md`.
+
+### 9.8 The Android peer
+
+The app follows everything above; where Android made a choice necessary,
+this is it.
+
+- **Identity.** The key is made in the Android Keystore and never leaves
+  it: TLS signs with it through the Keystore (Conscrypt calls back into it
+  for handshakes), and so does the pairing proof. Before an identity is
+  kept, a mutual-TLS handshake with itself over loopback proves the key
+  works for TLS on that phone, as server and as client. If it doesn't, or
+  there is no Keystore (the JVM in tests), the key is a PKCS#8 file in the
+  app's private storage instead, and the devices screen says so. The
+  certificate is written by a small DER encoder (`Der.kt`), not
+  BouncyCastle, to the §9.1 profile.
+- **TLS.** The server asks for a client certificate and checks its
+  fingerprint against the trust list in the handshake itself, so an
+  untrusted certificate fails the handshake as on Linux; it checks again
+  after the handshake, which also covers a resumed session of a peer
+  unpaired since. The client presents its certificate whatever CAs the
+  server names, and pins the server's fingerprint in its trust manager and
+  again in its hostname verifier.
+- **The server** is written by hand (HTTP/1.1 and RFC 6455 over
+  `SSLServerSocket`), like the reference's.
+- **Port.** 1739–1749, while Stay connected runs (and while a screen that
+  sends is open). Received files go to `Download/droplet` through
+  MediaStore.
+- **What it does with what arrives:** `text` is a notification and the
+  chat view; files, a download notification; `ring`, the loud ring;
+  `clip`, the clipboard; `notify`, a notification; `media` and `rpc`, the
+  same bridges as through the hub; `input` and `cmd` are answered with
+  `{"t":"error","re":…}` (the phone takes neither, and doesn't announce
+  them).
+- **Tests** (`android/app/src/test`): `MeshUnitTest` (the certificate
+  profile, pairing vectors from the reference, Range, the server's access
+  rules over real sockets, two JVM peers pairing and talking) and
+  `MeshInteropTest`, against real `droplet-agent run --dry-run` processes:
+  TLS with fingerprints both ways and strangers refused, pairing started
+  from either side with matching codes, text, a 20 MB file each way
+  interrupted and resumed, ring, clip, media and RPC answered by the
+  phone's bridges, the roster through a hub, and direct delivery after the
+  hub is stopped.

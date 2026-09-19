@@ -9,7 +9,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
-import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +22,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -68,7 +66,6 @@ object Live {
     private const val PING_SECONDS = 25L
     private const val ROUTER_TAG = "live"
     private const val MAX_BACKOFF_S = 30L
-    private const val RPC_BUDGET_MS = 28_000L  // the hub gives up after 30 s
 
     private val _state = MutableStateFlow(Snapshot())
     val state: StateFlow<Snapshot> = _state.asStateFlow()
@@ -320,13 +317,20 @@ object Live {
                         peers = peers(msg.optJSONObject("devices"))))
                 }
                 startFeatures()
+                // the mesh: announce this phone to the hub and fetch its roster
+                Mesh.onHubUp(msg.optJSONObject("device")?.optString("id"), msg.optJSONObject("device")?.optString("name"))
             }
             "presence" -> synchronized(this) {
                 if (gen == generation) publish(_state.value.copy(peers = peers(msg.optJSONObject("devices"))))
             }
             "media" -> if ("media" in _state.value.caps) MediaBridge.act(app, msg)
             "clip" -> if ("clipboard" in _state.value.caps) ClipBridge.apply(app, msg.optString("text"))
-            "rpc" -> scope.launch { answer(msg) }
+            "rpc" -> scope.launch {
+                val from = msg.optJSONObject("from")?.optString("id").orEmpty()
+                send(Rpc.answer(app, msg, _state.value.caps, from.takeIf { it.isNotEmpty() }?.let { FileBridge.hubSender(app, it) }))
+            }
+            // the hub's mesh roster changed: fetch it again
+            "roster" -> Mesh.onRosterChanged()
             "error" -> _events.tryEmit(msg)
             else -> Unit  // pong, state from other devices, and anything newer: ignored
         }
@@ -340,53 +344,21 @@ object Live {
         }
     }
 
-    private suspend fun answer(msg: JSONObject) {
-        val id = msg.optString("id")
-        val method = msg.optString("method")
-        val params = msg.optJSONObject("params") ?: JSONObject()
-        val from = msg.optJSONObject("from")
-        val caps = _state.value.caps
-        val reply = JSONObject().put("t", "rpc-result").put("id", id)
-        val wake = app.getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "droplet:rpc").apply { acquire(RPC_BUDGET_MS + 2_000) }
-        try {
-            val result = withTimeoutOrNull(RPC_BUDGET_MS) {
-                when (method.substringBefore('.')) {
-                    "files" -> if ("files" in caps) FileBridge.call(app, method, params, from)
-                        else throw RpcError(app.getString(R.string.live_err_off, app.getString(R.string.cap_files)))
-                    "sms" -> if ("sms" in caps) SmsBridge.call(app, method, params)
-                        else throw RpcError(app.getString(R.string.live_err_off, app.getString(R.string.cap_sms)))
-                    else -> throw RpcError("The phone doesn't know $method")
-                }
-            } ?: throw RpcError(app.getString(R.string.live_err_slow))
-            reply.put("result", result)
-        } catch (e: RpcError) {
-            reply.put("error", e.message)
-        } catch (e: SecurityException) {
-            reply.put("error", app.getString(R.string.live_err_permission))
-        } catch (e: Exception) {
-            reply.put("error", e.message ?: e.javaClass.simpleName)
-        } finally {
-            if (wake.isHeld) wake.release()
-        }
-        send(reply)
-    }
-
     // --- what runs while connected ---------------------------------------------
 
     private var batteryReceiver: BroadcastReceiver? = null
     private var lastBattery: Pair<Int, Boolean>? = null
 
     private fun startFeatures() {
-        val caps = _state.value.caps
-        if ("media" in caps) MediaBridge.start(app)
+        Presence.hold(app, "hub")
         // the hub forgets a helper's state when it disconnects, so say it again
+        for ((kind, data) in States.last) if (kind != "battery" && data is JSONObject) sendState(kind, data)
         lastBattery = null
         watchBattery(true)
     }
 
     private fun stopFeatures() {
-        MediaBridge.stop()
+        Presence.release("hub")
         watchBattery(false)
     }
 
@@ -404,7 +376,7 @@ object Live {
                 val now = level * 100 / scale to (status == BatteryManager.BATTERY_STATUS_CHARGING ||
                     status == BatteryManager.BATTERY_STATUS_FULL)
                 if (now == lastBattery) return
-                if (sendState("battery", JSONObject().put("level", now.first).put("charging", now.second))) {
+                if (States.publish("battery", JSONObject().put("level", now.first).put("charging", now.second))) {
                     lastBattery = now
                 }
                 // the hub's Phone card reads the HTTP copy (rate-limited inside)
