@@ -380,26 +380,35 @@ public sealed partial class MeshServer : IAsyncDisposable
         long done = 0;
         var buf = new byte[FileChunk];
         var rate = handler.MaxRate;
-        await using var f = offer.Open();
-        f.Seek(first, SeekOrigin.Begin);
-        while (done < length)
+        try
         {
-            var n = await f.ReadAsync(buf.AsMemory(0, (int)Math.Min(FileChunk, length - done)), ctx.RequestAborted).ConfigureAwait(false);
-            if (n == 0)
+            await using var f = offer.Open();
+            f.Seek(first, SeekOrigin.Begin);
+            while (done < length)
             {
-                throw new IOException("the file got shorter while it was being sent");
-            }
-            await resp.Body.WriteAsync(buf.AsMemory(0, n), ctx.RequestAborted).ConfigureAwait(false);
-            done += n;
-            offer.Progress(n);
-            if (rate > 0)
-            {
-                var ahead = done * 1000.0 / rate - (Environment.TickCount64 - started);
-                if (ahead > 0)
+                var n = await f.ReadAsync(buf.AsMemory(0, (int)Math.Min(FileChunk, length - done)), ctx.RequestAborted).ConfigureAwait(false);
+                if (n == 0)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(ahead), ctx.RequestAborted).ConfigureAwait(false);
+                    throw new IOException("the file got shorter while it was being sent");
+                }
+                await resp.Body.WriteAsync(buf.AsMemory(0, n), ctx.RequestAborted).ConfigureAwait(false);
+                done += n;
+                offer.Progress(n);
+                if (rate > 0)
+                {
+                    var ahead = done * 1000.0 / rate - (Environment.TickCount64 - started);
+                    if (ahead > 0)
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(ahead), ctx.RequestAborted).ConfigureAwait(false);
+                    }
                 }
             }
+        }
+        catch (Exception e) when (e is IOException or OperationCanceledException or UnauthorizedAccessException)
+        {
+            // the receiver went away (it resumes later), or the file did: the response is cut short
+            log.LogDebug("mesh: serving {Name} stopped at {Done} of {Length} bytes: {Error}", offer.Name, done, length, e.Message);
+            ctx.Abort();
         }
     }
 
