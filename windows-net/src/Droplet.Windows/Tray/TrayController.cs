@@ -68,7 +68,7 @@ internal sealed class TrayController
         }
         catch (InvalidOperationException e)
         {
-            app.ShowError(e.Message);
+            App.ShowError(e.Message);
         }
         Update();
     }

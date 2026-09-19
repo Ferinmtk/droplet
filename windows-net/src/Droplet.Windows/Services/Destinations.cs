@@ -132,7 +132,7 @@ internal static class Destinations
         {
             return byId;
         }
-        var named = all.Where(d => d.Name.Equals(q, StringComparison.CurrentCultureIgnoreCase)).ToList();
+        var named = all.Where(d => d.Name.Equals(q, StringComparison.OrdinalIgnoreCase)).ToList();
         return named.Count switch
         {
             1 => named[0],

@@ -1,5 +1,5 @@
 using System.IO;
-using System.Windows.Media;
+using ScaleTransform = System.Windows.Media.ScaleTransform;
 using System.Windows.Media.Imaging;
 using Droplet.Core.Platform;
 using Droplet.Windows.Shell;
@@ -131,7 +131,7 @@ internal sealed class MediaService : IMedia, IDisposable
         }
     }
 
-    Volume? TryVolume()
+    static Volume? TryVolume()
     {
         try
         {

@@ -12,6 +12,7 @@ namespace Droplet.Windows.Views;
 /// PC's browser already is; connect over the tailnet; or skip the hub and pair directly.
 /// With a hub id, it re-joins a hub whose certificate changed, trusting the new one.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA1001", Justification = "The window disposes it when it closes")]
 public partial class SetupWindow : Window
 {
     readonly App app;
@@ -43,7 +44,12 @@ public partial class SetupWindow : Window
             }
             await ScanAsync();
         };
-        Closed += (_, _) => waiting?.Cancel();
+        Closed += (_, _) =>
+        {
+            waiting?.Cancel();
+            waiting?.Dispose();
+            waiting = null;
+        };
     }
 
     AppHost Host => app.Host;
@@ -233,6 +239,7 @@ public partial class SetupWindow : Window
                         "Check it shows this same code, then allow it. That's how you know this PC found your hub and not an impostor.";
         Host.Refresh();
         waiting?.Cancel();
+        waiting?.Dispose();
         waiting = new CancellationTokenSource();
         var ct = waiting.Token;
         _ = Task.Run(async () =>

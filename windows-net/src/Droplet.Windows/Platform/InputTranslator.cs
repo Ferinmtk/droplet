@@ -245,6 +245,7 @@ internal sealed class InputTranslator
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(text);
         var prevCr = false;
+        Span<char> units = stackalloc char[2];
         foreach (var r in text.EnumerateRunes())
         {
             var v = r.Value;
@@ -266,7 +267,6 @@ internal sealed class InputTranslator
             }
             else
             {
-                Span<char> units = stackalloc char[2];
                 var n = r.EncodeToUtf16(units);
                 for (var i = 0; i < n; i++)
                 {

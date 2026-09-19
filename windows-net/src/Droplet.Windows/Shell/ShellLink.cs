@@ -75,7 +75,7 @@ internal static class ShellLink
     public static void Save(Shortcut s)
     {
         ArgumentNullException.ThrowIfNull(s);
-        var link = new CShellLink();
+        object link = new CShellLink();
         try
         {
             var sl = (IShellLinkW)link;

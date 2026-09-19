@@ -172,7 +172,7 @@ public partial class DevicesWindow : Window
         }
         catch (InvalidOperationException ex)
         {
-            app.ShowError(ex.Message);
+            App.ShowError(ex.Message);
         }
         Host.Refresh();
     }

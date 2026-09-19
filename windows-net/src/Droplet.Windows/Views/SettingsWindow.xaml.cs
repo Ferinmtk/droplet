@@ -144,7 +144,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            app.ShowError("Couldn't save the settings: " + ex.Message);
+            App.ShowError("Couldn't save the settings: " + ex.Message);
             Load();
         }
     }
@@ -252,7 +252,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            app.ShowError("Couldn't apply that: " + ex.Message);
+            App.ShowError("Couldn't apply that: " + ex.Message);
         }
         finally
         {

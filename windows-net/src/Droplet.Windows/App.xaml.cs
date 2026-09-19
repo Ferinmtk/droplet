@@ -19,6 +19,7 @@ namespace Droplet.Windows;
 /// windows, and carries out what other droplet.exe processes ask (a second launch, Send To,
 /// a notification's button).
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA1001", Justification = "Quit disposes them; the Application lives as long as the process")]
 public partial class App : Application
 {
     readonly Command initial;
@@ -306,7 +307,7 @@ public partial class App : Application
         Front(w);
     }
 
-    internal void ShowError(string message) =>
+    internal static void ShowError(string message) =>
         Native.MessageBox(0, message, "droplet", 0x30);
 
     internal void OpenWeb()
