@@ -70,7 +70,7 @@ jobs:
       # The test projects are Microsoft.Testing.Platform apps: run them directly. The interop
       # tests need Linux (the reference agent), so they're left to the Linux job.
       - name: Core tests (unit)
-        run: ./tests/Droplet.Core.Tests/bin/Release/net10.0/Droplet.Core.Tests.exe --filter-not-namespace Droplet.Core.Tests.Interop
+        run: ./tests/Droplet.Core.Tests/bin/Release/net10.0/Droplet.Core.Tests.exe -namespace- Droplet.Core.Tests.Interop
 
       - name: Windows tests
         run: ./tests/Droplet.Windows.Tests/bin/Release/net10.0-windows10.0.19041.0/Droplet.Windows.Tests.exe
@@ -127,7 +127,8 @@ jobs:
           -p:MsixPublisherDisplayName="${{ vars.MSIX_PUBLISHER_DISPLAY_NAME || 'Ferinmtk' }}"
 
       - name: Remove the test key
-        if: always()
+        # only when the key was made: an empty path makes Remove-Item fail
+        if: always() && steps.cert.outputs.pfx != ''
         run: Remove-Item -ErrorAction SilentlyContinue '${{ steps.cert.outputs.pfx }}'
 
       - uses: actions/upload-artifact@v4

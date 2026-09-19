@@ -129,7 +129,7 @@ Install the .NET 10 SDK (`global.json` pins it), then:
 ```bash
 dotnet build                  # on Linux the WPF app builds too (EnableWindowsTargeting)
 dotnet test                   # unit and interop tests
-dotnet test --filter-not-namespace Droplet.Core.Tests.Interop        # unit tests only
+tests/Droplet.Core.Tests/bin/Debug/net10.0/Droplet.Core.Tests -namespace- Droplet.Core.Tests.Interop   # unit tests only
 ```
 
 The test projects are Microsoft.Testing.Platform apps, so they can also be
