@@ -328,6 +328,9 @@ class TvFakeTvTest {
         signal(p, "CONT")
         waitFor("back", 15_000) { l.state.value.connected }
         watcher.interrupt()
+        watcher.join(2_000)
+        // the watcher samples every 20 ms: record where the link is now, so a sample it missed doesn't count
+        l.state.value.phase.let { if (phases.lastOrNull() != it) phases += it }
         assertTrue(phases.toString(), phases.containsAll(listOf(TvLink.Phase.CONNECTED, TvLink.Phase.CONNECTING,
             TvLink.Phase.UNREACHABLE)))
         assertEquals(TvLink.Phase.CONNECTED, phases.last())
