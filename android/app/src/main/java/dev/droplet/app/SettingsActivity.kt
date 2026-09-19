@@ -62,15 +62,14 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_REPAIR, true))
         }
         b.forget.setOnClickListener { askForget() }
+        b.addHub.setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
+        b.rename.setOnClickListener { askRename() }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 Router.state.collect { showRoute(it) }
             }
         }
-        b.open.setOnClickListener {
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-            finish()
-        }
+        b.open.setOnClickListener { startActivity(Intent(this, HubActivity::class.java)) }
 
         b.stay.setOnCheckedChangeListener { _, on ->
             if (on == Prefs.stayConnected) return@setOnCheckedChangeListener
@@ -124,11 +123,14 @@ class SettingsActivity : AppCompatActivity() {
 
     /** "Fingerprint 1a2b3c4d… · port 1739 · 3 devices", or why not. */
     private fun showMesh(s: Mesh.Snapshot) {
+        if (!Prefs.hasHub) showRoute(Router.state.value)
         b.meshSwitch.isChecked = Prefs.meshEnabled
         b.meshDot.setBackgroundResource(if (s.status == Mesh.Status.RUNNING) R.drawable.dot_online else R.drawable.dot)
         b.meshState.text = when (s.status) {
             Mesh.Status.RUNNING -> getString(R.string.s_mesh_state, s.fp.orEmpty().take(8) + "…", s.port,
-                resources.getQuantityString(R.plurals.s_mesh_peers, s.peers, s.peers))
+                resources.getQuantityString(R.plurals.s_mesh_peers, s.peers, s.peers)) +
+                // where the phone's key is, when the Keystore couldn't do TLS with it
+                (Mesh.node?.identity?.fallbackReason?.let { "\n" + getString(R.string.mesh_identity_file, it) } ?: "")
             Mesh.Status.STARTING -> getString(R.string.mesh_status_starting)
             Mesh.Status.FAILED -> getString(R.string.mesh_status_failed, s.error.orEmpty())
             Mesh.Status.OFF -> if (Prefs.meshEnabled) getString(R.string.live_off) else getString(R.string.mesh_status_off)
@@ -289,8 +291,22 @@ class SettingsActivity : AppCompatActivity() {
         Live.refresh()
     }
 
-    /** The hub card: how it's reached now, and who it is. */
+    /** The hub card: how it's reached now, and who it is; or that there's none, and how to add one. */
     private fun showRoute(s: Router.State) {
+        val hub = Prefs.hasHub
+        for (v in listOf(b.changeHub, b.hubIdentity, b.hubTailnet, b.hubButtons, b.open, b.linkRow)) {
+            v.visibility = if (hub) View.VISIBLE else View.GONE
+        }
+        b.hubNone.visibility = if (hub) View.GONE else View.VISIBLE
+        b.addHub.visibility = b.hubNone.visibility
+        b.rename.visibility = b.hubNone.visibility
+        if (!hub) {
+            b.hubName.setText(R.string.s_hub_none_title)
+            b.routeState.setText(R.string.s_hub_none_state)
+            b.routeDot.setBackgroundResource(if (Mesh.state.value.status == Mesh.Status.RUNNING) R.drawable.dot_online else R.drawable.dot)
+            b.identityRow.visibility = View.GONE
+            return
+        }
         b.hubName.text = Router.hubLabel()
         b.routeState.text = Router.describe(this, s)
         b.routeDot.setBackgroundResource(if (s.route != null) R.drawable.dot_online else R.drawable.dot)
@@ -313,9 +329,11 @@ class SettingsActivity : AppCompatActivity() {
             .setMessage(R.string.s_forget_body)
             .setPositiveButton(R.string.s_forget) { _, _ ->
                 SetupActivity.forget(this)
-                startActivity(Intent(this, SetupActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
-                finish()
+                // the phone carries on without a hub, with its directly paired devices
+                Prefs.noHub = true
+                Toast.makeText(this, R.string.s_forgot, Toast.LENGTH_LONG).show()
+                refresh()
+                loadDevice()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -340,7 +358,38 @@ class SettingsActivity : AppCompatActivity() {
         showBluetooth(BtHid.state.value)
     }
 
+    /** Without a hub, the phone's name is droplet's own: what paired devices see. */
+    private fun askRename() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            filters = arrayOf(InputFilter.LengthFilter(40))
+            setText(Prefs.meshDeviceName ?: SetupActivity.suggestedName(this@SettingsActivity))
+            setSelection(text.length)
+        }
+        val box = FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.s_rename_title)
+            .setView(box)
+            .setPositiveButton(R.string.s_rename_go) { _, _ ->
+                val name = input.text.toString().trim().split(Regex("\\s+")).joinToString(" ")
+                if (name.isEmpty()) return@setPositiveButton
+                Prefs.meshDeviceName = name
+                Mesh.capsChanged()
+                loadDevice()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun loadDevice() {
+        if (!Prefs.hasHub) {
+            b.device.text = getString(R.string.s_named_direct, Prefs.meshDeviceName ?: SetupActivity.suggestedName(this))
+            return
+        }
         b.device.setText(R.string.s_checking)
         lifecycleScope.launch {
             val me = withContext(Dispatchers.IO) { runCatching { Hub.me() } }
