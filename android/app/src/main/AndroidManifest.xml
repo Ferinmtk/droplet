@@ -136,6 +136,25 @@
             android:theme="@style/Theme.Droplet.Remote"
             android:windowSoftInputMode="adjustResize|stateHidden" />
 
+        <!-- the TV remote and pairing a TV: they keep their state (a code on the TV, a
+             held key) through a rotation rather than being made again -->
+        <activity
+            android:name=".tv.TvActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/tv_title"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Droplet.Remote"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <activity
+            android:name=".tv.TvPairActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/tv_pair_title"
+            android:theme="@style/Theme.Droplet.Remote"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
         <!-- invisible: exists only to be the focused app while reading the clipboard -->
         <activity
             android:name=".ClipSendActivity"
@@ -150,6 +169,21 @@
             android:exported="true"
             android:icon="@drawable/ic_clip"
             android:label="@string/clip_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="false" />
+        </service>
+
+        <!-- the TV remote, one tap from the quick settings -->
+        <service
+            android:name=".tv.TvTileService"
+            android:exported="true"
+            android:icon="@drawable/tv_ic_tv"
+            android:label="@string/tv_title"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

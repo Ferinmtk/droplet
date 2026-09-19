@@ -235,6 +235,21 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- the phone as a TV remote, straight to the TV (dev.droplet.app.tv) -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/s_tv" />
+
+            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_tv_desc" />
+
+                <com.google.android.material.button.MaterialButton android:id="@+id/open_tv"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:text="@string/s_tv_open"
+                    app:cornerRadius="10dp" app:icon="@drawable/tv_ic_tv" />
+            </LinearLayout>
+
             <!-- the phone as a Bluetooth mouse and keyboard -->
             <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:text="@string/s_bt" />
