@@ -1,0 +1,136 @@
+<Project DefaultTargets="Pack">
+  <!--
+    Packs droplet as an MSIX, from an app already published (self-contained, win-x64):
+
+      dotnet publish ../src/Droplet.Windows -c Release -r win-x64 --self-contained -o ../artifacts/app
+      dotnet msbuild Droplet.Package.proj -p:AppDir=../artifacts/app [-p:MsixIdentityName=...]
+
+    The identity is three build properties. Until the app is reserved in Partner Center they
+    default to test values, fine for sideloading with a test certificate; for the Store, pass
+    the values from Partner Center → the app → Product management → Product identity (see
+    README.md here). Store submissions are then signed by Microsoft.
+
+    Targets: Layout (the package folder), Pack (Layout, then resources.pri and the .msix, with
+    the Windows SDK's MakePri and MakeAppx), Sign (Pack, then SignTool with a .pfx). Layout
+    needs no Windows SDK, so it runs anywhere.
+  -->
+  <PropertyGroup>
+    <MsixIdentityName Condition="'$(MsixIdentityName)' == ''">Ferinmtk.droplet.Test</MsixIdentityName>
+    <MsixPublisher Condition="'$(MsixPublisher)' == ''">CN=droplet test</MsixPublisher>
+    <MsixPublisherDisplayName Condition="'$(MsixPublisherDisplayName)' == ''">Ferinmtk</MsixPublisherDisplayName>
+    <MsixVersion Condition="'$(MsixVersion)' == ''">2.0.0.0</MsixVersion>
+    <MsixArchitecture Condition="'$(MsixArchitecture)' == ''">x64</MsixArchitecture>
+    <AppDir Condition="'$(AppDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\app\</AppDir>
+    <AppDir>$([MSBuild]::EnsureTrailingSlash('$([System.IO.Path]::GetFullPath('$(AppDir)'))'))</AppDir>
+    <PackageDir Condition="'$(PackageDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\msix\</PackageDir>
+    <PackageDir>$([MSBuild]::EnsureTrailingSlash('$([System.IO.Path]::GetFullPath('$(PackageDir)'))'))</PackageDir>
+    <PackageFile Condition="'$(PackageFile)' == ''">$(PackageDir)droplet_$(MsixVersion)_$(MsixArchitecture).msix</PackageFile>
+    <WorkDir>$(MSBuildThisFileDirectory)obj\$(MsixArchitecture)\</WorkDir>
+    <LayoutDir>$(WorkDir)layout\</LayoutDir>
+    <PriDir>$(WorkDir)pri\</PriDir>
+  </PropertyGroup>
+
+  <UsingTask TaskName="FillManifest" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Template ParameterType="System.String" Required="true" />
+      <Output ParameterType="System.String" Required="true" />
+      <Values ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var values = new System.Collections.Generic.Dictionary<string, string>();
+        foreach (var v in Values)
+        {
+            values[v.ItemSpec] = v.GetMetadata("Value");
+        }
+        // what the package manifest schema accepts (checked here, so a bad value says which it is)
+        if (!Regex.IsMatch(values["Name"], @"^[-.A-Za-z0-9]{3,50}$"))
+        {
+            Log.LogError("MsixIdentityName \"" + values["Name"] + "\" isn't a package name: 3 to 50 letters, digits, dots and dashes.");
+        }
+        if (!Regex.IsMatch(values["Publisher"], @"^CN=.+$") || values["Publisher"].Length > 8192)
+        {
+            Log.LogError("MsixPublisher \"" + values["Publisher"] + "\" must be a certificate subject starting with CN=, exactly as Partner Center shows it.");
+        }
+        var parts = values["Version"].Split('.');
+        if (parts.Length != 4 || Array.Exists(parts, p => !ushort.TryParse(p, out _)))
+        {
+            Log.LogError("MsixVersion \"" + values["Version"] + "\" must be four numbers from 0 to 65535, like 2.0.0.0.");
+        }
+        if (values["Architecture"] != "x64" && values["Architecture"] != "arm64")
+        {
+            Log.LogError("MsixArchitecture must be x64 or arm64.");
+        }
+        if (Log.HasLoggedErrors)
+        {
+            return false;
+        }
+        var text = File.ReadAllText(Template);
+        foreach (var kv in values)
+        {
+            text = text.Replace("$" + kv.Key + "$", System.Security.SecurityElement.Escape(kv.Value));
+        }
+        var left = Regex.Match(text, @"\$[A-Za-z]+\$");
+        if (left.Success)
+        {
+            Log.LogError("The manifest template has a value nobody filled in: " + left.Value);
+            return false;
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(Output));
+        File.WriteAllText(Output, text, new UTF8Encoding(false));
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="Layout">
+    <Error Condition="!Exists('$(AppDir)droplet.exe')" Text="No published app at $(AppDir) (droplet.exe missing). Publish it first: see the top of this file." />
+    <ItemGroup>
+      <_AppFiles Include="$(AppDir)**\*" Exclude="$(AppDir)**\*.pdb" />
+      <_Assets Include="$(MSBuildThisFileDirectory)Assets\*.png" />
+      <_Values Include="Name" Value="$(MsixIdentityName)" />
+      <_Values Include="Publisher" Value="$(MsixPublisher)" />
+      <_Values Include="PublisherDisplayName" Value="$(MsixPublisherDisplayName)" />
+      <_Values Include="Version" Value="$(MsixVersion)" />
+      <_Values Include="Architecture" Value="$(MsixArchitecture)" />
+    </ItemGroup>
+    <RemoveDir Directories="$(WorkDir)" />
+    <Copy SourceFiles="@(_AppFiles)" DestinationFiles="@(_AppFiles->'$(LayoutDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(_Assets)" DestinationFolder="$(LayoutDir)Assets" />
+    <Copy SourceFiles="@(_Assets)" DestinationFolder="$(PriDir)Assets" />
+    <FillManifest Template="$(MSBuildThisFileDirectory)AppxManifest.xml.in" Output="$(LayoutDir)AppxManifest.xml" Values="@(_Values)" />
+    <Copy SourceFiles="$(LayoutDir)AppxManifest.xml" DestinationFolder="$(PriDir)" />
+    <Message Importance="high" Text="MSIX layout: $(LayoutDir) ($(MsixIdentityName) $(MsixVersion), $(MsixPublisher))" />
+  </Target>
+
+  <!-- the newest Windows SDK's tools -->
+  <Target Name="FindSdkTools">
+    <ItemGroup>
+      <_MakeAppx Include="$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.*\x64\makeappx.exe" />
+    </ItemGroup>
+    <PropertyGroup>
+      <MakeAppxExe Condition="'$(MakeAppxExe)' == ''">%(_MakeAppx.FullPath)</MakeAppxExe>
+      <SdkToolsDir>$([System.IO.Path]::GetDirectoryName('$(MakeAppxExe)'))\</SdkToolsDir>
+    </PropertyGroup>
+    <Error Condition="'$(MakeAppxExe)' == '' Or !Exists('$(MakeAppxExe)')" Text="The Windows 10/11 SDK's makeappx.exe wasn't found. Install the Windows SDK, or pass -p:MakeAppxExe=..." />
+  </Target>
+
+  <Target Name="Pack" DependsOnTargets="Layout;FindSdkTools">
+    <MakeDir Directories="$(PackageDir)" />
+    <!-- resources.pri: lets Windows pick each image's best scale; indexes the images only -->
+    <Exec Command="&quot;$(SdkToolsDir)makepri.exe&quot; createconfig /cf &quot;$(WorkDir)priconfig.xml&quot; /dq en-US /pv 10.0.0 /o" />
+    <Exec Command="&quot;$(SdkToolsDir)makepri.exe&quot; new /pr &quot;$(PriDir.TrimEnd('\'))&quot; /cf &quot;$(WorkDir)priconfig.xml&quot; /mn &quot;$(PriDir)AppxManifest.xml&quot; /of &quot;$(LayoutDir)resources.pri&quot; /o" />
+    <Exec Command="&quot;$(MakeAppxExe)&quot; pack /d &quot;$(LayoutDir.TrimEnd('\'))&quot; /p &quot;$(PackageFile)&quot; /o" />
+    <Message Importance="high" Text="MSIX: $(PackageFile)" />
+  </Target>
+
+  <!-- signs with a .pfx: -p:CertificateFile=... -p:CertificatePassword=... (its subject must be MsixPublisher) -->
+  <Target Name="Sign" DependsOnTargets="Pack">
+    <Error Condition="'$(CertificateFile)' == ''" Text="Pass -p:CertificateFile=path.pfx (and -p:CertificatePassword=...)." />
+    <Exec Command="&quot;$(SdkToolsDir)signtool.exe&quot; sign /fd SHA256 /f &quot;$(CertificateFile)&quot; /p &quot;$(CertificatePassword)&quot; &quot;$(PackageFile)&quot;"
+          EchoOff="true" />
+    <Message Importance="high" Text="Signed $(PackageFile)" />
+  </Target>
+</Project>
