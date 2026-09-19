@@ -16,6 +16,7 @@ public partial class DevicesWindow : Window
     readonly App app;
     readonly DispatcherTimer pairPoll;
     string? selectedKey;
+    string deviceKey = "", requestKey = "", nearbyKey = "";
     string? pairRequest;
     string pairPeer = "";
 
@@ -47,16 +48,22 @@ public partial class DevicesWindow : Window
         ControlBanner.Visibility = tray.ControlledBy is null || tray.RemotePaused ? Visibility.Collapsed : Visibility.Visible;
         ControlText.Text = $"{tray.ControlledBy} is controlling this PC (or did in the last two minutes).";
 
+        // the list is rebuilt only when it changed, so selection, focus and scrolling stay put
         var rows = Host.Destinations.Select(d => new DeviceRow(d.Name, d.IsHub ? (d.Online ? "files and messages go here" : "offline") : d.Route, d.Online, d.Os, d)).ToList();
-        List.ItemsSource = rows;
-        var again = rows.FirstOrDefault(r => ((Destination)r.Item).Key == selectedKey) ?? (selectedKey is null ? rows.FirstOrDefault() : null);
-        List.SelectedItem = again;
+        if (Changed(ref deviceKey, rows.Select(r => $"{((Destination)r.Item).Key}|{r.Name}|{r.Route}|{r.Online}|{r.Os}")))
+        {
+            List.ItemsSource = rows;
+            List.SelectedItem = rows.FirstOrDefault(r => ((Destination)r.Item).Key == selectedKey) ?? (selectedKey is null ? rows.FirstOrDefault() : null);
+        }
         EmptyText.Visibility = rows.Count == 0 && PairCard.Visibility != Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
 
         var mesh = Host.Engine?.Mesh;
         var requests = mesh?.Incoming.Waiting()
             .Select(r => new RequestRow($"{r.Name} wants to pair{(r.Os.Length > 0 ? $" ({r.Os})" : "")}", r.Code, r.Request)).ToList() ?? [];
-        Requests.ItemsSource = requests;
+        if (Changed(ref requestKey, requests.Select(r => r.Request + r.Code)))
+        {
+            Requests.ItemsSource = requests;
+        }
         RequestsCard.Visibility = requests.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         if (mesh is not null)
@@ -64,10 +71,24 @@ public partial class DevicesWindow : Window
             var trusted = mesh.Trust.All().Select(t => t.Fp).ToHashSet();
             var nearby = mesh.Nearby.Where(s => !trusted.Contains(s.Fp)).GroupBy(s => s.Fp).Select(g => g.First())
                 .Select(s => new NearbyRow(s.Name, $"{(s.Os.Length > 0 ? s.Os + " · " : "")}{string.Join(", ", s.Addresses)}", s.Fp)).ToList();
-            Nearby.ItemsSource = nearby;
+            if (Changed(ref nearbyKey, nearby.Select(n => n.Target + n.Name + n.Detail)))
+            {
+                Nearby.ItemsSource = nearby;
+            }
             NoNearby.Visibility = nearby.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         ShowDetail();
+    }
+
+    static bool Changed(ref string last, IEnumerable<string> parts)
+    {
+        var now = string.Join("\n", parts);
+        if (now == last)
+        {
+            return false;
+        }
+        last = now;
+        return true;
     }
 
     void ShowDetail()
