@@ -52,7 +52,7 @@ object Tv {
     val dir: File get() = dirOverride ?: File(app.filesDir, "tv")
     val store: TvStore get() = TvStore(dir)
 
-    @Volatile private var identity: TvIdentity? = null
+    @Volatile private var identity: Pair<File, TvIdentity>? = null
 
     /** Bumped when the list of TVs changes. */
     private val _changes = MutableStateFlow(0)
@@ -80,8 +80,9 @@ object Tv {
     }
 
     /** The client identity, made on first use. Blocking. */
-    fun identity(): TvIdentity = identity ?: synchronized(this) {
-        identity ?: TvIdentity.loadOrCreate(dir).also { identity = it }
+    fun identity(): TvIdentity = synchronized(this) {
+        val d = dir
+        identity?.takeIf { it.first == d }?.second ?: TvIdentity.loadOrCreate(d).also { identity = d to it }
     }
 
     /** What the TV shows as this remote's name while pairing. */

@@ -172,4 +172,37 @@
         <item name="strokeColor">@color/r_line_2</item>
         <item name="iconTint">@color/r_tab_text</item>
     </style>
+
+    <!-- the TV remote's round keys: an icon in a circle -->
+    <style name="Droplet.Teal.RoundKey" parent="Widget.Material3.Button">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="backgroundTint">@color/r_card_2</item>
+        <item name="strokeColor">@color/r_line_2</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cornerRadius">999dp</item>
+        <item name="iconTint">@color/r_text</item>
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconGravity">textStart</item>
+    </style>
+
+    <!-- key buttons made in code on the TV remote pick up Droplet.Teal.RoundKey through this -->
+    <style name="ThemeOverlay.Droplet.RoundKey" parent="">
+        <item name="materialButtonStyle">@style/Droplet.Teal.RoundKey</item>
+    </style>
+
+    <!-- the volume and channel rockers: a tall pill with + and - -->
+    <style name="Droplet.Teal.Rocker" parent="">
+        <item name="android:background">@drawable/tv_rocker</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:gravity">center_horizontal</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+    </style>
 </resources>

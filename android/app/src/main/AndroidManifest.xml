@@ -136,6 +136,25 @@
             android:theme="@style/Theme.Droplet.Remote"
             android:windowSoftInputMode="adjustResize|stateHidden" />
 
+        <!-- the TV remote and pairing a TV: they keep their state (a code on the TV, a
+             held key) through a rotation rather than being made again -->
+        <activity
+            android:name=".tv.TvActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/tv_title"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Droplet.Remote"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <activity
+            android:name=".tv.TvPairActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/tv_pair_title"
+            android:theme="@style/Theme.Droplet.Remote"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
         <!-- invisible: exists only to be the focused app while reading the clipboard -->
         <activity
             android:name=".ClipSendActivity"

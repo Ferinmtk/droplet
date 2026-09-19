@@ -1,0 +1,496 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The TV remote (TvActivity): the TV's state, then the D-pad or touchpad,
+     the navigation keys, rockers and media keys, then typing, apps, more
+     buttons and this remote's settings. Rows of like buttons are made in code. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/r_bg"
+    android:orientation="vertical">
+
+    <!-- header: back, which TV and its state, power -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp">
+
+        <ImageButton
+            android:id="@+id/back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="-12dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back" />
+
+        <LinearLayout
+            android:id="@+id/tv_row"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tv_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/r_text"
+                    android:textSize="19sp"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="2dp"
+                    android:contentDescription="@null"
+                    android:rotation="90"
+                    android:src="@drawable/ic_chevron"
+                    app:tint="@color/r_dim" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/state_dot"
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/r_dot" />
+
+                <TextView
+                    android:id="@+id/state"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/r_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/power"
+            style="@style/Droplet.Teal.RoundKey"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:contentDescription="@string/tv_power"
+            app:icon="@drawable/tv_ic_power" />
+    </LinearLayout>
+
+    <!-- the TV's volume -->
+    <LinearLayout
+        android:id="@+id/volume_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="6dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/volume_icon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:contentDescription="@null"
+            android:src="@drawable/tv_ic_vol"
+            app:tint="@color/r_dim" />
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/volume"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="10dp"
+            android:layout_weight="1"
+            app:indicatorColor="@color/r_accent"
+            app:trackColor="@color/r_line"
+            app:trackCornerRadius="3dp"
+            app:trackThickness="5dp" />
+
+        <TextView
+            android:id="@+id/volume_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="24dp"
+            android:gravity="end"
+            android:textColor="@color/r_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <!-- can't reach it, or it wants pairing again -->
+    <LinearLayout
+        android:id="@+id/banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/r_banner"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/banner_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/r_text"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/banner_action"
+            style="@style/Droplet.Teal.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:minHeight="44dp"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp">
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/mode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:checkedButton="@id/mode_buttons"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/mode_buttons"
+                    style="@style/Droplet.Teal.Tab"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/tv_mode_buttons"
+                    app:icon="@drawable/tv_ic_dpad" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/mode_pad"
+                    style="@style/Droplet.Teal.Tab"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/tv_mode_pad"
+                    app:icon="@drawable/tv_ic_pad" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <!-- the D-pad or the touchpad -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp">
+
+                <dev.droplet.app.tv.DpadView
+                    android:id="@+id/dpad"
+                    android:layout_width="280dp"
+                    android:layout_height="280dp"
+                    android:layout_gravity="center_horizontal" />
+
+                <dev.droplet.app.tv.TvPadView
+                    android:id="@+id/pad"
+                    android:layout_width="match_parent"
+                    android:layout_height="280dp"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <!-- Back, Home, Menu -->
+            <LinearLayout
+                android:id="@+id/nav"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:orientation="horizontal" />
+
+            <!-- volume and channel rockers, mute and input between them -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/vol_rocker"
+                    style="@style/Droplet.Teal.Rocker"
+                    android:layout_width="72dp"
+                    android:layout_height="wrap_content" />
+
+                <LinearLayout
+                    android:id="@+id/middle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical" />
+
+                <LinearLayout
+                    android:id="@+id/ch_rocker"
+                    style="@style/Droplet.Teal.Rocker"
+                    android:layout_width="72dp"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <!-- media keys -->
+            <LinearLayout
+                android:id="@+id/media"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:orientation="horizontal" />
+
+            <!-- typing -->
+            <TextView
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="28dp"
+                android:text="@string/tv_keyboard" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/r_card"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/text"
+                        android:layout_width="0dp"
+                        android:layout_height="52dp"
+                        android:layout_weight="1"
+                        android:autofillHints=""
+                        android:background="@drawable/r_field"
+                        android:hint="@string/tv_type_hint"
+                        android:imeOptions="actionSend"
+                        android:inputType="text"
+                        android:maxLength="500"
+                        android:paddingHorizontal="14dp"
+                        android:textColor="@color/r_text"
+                        android:textColorHint="@color/r_dim"
+                        android:textSize="16sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/send"
+                        style="@style/Droplet.Teal.Primary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:minHeight="52dp"
+                        android:text="@string/tv_send" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/type_keys"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/tv_type_note"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- apps -->
+            <TextView
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="24dp"
+                android:text="@string/tv_apps" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/r_card"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <GridLayout
+                    android:id="@+id/apps"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:columnCount="4"
+                    android:useDefaultMargins="false" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/link"
+                        android:layout_width="0dp"
+                        android:layout_height="52dp"
+                        android:layout_weight="1"
+                        android:autofillHints=""
+                        android:background="@drawable/r_field"
+                        android:hint="@string/tv_link_hint"
+                        android:imeOptions="actionGo"
+                        android:inputType="textUri"
+                        android:maxLength="2048"
+                        android:paddingHorizontal="14dp"
+                        android:textColor="@color/r_text"
+                        android:textColorHint="@color/r_dim"
+                        android:textSize="15sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/open_link"
+                        style="@style/Droplet.Teal.Secondary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:minHeight="52dp"
+                        android:text="@string/tv_open_link" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- numbers and the rarer keys -->
+            <TextView
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="24dp"
+                android:text="@string/tv_more" />
+
+            <LinearLayout
+                android:id="@+id/more"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/r_card"
+                android:orientation="vertical"
+                android:padding="14dp" />
+
+            <!-- this remote -->
+            <TextView
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="24dp"
+                android:text="@string/tv_this_remote" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/r_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/haptics"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tv_haptics"
+                    android:textColor="@color/r_text"
+                    android:textSize="16sp" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/tv_second_remote" />
+
+                <TextView
+                    android:id="@+id/key_storage"
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/bluetooth"
+                    style="@style/Droplet.Teal.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="@string/tv_use_bluetooth"
+                    app:icon="@drawable/ic_bluetooth"
+                    app:iconTint="@color/r_text" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/tv_use_bluetooth_desc"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/pair_again"
+                    style="@style/Droplet.Teal.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="@string/tv_pair_again" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/forget"
+                    style="@style/Droplet.Teal.Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/tv_forget"
+                    android:textColor="@color/r_coral" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

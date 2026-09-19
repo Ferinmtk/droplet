@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pairing a TV (TvPairActivity): find it, then type the code it shows. One
+     step shows at a time: find, busy, code, done. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/r_bg"
+    android:orientation="vertical"
+    android:paddingHorizontal="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="-12dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/tv_pair_title"
+            android:textColor="@color/r_text"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="16dp">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <!-- ============ find: TVs on this Wi-Fi, or an address ============ -->
+            <LinearLayout
+                android:id="@+id/step_find"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Droplet.Teal.Title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/tv_find_title" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/tv_find_body" />
+
+                <LinearLayout
+                    android:id="@+id/searching"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.progressindicator.CircularProgressIndicator
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:indeterminate="true"
+                        app:indicatorColor="@color/r_accent"
+                        app:indicatorSize="18dp"
+                        app:trackThickness="2dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/tv_find_searching"
+                        android:textColor="@color/r_dim"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/found"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/found_none"
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/tv_find_none"
+                    android:visibility="gone" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Eyebrow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginTop="28dp"
+                    android:text="@string/tv_find_by_ip" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/ip"
+                        android:layout_width="0dp"
+                        android:layout_height="52dp"
+                        android:layout_weight="1"
+                        android:autofillHints=""
+                        android:background="@drawable/r_field"
+                        android:digits="0123456789abcdefABCDEF.:[]%-"
+                        android:hint="@string/tv_ip_hint"
+                        android:imeOptions="actionGo"
+                        android:inputType="text"
+                        android:maxLength="64"
+                        android:paddingHorizontal="14dp"
+                        android:textColor="@color/r_text"
+                        android:textColorHint="@color/r_dim"
+                        android:textSize="16sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/connect"
+                        style="@style/Droplet.Teal.Secondary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="@string/tv_connect" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/find_error"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="@color/r_coral"
+                    android:textSize="14sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- ============ busy: asking the TV for a code ============ -->
+            <LinearLayout
+                android:id="@+id/step_busy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingTop="64dp"
+                android:visibility="gone">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:indeterminate="true"
+                    app:indicatorColor="@color/r_accent" />
+
+                <TextView
+                    android:id="@+id/busy_text"
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:gravity="center" />
+            </LinearLayout>
+
+            <!-- ============ code: what the TV shows ============ -->
+            <LinearLayout
+                android:id="@+id/step_code"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/Droplet.Teal.Title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/tv_code_title" />
+
+                <TextView
+                    android:id="@+id/code_body"
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" />
+
+                <EditText
+                    android:id="@+id/code"
+                    android:layout_width="match_parent"
+                    android:layout_height="80dp"
+                    android:layout_marginTop="22dp"
+                    android:autofillHints=""
+                    android:background="@drawable/r_code"
+                    android:digits="0123456789abcdefABCDEF"
+                    android:fontFamily="monospace"
+                    android:gravity="center"
+                    android:hint="@string/tv_code_hint"
+                    android:imeOptions="actionDone"
+                    android:inputType="textCapCharacters|textNoSuggestions|textVisiblePassword"
+                    android:letterSpacing="0.35"
+                    android:maxLength="6"
+                    android:textColor="@color/r_text"
+                    android:textColorHint="@color/r_line_2"
+                    android:textSize="34sp"
+                    android:textStyle="bold"
+                    tools:ignore="TextFields" />
+
+                <TextView
+                    android:id="@+id/code_error"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="@color/r_coral"
+                    android:textSize="14sp"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/pair"
+                    style="@style/Droplet.Teal.Primary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/tv_pair" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/start_again"
+                    style="@style/Droplet.Teal.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/tv_start_again"
+                    android:visibility="gone" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="22dp"
+                    android:text="@string/tv_second_remote"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- ============ done ============ -->
+            <LinearLayout
+                android:id="@+id/step_done"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="24dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/done_title"
+                    style="@style/Droplet.Teal.Title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/tv_paired_body" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/open_remote"
+                    style="@style/Droplet.Teal.Primary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="22dp"
+                    android:text="@string/tv_open_remote" />
+            </LinearLayout>
+        </FrameLayout>
+    </ScrollView>
+</LinearLayout>
