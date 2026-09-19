@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <!--
+      CA1720/CA1716: names like Int() and Me mirror the protocol's own words.
+      CA1848/CA1873: LoggerMessage delegates buy nothing at this log volume.
+      CA1031: a background loop must survive any one failure, and logs it.
+    -->
+    <NoWarn>$(NoWarn);CA1720;CA1716;CA1848;CA1873;CA1031</NoWarn>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Authors>Ferinmtk</Authors>
+    <Product>droplet</Product>
+    <Copyright>droplet contributors</Copyright>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+  </PropertyGroup>
+</Project>

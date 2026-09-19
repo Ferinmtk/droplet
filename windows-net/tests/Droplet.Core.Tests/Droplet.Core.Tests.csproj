@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <!-- tests: sentence names, raw TLS probes that accept any server, Linux-only helpers, public counters on fakes -->
+    <NoWarn>$(NoWarn);CA1707;CA2007;CA1711;CA5359;CA1051;CA1725;CA1416;CA1515;CA2000;xUnit1051</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Droplet.Core/Droplet.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

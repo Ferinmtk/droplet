@@ -275,6 +275,12 @@ follows it interoperates with it.
 
 ### 9.3 Pairing (with no hub)
 
+> **Request bodies need a `Content-Length`.** The reference peer refuses chunked
+> request bodies (`Transfer-Encoding: chunked`) with 413, so every peer must
+> send the length up front. The .NET peer first sent chunked bodies and had to
+> change.
+
+
 The initiator I, the responder R. HTTPS to R's port, **I presents no client
 certificate**. `nA` and `nB` are 32 random bytes each, written as 64
 lowercase hex characters.

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The platform-independent engine of droplet for Windows: the hub client,
+    local-first routing, the mesh peer and the message dispatch. No Windows
+    APIs here: the WPF app (Droplet.App) implements the platform interfaces.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Droplet.Core</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Kestrel, for the mesh port -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Droplet.Core.Tests" />
+  </ItemGroup>
+</Project>
