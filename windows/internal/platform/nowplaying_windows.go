@@ -1,110 +1,88 @@
 package platform
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"os/exec"
-	"sync"
 	"syscall"
 	"time"
-	"unicode/utf16"
 	"unsafe"
 
-	"golang.org/x/sys/windows"
+	ole "github.com/go-ole/go-ole"
 
 	"github.com/Ferinmtk/droplet/windows/internal/remote"
 )
 
 // What's playing comes from Windows' media sessions
-// (GlobalSystemMediaTransportControlsSessionManager, the source of the
-// volume flyout's media card). That's a WinRT API, which Go can't reach
-// without cgo, so a small PowerShell loop reads it and prints one JSON line
-// a second; album art comes as a separate line when the track changes.
-//
-// The loop dies with droplet: it's in a kill-on-close job object, and it
-// exits when its output pipe breaks.
+// (Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager,
+// the source of the volume flyout's media card), read once a second over
+// WinRT. Album art is read when the track changes.
 
-const nowPlayingScript = `
-$ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-$out = [Console]::Out
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
-$null = [Windows.Storage.Streams.IRandomAccessStreamWithContentType, Windows.Storage.Streams, ContentType = WindowsRuntime]
-$asTask = @([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
-  $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation` + "`" + `1' })[0]
-function Await($op, [Type]$type) {
-  $t = $asTask.MakeGenericMethod($type).Invoke($null, @($op))
-  if (-not $t.Wait(5000)) { throw 'timed out' }
-  $t.Result
-}
-$mgr = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
-$sent = @{}
-while ($true) {
-  $players = New-Object System.Collections.ArrayList
-  $cur = $mgr.GetCurrentSession()
-  $curId = ''
-  if ($cur) { $curId = $cur.SourceAppUserModelId }
-  foreach ($s in $mgr.GetSessions()) {
-    try {
-      $p = Await ($s.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
-      $info = $s.GetPlaybackInfo()
-      $tl = $s.GetTimelineProperties()
-      $status = [string]$info.PlaybackStatus
-      $len = ($tl.EndTime - $tl.StartTime).TotalSeconds
-      $pos = ($tl.Position - $tl.StartTime).TotalSeconds
-      if ($status -eq 'Playing' -and $tl.LastUpdatedTime.Year -gt 2000) {
-        $pos += ([DateTimeOffset]::Now - $tl.LastUpdatedTime).TotalSeconds
-      }
-      $key = ''
-      if ($p.Thumbnail) {
-        $key = [string]$s.SourceAppUserModelId + '|' + $p.Title + '|' + $p.Artist + '|' + $p.AlbumTitle
-        if (-not $sent.ContainsKey($key)) {
-          if ($sent.Count -gt 20) { $sent.Clear() }
-          $sent[$key] = $true
-          try {
-            $ras = Await ($p.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
-            $st = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($ras)
-            $ms = New-Object System.IO.MemoryStream
-            $st.CopyTo($ms)
-            $st.Dispose()
-            if ($ms.Length -gt 0 -and $ms.Length -le 4MB) {
-              $out.WriteLine((ConvertTo-Json -Compress @{ art_key = $key; art = [Convert]::ToBase64String($ms.ToArray()) }))
-            }
-          } catch { }
-        }
-      }
-      [void]$players.Add(@{
-        id = [string]$s.SourceAppUserModelId; status = $status
-        title = [string]$p.Title; artist = [string]$p.Artist; album = [string]$p.AlbumTitle
-        position = [double]$pos; length = [double]$len
-        can_seek = [bool]$info.Controls.IsPlaybackPositionEnabled
-        can_next = [bool]$info.Controls.IsNextEnabled
-        can_previous = [bool]$info.Controls.IsPreviousEnabled
-        art_key = $key })
-    } catch { }
-  }
-  $out.WriteLine((ConvertTo-Json -Compress -Depth 4 @{ current = $curId; players = $players.ToArray() }))
-  $out.Flush()
-  Start-Sleep -Milliseconds 1000
-}
-`
+var (
+	iidSessionManagerStatics = ole.NewGUID("{2050C4EE-11A0-57DE-AED7-C97C70338245}")
+	iidIRandomAccessStream   = ole.NewGUID("{905A0FE1-BC53-11DF-8C49-001E4FC686DA}")
+)
+
+// Slots of the Windows.Media.Control interfaces used here.
+const (
+	// IGlobalSystemMediaTransportControlsSessionManagerStatics
+	slotRequestAsync = 6
+	// IGlobalSystemMediaTransportControlsSessionManager
+	slotGetCurrentSession = 6
+	slotGetSessions       = 7
+	// IVectorView<T>
+	slotVectorGetAt = 6
+	slotVectorSize  = 7
+	// IGlobalSystemMediaTransportControlsSession
+	slotSourceAppUserModelID       = 6
+	slotTryGetMediaPropertiesAsync = 7
+	slotGetTimelineProperties      = 8
+	slotGetPlaybackInfo            = 9
+	// IGlobalSystemMediaTransportControlsSessionMediaProperties
+	slotTitle      = 6
+	slotArtist     = 9
+	slotAlbumTitle = 10
+	slotThumbnail  = 15
+	// IGlobalSystemMediaTransportControlsSessionPlaybackInfo
+	slotControls       = 6
+	slotPlaybackStatus = 7
+	// IGlobalSystemMediaTransportControlsSessionPlaybackControls
+	slotIsNextEnabled             = 12
+	slotIsPreviousEnabled         = 13
+	slotIsPlaybackPositionEnabled = 20
+	// IGlobalSystemMediaTransportControlsSessionTimelineProperties
+	slotStartTime       = 6
+	slotEndTime         = 7
+	slotPosition        = 10
+	slotLastUpdatedTime = 11
+	// IRandomAccessStreamReference
+	slotOpenReadAsync = 6
+	// IRandomAccessStream
+	slotStreamSize = 6
+	// IStream (a classic COM interface: its methods start at slot 3)
+	slotIStreamRead = 3
+)
+
+// maxArtBytes caps the album art read from an app.
+const maxArtBytes = 4 << 20
 
 type nowPlaying struct{}
 
-// Run keeps the helper going while ctx lasts. If it keeps failing (an old
-// Windows without media sessions, PowerShell blocked by policy), it gives
-// up and the media state carries the volume with an empty player list.
+// Run keeps reading the media sessions while ctx lasts. If that keeps
+// failing (an old Windows without media sessions), it gives up and the
+// media state carries the volume with an empty player list.
 func (nowPlaying) Run(ctx context.Context, update func([]remote.Player)) {
+	// this goroutine keeps its thread (and the WinRT objects made on it) to itself
+	if err := startWinRT(); err != nil {
+		log.Printf("now playing: %v; sending the volume only", err)
+		return
+	}
 	fails := 0
 	for ctx.Err() == nil {
 		start := time.Now()
-		err := runNowPlaying(ctx, update)
+		err := readNowPlaying(ctx, update)
 		if ctx.Err() != nil {
 			return
 		}
@@ -125,101 +103,218 @@ func (nowPlaying) Run(ctx context.Context, update func([]remote.Player)) {
 	}
 }
 
-func runNowPlaying(ctx context.Context, update func([]remote.Player)) error {
-	u := utf16.Encode([]rune(nowPlayingScript))
-	b := make([]byte, len(u)*2)
-	for i, c := range u {
-		b[2*i], b[2*i+1] = byte(c), byte(c>>8)
-	}
-	cmd := exec.CommandContext(ctx, powershellPath(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-WindowStyle", "Hidden", "-EncodedCommand", base64.StdEncoding.EncodeToString(b))
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	stdout, err := cmd.StdoutPipe()
+// readNowPlaying reads the sessions once a second until ctx ends or
+// reading fails, calling update when the players change.
+func readNowPlaying(ctx context.Context, update func([]remote.Player)) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	statics, err := factory("Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager", iidSessionManagerStatics)
 	if err != nil {
 		return err
 	}
-	if err := cmd.Start(); err != nil {
+	op, err := statics.getObj(slotRequestAsync, "RequestAsync", false)
+	statics.release()
+	if err != nil {
 		return err
 	}
-	adoptChild(cmd.Process.Pid)
+	mgr, err := await(op, 10*time.Second, "RequestAsync")
+	if err != nil {
+		return err
+	}
+	if mgr.p == nil {
+		return errors.New("no media session manager")
+	}
+	defer mgr.release()
 
-	art := map[string]string{}
-	sc := bufio.NewScanner(stdout)
-	sc.Buffer(make([]byte, 64<<10), 8<<20)
-	lines := 0
+	art := newArtCache()
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
 	var last []byte
-	for sc.Scan() {
-		line := bytes.TrimPrefix(sc.Bytes(), []byte("\xef\xbb\xbf"))
-		var l remote.SMTCLine
-		if json.Unmarshal(line, &l) != nil {
-			continue
-		}
-		if l.ArtKey != "" && l.Art != "" {
-			if u, err := remote.ArtDataURL(l.Art); err == nil {
-				if len(art) > 20 {
-					art = map[string]string{}
-				}
-				art[l.ArtKey] = u
-			}
-			last = nil // re-send the players with their art
-			continue
-		}
-		ss, err := l.Sessions()
+	for rounds := 0; ; rounds++ {
+		current, sessions, err := readSessions(mgr, art)
 		if err != nil {
-			continue
+			return fmt.Errorf("%w (after %d updates)", err, rounds)
 		}
-		lines++
-		players := remote.ToPlayers(l.Current, ss, art)
+		players := remote.ToPlayers(current, sessions, art.urls)
 		key, _ := json.Marshal(players)
-		if !bytes.Equal(key, last) {
+		if string(key) != string(last) {
 			last = key
 			update(players)
 		}
-	}
-	err = cmd.Wait()
-	if msg := bytes.TrimSpace(stderr.Bytes()); len(msg) > 0 {
-		if len(msg) > 300 {
-			msg = msg[:300]
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-tick.C:
 		}
-		return fmt.Errorf("the PowerShell helper stopped after %d updates: %s", lines, msg)
 	}
-	if err == nil {
-		return fmt.Errorf("the PowerShell helper exited after %d updates", lines)
-	}
-	return fmt.Errorf("the PowerShell helper stopped after %d updates: %v", lines, err)
 }
 
-var (
-	jobOnce sync.Once
-	job     windows.Handle
-)
+// artCache remembers album art by track, so it's read once per track.
+type artCache struct {
+	urls  map[string]string // art key → data: URL
+	tried map[string]bool   // art keys read (or failed to), not to read again
+}
 
-// adoptChild puts a child process in a job that Windows kills along with
-// droplet, so a crash can't leave the helper running.
-func adoptChild(pid int) {
-	jobOnce.Do(func() {
-		h, err := windows.CreateJobObject(nil, nil)
-		if err != nil {
-			return
-		}
-		info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-		info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-		if _, err := windows.SetInformationJobObject(h, windows.JobObjectExtendedLimitInformation,
-			uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
-			windows.CloseHandle(h)
-			return
-		}
-		job = h // held open for droplet's lifetime
-	})
-	if job == 0 {
-		return
+func newArtCache() *artCache {
+	return &artCache{urls: map[string]string{}, tried: map[string]bool{}}
+}
+
+func readSessions(mgr comPtr, art *artCache) (string, []remote.SMTCSession, error) {
+	current := ""
+	if cur, err := mgr.getObj(slotGetCurrentSession, "GetCurrentSession", true); err == nil && cur.p != nil {
+		current, _ = cur.getString(slotSourceAppUserModelID, "SourceAppUserModelId")
+		cur.release()
 	}
-	p, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(pid))
+	list, err := mgr.getObj(slotGetSessions, "GetSessions", false)
 	if err != nil {
+		return "", nil, err
+	}
+	defer list.release()
+	n, err := list.getInt32(slotVectorSize, "Size")
+	if err != nil {
+		return "", nil, err
+	}
+	var out []remote.SMTCSession
+	for i := 0; i < int(uint32(n)) && i < 32; i++ {
+		var s comPtr
+		hr, _, _ := syscall.SyscallN(list.method(slotVectorGetAt), list.this(), uintptr(i), uintptr(unsafe.Pointer(&s.p)))
+		if check(hr, "GetAt") != nil || s.p == nil {
+			continue
+		}
+		// one app's session failing (it closed just now, say) doesn't stop the rest
+		if sess, err := readSession(s, art); err == nil {
+			out = append(out, sess)
+		}
+		s.release()
+	}
+	return current, out, nil
+}
+
+func readSession(s comPtr, art *artCache) (remote.SMTCSession, error) {
+	var out remote.SMTCSession
+	var err error
+	if out.ID, err = s.getString(slotSourceAppUserModelID, "SourceAppUserModelId"); err != nil {
+		return out, err
+	}
+
+	op, err := s.getObj(slotTryGetMediaPropertiesAsync, "TryGetMediaPropertiesAsync", false)
+	if err != nil {
+		return out, err
+	}
+	props, err := await(op, 5*time.Second, "TryGetMediaPropertiesAsync")
+	if err != nil {
+		return out, err
+	}
+	if props.p != nil {
+		defer props.release()
+		out.Title, _ = props.getString(slotTitle, "Title")
+		out.Artist, _ = props.getString(slotArtist, "Artist")
+		out.Album, _ = props.getString(slotAlbumTitle, "AlbumTitle")
+		if thumb, err := props.getObj(slotThumbnail, "Thumbnail", true); err == nil && thumb.p != nil {
+			out.ArtKey = out.ID + "|" + out.Title + "|" + out.Artist + "|" + out.Album
+			art.load(out.ArtKey, thumb)
+			thumb.release()
+		}
+	}
+
+	info, err := s.getObj(slotGetPlaybackInfo, "GetPlaybackInfo", false)
+	if err != nil {
+		return out, err
+	}
+	defer info.release()
+	status, err := info.getInt32(slotPlaybackStatus, "PlaybackStatus")
+	if err != nil {
+		return out, err
+	}
+	out.Status = playbackStatus(status)
+	if c, err := info.getObj(slotControls, "Controls", true); err == nil && c.p != nil {
+		out.CanSeek, _ = c.getBool(slotIsPlaybackPositionEnabled, "IsPlaybackPositionEnabled")
+		out.CanNext, _ = c.getBool(slotIsNextEnabled, "IsNextEnabled")
+		out.CanPrevious, _ = c.getBool(slotIsPreviousEnabled, "IsPreviousEnabled")
+		c.release()
+	}
+
+	tl, err := s.getObj(slotGetTimelineProperties, "GetTimelineProperties", false)
+	if err != nil {
+		return out, err
+	}
+	defer tl.release()
+	start, _ := tl.getInt64(slotStartTime, "StartTime")
+	end, _ := tl.getInt64(slotEndTime, "EndTime")
+	pos, _ := tl.getInt64(slotPosition, "Position")
+	updated, _ := tl.getInt64(slotLastUpdatedTime, "LastUpdatedTime")
+	out.Length, out.Position = timeline(start, end, pos, updated, out.Status == "Playing", time.Now())
+	return out, nil
+}
+
+// load reads a track's album art once; art that can't be read is skipped.
+func (c *artCache) load(key string, thumb comPtr) {
+	if c.tried[key] {
 		return
 	}
-	defer windows.CloseHandle(p)
-	windows.AssignProcessToJobObject(job, p)
+	if len(c.tried) > 20 {
+		c.urls, c.tried = map[string]string{}, map[string]bool{}
+	}
+	c.tried[key] = true
+	raw, err := readThumbnail(thumb)
+	if err != nil || len(raw) == 0 {
+		return
+	}
+	if u, err := remote.ArtDataURL(raw); err == nil {
+		c.urls[key] = u
+	}
+}
+
+// readThumbnail reads an IRandomAccessStreamReference's bytes, through the
+// classic IStream that shcore wraps around a WinRT stream.
+func readThumbnail(ref comPtr) ([]byte, error) {
+	op, err := ref.getObj(slotOpenReadAsync, "OpenReadAsync", false)
+	if err != nil {
+		return nil, err
+	}
+	stream, err := await(op, 5*time.Second, "OpenReadAsync")
+	if err != nil {
+		return nil, err
+	}
+	if stream.p == nil {
+		return nil, errors.New("no stream")
+	}
+	defer stream.release()
+	ras, err := stream.query(iidIRandomAccessStream)
+	if err != nil {
+		return nil, err
+	}
+	size, err := ras.getInt64(slotStreamSize, "Size")
+	ras.release()
+	if err != nil {
+		return nil, err
+	}
+	if size <= 0 || size > maxArtBytes {
+		return nil, fmt.Errorf("art of %d bytes", size)
+	}
+	var is comPtr
+	hr, _, _ := pCreateStreamOverRandomAccessStream.Call(stream.this(), uintptr(unsafe.Pointer(iidIStream)), uintptr(unsafe.Pointer(&is.p)))
+	if err := check(hr, "CreateStreamOverRandomAccessStream"); err != nil {
+		return nil, err
+	}
+	defer is.release()
+	buf := make([]byte, size)
+	got := 0
+	for got < len(buf) {
+		var n uint32
+		// IStream::Read(pv, cb, pcbRead); S_FALSE with fewer bytes at the end
+		hr, _, _ := syscall.SyscallN(is.method(slotIStreamRead), is.this(),
+			uintptr(unsafe.Pointer(&buf[got])), uintptr(len(buf)-got), uintptr(unsafe.Pointer(&n)))
+		if err := check(hr, "Read"); err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			break
+		}
+		got += int(n)
+	}
+	return buf[:got], nil
 }

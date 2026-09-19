@@ -75,7 +75,7 @@
   <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3C16 3 6 14.5 6 20.5a10 10 0 0 0 20 0C26 14.5 16 3 16 3z" fill="#38bdf8"/><path d="M11.5 20.5a4.5 4.5 0 0 0 4.5 4.5" stroke="#0f172a" stroke-width="2" fill="none" stroke-linecap="round" opacity=".55"/></svg>
   <h1>droplet</h1>
 </header>
-<p class="sub" id="intro">The companion that lives in your tray: it picks up files and messages sent to this PC, rings when you're looking for it, puts droplet in Explorer's <i>Send to</i> menu, and lets your other devices control this PC.</p>
+<p class="sub" id="intro">The companion that lives in your tray: it picks up files and messages sent to this PC, rings when you're looking for it, and lets your other devices control this PC.</p>
 
 <h2>Hub</h2>
 <div class="card">
@@ -213,9 +213,21 @@
 
 <h2>Windows</h2>
 <div class="card">
+  <div class="field">
+    <div class="help" style="margin-top:0">droplet changes nothing in Windows' startup or Explorer until you turn it on here.
+      Like any installed app, it adds itself to the Start menu, which is also what lets its notifications show.
+      <code>droplet uninstall</code> removes everything it added.</div>
+  </div>
   <div class="field" id="f-autostart">
-    <label class="toggle"><span class="t">Start droplet when I sign in</span>
+    <label class="toggle"><span><span class="t">Start droplet when I sign in</span><br><span class="d">So files, messages and rings
+      reach this PC without starting droplet yourself. Adds droplet to your sign-in apps, for your Windows account only.</span></span>
       <span class="switch"><input type="checkbox" id="autostart"><span></span></span></label>
+    <div class="err"></div>
+  </div>
+  <div class="field" id="f-send_to">
+    <label class="toggle"><span><span class="t">Add droplet to Explorer's "Send to" menu</span><br><span class="d">Right-click any file →
+      <i>Send to</i> → <i>droplet → Hub</i> or a device. Adds one shortcut per device to your Send to folder; turning this off removes them.</span></span>
+      <span class="switch"><input type="checkbox" id="send_to"><span></span></span></label>
     <div class="err"></div>
   </div>
 </div>
@@ -227,8 +239,8 @@
 
 <div class="done" id="done">
   <b>All set.</b> droplet is running in the tray (look by the clock, under <code>^</code> if it's hidden).
-  Right-click it to send files, send the clipboard or ring a device. In Explorer, right-click any file →
-  <i>Send to</i> → <i>droplet → …</i>. You can close this tab.
+  Right-click it to send files, send the clipboard or ring a device.<span id="doneSendTo"> In Explorer, right-click any file →
+  <i>Send to</i> → <i>droplet → …</i>.</span> You can close this tab.
 </div>
 
 <script>
@@ -503,11 +515,12 @@ async function load() {
   showHub(data.hub);
   for (const k of ["hub_url", "name", "download_dir"]) $(k).value = s[k] || "";
   if (!$("name").value) $("name").value = data.suggested_name || "";
-  for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart"]) $(k).checked = !!s[k];
+  for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart", "send_to"]) $(k).checked = !!s[k];
   if (data.first_run) {
-    $("autostart").checked = true;
+    // starting with Windows and Send to stay off until the person turns them on
     $("intro").textContent = "Welcome! Pick your hub under \"Hubs on this network\" and choose Join (or enter its Tailscale address), " +
-      "then save. droplet then keeps running in your tray.";
+      "then save. droplet then keeps running in your tray. To have it start when you sign in, or to add it to Explorer's " +
+      "Send to menu, turn those on under Windows below.";
   }
   scan();
   probe(true);
@@ -526,7 +539,7 @@ async function save() {
   $("save").textContent = "Saving…";
   const body = { pin: $("pin").value };
   for (const k of ["hub_url", "name", "download_dir"]) body[k] = $(k).value;
-  for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart"]) body[k] = $(k).checked;
+  for (const k of ["auto_download", "notify_files", "notify_messages", "ring_sound", "autostart", "send_to"]) body[k] = $(k).checked;
   const { ok, data } = await api("save", body).catch(() => gone);
   $("save").disabled = false;
   $("save").textContent = "Save";
@@ -537,6 +550,7 @@ async function save() {
   $("hub_url").value = data.hub_url || "";
   $("saved").textContent = "Saved ✓";
   await refresh();
+  $("doneSendTo").hidden = !$("send_to").checked;
   if (!data.pending) $("done").style.display = "block";
   probe(false);
   return true;

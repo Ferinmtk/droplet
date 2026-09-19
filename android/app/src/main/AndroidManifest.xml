@@ -30,8 +30,17 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
-    <!-- SMS is optional: tablets without a SIM still install it -->
+    <!-- the Bluetooth mouse and keyboard (BtHid), asked for only when that screen
+         opens. Android 12+: "Nearby devices" (connect to a paired computer or TV,
+         make the phone visible for pairing); before that, install-time permissions.
+         No BLUETOOTH_SCAN: the phone never searches for other devices. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <!-- SMS and Bluetooth are optional: tablets without a SIM still install it -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <!-- the "apps not to mirror" list shows installed apps with a launcher icon;
          "Open Tailscale" on the offline screen needs to see the Tailscale app -->
@@ -108,6 +117,13 @@
             android:exported="false"
             android:label="@string/remote_title"
             android:theme="@style/Theme.Droplet.Remote" />
+
+        <activity
+            android:name=".BluetoothActivity"
+            android:exported="false"
+            android:label="@string/bt_title"
+            android:theme="@style/Theme.Droplet.Remote"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
 
         <!-- invisible: exists only to be the focused app while reading the clipboard -->
         <activity

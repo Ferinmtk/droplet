@@ -11,7 +11,7 @@
           "name": "Ferinmtk.droplet",
           "version": "1.0.0.0"
         },
-        "description": "droplet companion",
+        "description": "droplet – companion for the droplet hub",
         "minimum-os": "win10",
         "execution-level": "as invoker",
         "ui-access": false,
@@ -38,12 +38,12 @@
         },
         "info": {
           "0409": {
-            "Comments": "Tray companion for a droplet hub",
+            "Comments": "Tray companion for a droplet hub: https://github.com/Ferinmtk/droplet",
             "CompanyName": "Ferinmtk",
-            "FileDescription": "droplet",
+            "FileDescription": "droplet – companion for the droplet hub",
             "FileVersion": "1.0.0",
             "InternalName": "droplet",
-            "LegalCopyright": "Ferinmtk",
+            "LegalCopyright": "© 2026 Ferinmtk",
             "OriginalFilename": "droplet.exe",
             "ProductName": "droplet",
             "ProductVersion": "1.0.0"

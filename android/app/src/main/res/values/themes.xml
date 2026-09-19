@@ -137,4 +137,39 @@
         <item name="android:textColor">@color/dim</item>
         <item name="android:lineSpacingExtra">2dp</item>
     </style>
+
+    <!-- the Bluetooth keyboard's keys and the media row -->
+    <style name="Droplet.Teal.Key" parent="Widget.Material3.Button">
+        <item name="android:minHeight">52dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/r_text</item>
+        <item name="android:maxLines">1</item>
+        <item name="backgroundTint">@color/r_card_2</item>
+        <item name="strokeColor">@color/r_line_2</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cornerRadius">14dp</item>
+        <item name="iconTint">@color/r_text</item>
+        <item name="iconPadding">6dp</item>
+    </style>
+
+    <!-- key buttons made in code pick up Droplet.Teal.Key through this -->
+    <style name="ThemeOverlay.Droplet.Key" parent="">
+        <item name="materialButtonStyle">@style/Droplet.Teal.Key</item>
+    </style>
+
+    <style name="Droplet.Teal.Tab" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:minHeight">44dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/r_tab_text</item>
+        <item name="backgroundTint">@color/r_tab_bg</item>
+        <item name="strokeColor">@color/r_line_2</item>
+        <item name="iconTint">@color/r_tab_text</item>
+    </style>
 </resources>

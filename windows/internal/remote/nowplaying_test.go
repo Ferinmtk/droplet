@@ -2,8 +2,6 @@ package remote
 
 import (
 	"bytes"
-	"encoding/base64"
-	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -12,33 +10,26 @@ import (
 	"testing"
 )
 
-func TestSMTCLineParsing(t *testing.T) {
-	// PowerShell writes a lone session as an object, several as an array
-	one := `{"current":"Spotify.exe","players":{"id":"Spotify.exe","status":"Playing","title":"Só","artist":"A","album":"B","position":12.5,"length":200,"can_next":true,"can_previous":true,"can_seek":true,"art_key":"k1"}}`
-	var l SMTCLine
-	if err := json.Unmarshal([]byte(one), &l); err != nil {
-		t.Fatal(err)
-	}
-	ss, err := l.Sessions()
-	if err != nil || len(ss) != 1 {
-		t.Fatalf("%v %v", ss, err)
-	}
-	ps := ToPlayers(l.Current, ss, map[string]string{"k1": "data:image/jpeg;base64,xx"})
+func TestToPlayers(t *testing.T) {
+	one := []SMTCSession{{ID: "Spotify.exe", Status: "Playing", Title: "Só", Artist: "A", Album: "B",
+		Position: 12.5, Length: 200, CanNext: true, CanPrevious: true, CanSeek: true, ArtKey: "k1"}}
+	ps := ToPlayers("Spotify.exe", one, map[string]string{"k1": "data:image/jpeg;base64,xx"})
 	p := ps[0]
 	if p.Name != "Spotify" || p.Status != "Playing" || p.Title != "Só" || *p.Position != 12.5 || *p.Length != 200 ||
 		p.CanSeek || !p.CanNext || p.Art == nil {
 		t.Fatalf("%+v", p)
 	}
 
-	many := `{"current":"Chrome","players":[{"id":"MSEdge","status":"Paused","length":0},{"id":"Chrome","status":"Changing","position":900,"length":60}]}`
-	json.Unmarshal([]byte(many), &l)
-	ss, _ = l.Sessions()
-	ps = ToPlayers(l.Current, ss, nil)
+	many := []SMTCSession{{ID: "MSEdge", Status: "Paused", Length: 0}, {ID: "Chrome", Status: "Changing", Position: 900, Length: 60}}
+	ps = ToPlayers("Chrome", many, nil)
 	if len(ps) != 2 || ps[0].ID != "Chrome" || ps[0].Status != "Stopped" || *ps[0].Position != 60 || ps[1].Name != "Edge" || ps[1].Length != nil {
 		t.Fatalf("%+v", ps)
 	}
-	json.Unmarshal([]byte(`{"current":"","players":[]}`), &l)
-	if ss, _ := l.Sessions(); len(ToPlayers("", ss, nil)) != 0 || ToPlayers("", ss, nil) == nil {
+	// art that couldn't be read (no entry in the map) is left out
+	if ps := ToPlayers("", []SMTCSession{{ID: "x", ArtKey: "missing"}}, map[string]string{}); ps[0].Art != nil {
+		t.Fatal("no art expected")
+	}
+	if ps := ToPlayers("", nil, nil); ps == nil || len(ps) != 0 {
 		t.Fatal("nothing playing must be an empty list, not null")
 	}
 }
@@ -64,11 +55,11 @@ func TestArtDataURL(t *testing.T) {
 	img.Set(0, 0, color.White)
 	var b bytes.Buffer
 	png.Encode(&b, img)
-	u, err := ArtDataURL(base64.StdEncoding.EncodeToString(b.Bytes()))
+	u, err := ArtDataURL(b.Bytes())
 	if err != nil || !strings.HasPrefix(u, "data:image/jpeg;base64,") || len(u) > 64*1024 {
 		t.Fatalf("len %d err %v", len(u), err)
 	}
-	if _, err := ArtDataURL("bm90IGFuIGltYWdl"); err == nil {
+	if _, err := ArtDataURL([]byte("not an image")); err == nil {
 		t.Fatal("garbage should fail")
 	}
 }

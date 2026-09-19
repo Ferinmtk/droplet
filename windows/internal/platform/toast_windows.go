@@ -1,58 +1,72 @@
 package platform
 
 import (
-	"encoding/base64"
 	"fmt"
 	"log"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
-	"unicode/utf16"
+	"unsafe"
+
+	ole "github.com/go-ole/go-ole"
 )
 
-// Toasts are shown through Windows PowerShell 5.1, which ships with every
-// Windows 10/11 and can reach the WinRT notification API without cgo or COM
-// activation plumbing. Each toast costs a hidden powershell.exe for ~half a
-// second, which is fine at droplet's pace. Clicks and buttons use protocol
-// activation (https: links, or droplet: links handled by a new droplet.exe),
-// so nothing needs to stay registered as a COM server.
+// Toasts go straight to Windows' notification API
+// (Windows.UI.Notifications, a WinRT API) from one worker goroutine. They're
+// shown under droplet's AppUserModelID, registered by Register, which gives
+// them droplet's name and icon.
+//
+// If notifications can't be shown (an old or stripped-down Windows, or
+// Wine), the error is logged and droplet carries on without them.
 
 var (
-	toastQueue   = make(chan string, 32)
+	iidIToastNotificationManagerStatics  = ole.NewGUID("{50AC103F-D235-4598-BBEF-98FE4D1A3AD4}")
+	iidIToastNotificationManagerStatics2 = ole.NewGUID("{7AB93C52-0E48-4750-BA9D-1A4113981847}")
+	iidIToastNotificationFactory         = ole.NewGUID("{04124B20-82C6-4229-B109-FD9ED4662B53}")
+	iidIToastNotification2               = ole.NewGUID("{9DFB9FD1-143A-490E-90BF-B9FBA7132DE7}")
+	iidIXmlDocument                      = ole.NewGUID("{F7F3A506-1E87-42D6-BCFB-B8C809FA5494}")
+	iidIXmlDocumentIO                    = ole.NewGUID("{6CD0E74E-EE65-4489-9EBF-CA43E87BA637}")
+)
+
+const toastGroup = "droplet"
+
+type toastJob struct {
+	what string
+	run  func(*toaster) error
+}
+
+var (
+	toastQueue   = make(chan toastJob, 32)
 	toastPending sync.WaitGroup
+	toastStart   sync.Once
 	actionKey    string
 )
 
 // SetActionKey sets the secret put into droplet: links (see ActionURL).
 func SetActionKey(k string) { actionKey = k }
 
-func init() {
-	go func() {
-		for script := range toastQueue {
-			if err := runPowerShell(script); err != nil {
-				log.Printf("toast: %v", err)
-			}
-			toastPending.Done()
-		}
-	}()
-}
-
 // Notify shows a toast. It never blocks; if toasts pile up, extras are dropped.
 func Notify(n Notification) {
-	enqueue(toastScript(n), n.Title)
+	enqueue(toastJob{n.Title, func(t *toaster) error { return t.show(n) }})
 }
 
-func enqueue(script, what string) {
+// ClearNotification removes a toast (by tag) from the screen and Action Center.
+func ClearNotification(tag string) {
+	tag = toastTag(tag)
+	if tag == "" {
+		return
+	}
+	enqueue(toastJob{"clear " + tag, func(t *toaster) error { return t.remove(tag) }})
+}
+
+func enqueue(j toastJob) {
+	toastStart.Do(func() { go toastWorker() })
 	toastPending.Add(1)
 	select {
-	case toastQueue <- script:
+	case toastQueue <- j:
 	default:
 		toastPending.Done()
-		log.Printf("toast dropped (queue full): %s", what)
+		log.Printf("toast dropped (queue full): %s", j.what)
 	}
 }
 
@@ -67,115 +81,173 @@ func FlushNotifications(timeout time.Duration) {
 	}
 }
 
-// ClearNotification removes a toast (by tag) from the screen and Action Center.
-func ClearNotification(tag string) {
-	script := fmt.Sprintf(`[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
-[Windows.UI.Notifications.ToastNotificationManager]::History.Remove(%s, 'droplet', %s)`, psQuote(tagOf(tag)), psQuote(AppID))
-	enqueue(script, "clear "+tag)
-}
-
-func tagOf(t string) string {
-	if t == "" {
-		return ""
-	}
-	if len(t) > 60 { // WinRT caps tags at 64 characters
-		t = t[:60]
-	}
-	return t
-}
-
-func toastScript(n Notification) string {
-	var x strings.Builder
-	x.WriteString(`<toast`)
-	if n.Click != nil {
-		fmt.Fprintf(&x, ` activationType="protocol" launch="%s"`, xmlEsc(ActionURL(actionKey, *n.Click)))
-	}
-	if n.Urgent {
-		x.WriteString(` scenario="incomingCall"`)
-	}
-	x.WriteString(`><visual><binding template="ToastGeneric">`)
-	fmt.Fprintf(&x, `<text hint-maxLines="1">%s</text>`, xmlEsc(clip(n.Title, 120)))
-	if n.Body != "" {
-		fmt.Fprintf(&x, `<text>%s</text>`, xmlEsc(clip(n.Body, 400)))
-	}
-	x.WriteString(`</binding></visual>`)
-	if len(n.Buttons) > 0 {
-		x.WriteString(`<actions>`)
-		for _, b := range n.Buttons {
-			fmt.Fprintf(&x, `<action content="%s" activationType="protocol" arguments="%s"/>`,
-				xmlEsc(b.Label), xmlEsc(ActionURL(actionKey, b)))
+func toastWorker() {
+	// WinRT objects are tied to the apartment they were made in: this
+	// goroutine keeps its thread, and does all the notification work
+	initErr := startWinRT()
+	t := &toaster{}
+	for j := range toastQueue {
+		err := initErr
+		if err == nil {
+			err = t.safely(j)
 		}
-		x.WriteString(`</actions>`)
+		if err != nil {
+			log.Printf("toast (%s): %v", j.what, err)
+		}
+		toastPending.Done()
 	}
-	// rings have their own (louder, looping) sound; the rest keep the default chime
-	if n.Urgent {
-		x.WriteString(`<audio silent="true"/>`)
-	}
-	x.WriteString(`</toast>`)
-
-	var s strings.Builder
-	s.WriteString("$ErrorActionPreference = 'Stop'\n")
-	s.WriteString("[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null\n")
-	s.WriteString("[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null\n")
-	s.WriteString("$x = New-Object Windows.Data.Xml.Dom.XmlDocument\n")
-	fmt.Fprintf(&s, "$x.LoadXml(%s)\n", psQuote(x.String()))
-	s.WriteString("$t = New-Object Windows.UI.Notifications.ToastNotification $x\n")
-	if tag := tagOf(n.Tag); tag != "" {
-		fmt.Fprintf(&s, "$t.Tag = %s\n$t.Group = 'droplet'\n", psQuote(tag))
-	}
-	fmt.Fprintf(&s, "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(%s).Show($t)\n", psQuote(AppID))
-	return s.String()
 }
 
-func clip(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n-1]) + "…"
-	}
-	return s
+// toaster holds what every toast needs, made on first use and kept.
+type toaster struct {
+	notifier comPtr // IToastNotifier for droplet's AppUserModelID
+	factory  comPtr // IToastNotificationFactory
+	history  comPtr // IToastNotificationHistory
 }
 
-func xmlEsc(s string) string {
-	// curly quotes become character references too: PowerShell treats them as
-	// quote marks, and the XML travels inside a single-quoted PowerShell string
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;",
-		"\u2018", "&#x2018;", "\u2019", "&#x2019;", "\u201A", "&#x201A;", "\u201B", "&#x201B;").Replace(s)
+// safely runs a job, turning a Go panic into an error: a notification
+// that fails must not take droplet down with it.
+func (t *toaster) safely(j toastJob) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return j.run(t)
 }
 
-// psQuote makes a PowerShell single-quoted string literal (no interpolation).
-func psQuote(s string) string {
-	// PowerShell also ends single-quoted strings at curly single quotes; double them all
-	return "'" + strings.NewReplacer("'", "''", "\u2018", "\u2018\u2018", "\u2019", "\u2019\u2019",
-		"\u201A", "\u201A\u201A", "\u201B", "\u201B\u201B").Replace(s) + "'"
-}
-
-func powershellPath() string {
-	root := os.Getenv("SystemRoot")
-	if root == "" {
-		root = `C:\Windows`
+func (t *toaster) ready() error {
+	if t.notifier.p != nil {
+		return nil
 	}
-	p := filepath.Join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-	if _, err := os.Stat(p); err == nil {
-		return p
-	}
-	return "powershell.exe"
-}
-
-func runPowerShell(script string) error {
-	// -EncodedCommand takes base64 UTF-16LE, which sidesteps all quoting of the script
-	u := utf16.Encode([]rune(script))
-	b := make([]byte, len(u)*2)
-	for i, c := range u {
-		b[2*i], b[2*i+1] = byte(c), byte(c>>8)
-	}
-	cmd := exec.Command(powershellPath(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-WindowStyle", "Hidden", "-EncodedCommand", base64.StdEncoding.EncodeToString(b))
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
-	out, err := cmd.CombinedOutput()
+	statics, err := factory("Windows.UI.Notifications.ToastNotificationManager", iidIToastNotificationManagerStatics)
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+		return err
 	}
+	defer statics.release()
+	id, err := newHString(AppID)
+	if err != nil {
+		return err
+	}
+	defer id.free()
+	var notifier comPtr
+	// IToastNotificationManagerStatics: CreateToastNotifier 6, CreateToastNotifierWithId 7
+	hr, _, _ := syscall.SyscallN(statics.method(7), statics.this(), uintptr(id), uintptr(unsafe.Pointer(&notifier.p)))
+	if err := check(hr, "CreateToastNotifierWithId"); err != nil {
+		return err
+	}
+	f, err := factory("Windows.UI.Notifications.ToastNotification", iidIToastNotificationFactory)
+	if err != nil {
+		notifier.release()
+		return err
+	}
+	t.notifier, t.factory = notifier, f
 	return nil
 }
 
-const createNoWindow = 0x08000000
+func (t *toaster) show(n Notification) error {
+	if err := t.ready(); err != nil {
+		return err
+	}
+	doc, err := activate("Windows.Data.Xml.Dom.XmlDocument")
+	if err != nil {
+		return err
+	}
+	defer doc.release()
+	docIO, err := doc.query(iidIXmlDocumentIO)
+	if err != nil {
+		return err
+	}
+	defer docIO.release()
+	x, err := newHString(toastXML(n, actionKey))
+	if err != nil {
+		return err
+	}
+	defer x.free()
+	// IXmlDocumentIO: LoadXml 6
+	hr, _, _ := syscall.SyscallN(docIO.method(6), docIO.this(), uintptr(x))
+	if err := check(hr, "LoadXml"); err != nil {
+		return err
+	}
+	xdoc, err := doc.query(iidIXmlDocument)
+	if err != nil {
+		return err
+	}
+	defer xdoc.release()
+
+	var toast comPtr
+	// IToastNotificationFactory: CreateToastNotification 6
+	hr, _, _ = syscall.SyscallN(t.factory.method(6), t.factory.this(), xdoc.this(), uintptr(unsafe.Pointer(&toast.p)))
+	if err := check(hr, "CreateToastNotification"); err != nil {
+		return err
+	}
+	defer toast.release()
+
+	if tag := toastTag(n.Tag); tag != "" {
+		if err := setTag(toast, tag); err != nil {
+			return err
+		}
+	}
+	// IToastNotifier: Show 6
+	hr, _, _ = syscall.SyscallN(t.notifier.method(6), t.notifier.this(), toast.this())
+	return check(hr, "Show")
+}
+
+// setTag gives a toast a tag and droplet's group, so a later one with the
+// same tag replaces it and ClearNotification can find it.
+func setTag(toast comPtr, tag string) error {
+	t2, err := toast.query(iidIToastNotification2)
+	if err != nil {
+		return err
+	}
+	defer t2.release()
+	ht, err := newHString(tag)
+	if err != nil {
+		return err
+	}
+	defer ht.free()
+	hg, err := newHString(toastGroup)
+	if err != nil {
+		return err
+	}
+	defer hg.free()
+	// IToastNotification2: put_Tag 6, get_Tag 7, put_Group 8
+	hr, _, _ := syscall.SyscallN(t2.method(6), t2.this(), uintptr(ht))
+	if err := check(hr, "put_Tag"); err != nil {
+		return err
+	}
+	hr, _, _ = syscall.SyscallN(t2.method(8), t2.this(), uintptr(hg))
+	return check(hr, "put_Group")
+}
+
+func (t *toaster) remove(tag string) error {
+	if t.history.p == nil {
+		statics2, err := factory("Windows.UI.Notifications.ToastNotificationManager", iidIToastNotificationManagerStatics2)
+		if err != nil {
+			return err
+		}
+		defer statics2.release()
+		// IToastNotificationManagerStatics2: get_History 6
+		if t.history, err = statics2.getObj(6, "History", false); err != nil {
+			return err
+		}
+	}
+	ht, err := newHString(tag)
+	if err != nil {
+		return err
+	}
+	defer ht.free()
+	hg, err := newHString(toastGroup)
+	if err != nil {
+		return err
+	}
+	defer hg.free()
+	id, err := newHString(AppID)
+	if err != nil {
+		return err
+	}
+	defer id.free()
+	// IToastNotificationHistory: RemoveGroupedTagWithId(tag, group, appId) 8
+	hr, _, _ := syscall.SyscallN(t.history.method(8), t.history.this(), uintptr(ht), uintptr(hg), uintptr(id))
+	return check(hr, "RemoveGroupedTagWithId")
+}
