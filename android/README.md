@@ -1,6 +1,6 @@
 # droplet for Android
 
-A native companion app for the droplet hub. It does seven things that the web
+A native companion app for the droplet hub. It does eight things that the web
 app can't do as a browser tab or PWA:
 
 - **Share → droplet from any app.** A native sheet lists the hub and your
@@ -27,6 +27,11 @@ app can't do as a browser tab or PWA:
   as an ordinary Bluetooth keyboard and mouse: touchpad, keyboard, media keys
   and slides, with nothing installed on the other side and no Wi-Fi or hub.
   See [Bluetooth mouse & keyboard](#bluetooth-mouse--keyboard).
+- **A TV remote that talks to the TV itself.** The phone pairs with an
+  Android TV or Google TV and controls it over the Wi-Fi with the same
+  protocol as Google's own remote app: D-pad or touchpad, volume (the phone's
+  volume keys too), apps, typing and power, with the hub off. See
+  [TV remote](#tv-remote).
 
 Everything else is the droplet web app, full screen in a WebView. It uses the
 same device token as the page, so the app is the same device the page named.
@@ -409,6 +414,130 @@ connection state machine against a fake stack. They can't show:
   treats the consumer and pan reports;
 - latency and how the pointer feels on each host.
 
+## TV remote
+
+Settings → **TV remote**, the **TVs** list on the devices screen, the
+**TV remote** shortcut on droplet's launcher icon (long-press it), or **TV
+remote** on the "can't reach the hub" screen. The phone talks to the TV
+itself, over Google's Android TV Remote protocol v2 (what the Google TV
+phone app uses), so it works when the hub is off or away.
+
+**Pairing.** The first time, **Find my TV** lists the Android TV and Google
+TV sets announcing themselves on the Wi-Fi (`_androidtvremote2._tcp`); tap
+yours, and the TV shows a 6-character code (digits and A-F). Type it in. A
+TV that doesn't show up (mDNS blocked by the router, another subnet) can be
+added by its IP address; only private, link-local and Tailscale addresses
+are accepted, as on the hub.
+
+- A **mistyped code** is caught on the phone before anything is sent: the
+  code's first two characters are a checksum of the rest and of both
+  certificates. The TV keeps its code up; type it again. After five misses,
+  start again for a new code.
+- **The TV turned the code down**, or its pairing screen closed (Cancel on
+  the TV, or it timed out): start again. Pairing also times out on the phone
+  after five minutes.
+- **Can't reach it:** it's off (with network standby off), asleep, or on
+  another network.
+
+**It's a second remote.** The hub's TV remote in the web app (tv.py) keeps
+working as before; the phone is paired separately, with its own certificate,
+and the TV lists it as a remote of its own, named "droplet (<phone>)".
+Pairing or forgetting one doesn't touch the other.
+
+**The remote:** a round D-pad with OK (hold OK for a long press), or a
+touchpad (swipe to move, one step every 34 dp, tap for OK, hold for a long
+OK); Back and Home (both long-press when held), Menu; volume and channel
+rockers and arrows that repeat while held; mute and input; rewind, previous,
+play/pause, next, fast-forward; a keyboard field for the TV's focused text
+box, with Delete, Enter and Search; the app launcher (YouTube, Netflix,
+Prime Video, Spotify, Showmax, Disney+, Plex, Home: the same catalogue as the
+hub's) and an https link box; numbers, Info, Guide, TV settings and Stop.
+While the screen is open, the phone's **volume keys** set the TV's volume
+(the phone's own volume when the TV isn't connected). The header shows the
+TV's state: on and the app in front, standby, connecting, can't reach, or
+needs pairing, with the volume under it. Presses vibrate (a switch turns
+that off).
+
+**Power.** Connected, Power toggles the TV between on and standby. Not
+connected, it sends a Wake-on-LAN packet to the MAC in the TV's certificate
+and tries again at once; many Google TVs never need it, as they keep the
+network up in standby.
+
+**When the TV forgets droplet** (a reset, or droplet removed from the TV's
+remotes), the TV refuses the phone's certificate; the remote says so and
+offers **Pair again**, which goes straight to a new code. When the device at
+the TV's address presents a different certificate than at pairing (a reset
+TV, or another device that took the address), the phone sends it nothing
+and asks for pairing again too. A TV that moves to a new address (DHCP) is
+followed through its mDNS name.
+
+**Or Bluetooth.** Without Wi-Fi, the Mouse & keyboard mode's media keys,
+Home and Back work on a TV paired over Bluetooth; the TV remote links to it.
+
+**Under the hood.**
+
+- *The protocol:* TLS on port 6467 for pairing and 6466 for the remote,
+  both with a client certificate; varint-framed protobuf messages from
+  androidtvremote2's `polo.proto` and `remotemessage.proto`, encoded by
+  hand (`tv/TvWire.kt`, `tv/TvMessages.kt`): about twenty small messages, so
+  a small codec instead of the protobuf plugin, a protoc download at build
+  time and a runtime library. Unknown fields are skipped.
+- *Pairing:* pairing request, options and configuration (6 hex symbols,
+  droplet as the input side), then the secret: SHA-256 over the phone's RSA
+  modulus and exponent, the TV's, and the code's last two bytes; the code's
+  first byte must equal the hash's first byte (`tv/TvSecret.kt`).
+- *The remote channel:* the TV's configure is answered with the features
+  both have (keys, text, power, volume, app links, pings); then remote
+  start (on or standby), the volume and the app in front; key presses
+  (short, or START_LONG and END_LONG at least 0.9 s apart); text as the IME
+  batch edit the library sends; apps as `market://launch?id=<package>` or an
+  https link. The TV pings every 5 s when idle and the phone answers; 16 s
+  of silence means the connection is dead, and it's opened again at once,
+  then with backoff (1 s doubling to 30 s), and at once when the TV
+  announces itself on mDNS or a key is pressed.
+- *The certificate:* RSA 2048, self-signed, shaped like the library's (CN
+  and a DNS name, CA:TRUE, path length 0). Like the mesh key, the private key
+  is made in the Android Keystore once a loopback TLS 1.2 and 1.3 handshake
+  shows the Keystore key can sign TLS on the phone; otherwise it's a file in
+  the app's private storage. The remote screen says which ("This remote").
+- *The TV's certificate* is pinned at pairing (SHA-256 of its DER); the
+  pairing secret binds both certificates, so nothing in the middle can pair.
+- The TVs are in `files/tv/tvs.json` (name, address, port, MAC, mDNS name,
+  pin, model), the identity in `files/tv/identity.json` (and `key.p8` when
+  the key isn't in the Keystore). The link is open only while the remote is
+  on screen, and closes five seconds after it leaves (so a rotation doesn't
+  drop it).
+
+### What only the real TV can confirm
+
+The JVM tests pair with and drive `tests/fake_tv.py`, a pretend Google TV
+built from the library's own protobufs, over real TLS. What it can't show:
+
+1. **Find my TV** on the phone lists the TCL (as "Living room TV") on the
+   home Wi-Fi.
+2. Tap it: a code appears on the TV. Type one character wrong: the phone
+   says the code doesn't match and the TV keeps showing it. Type it right:
+   "Paired with Living room TV".
+3. On the TV, Settings → Remotes & Accessories (or System → About → the
+   remote list, depending on the firmware): droplet on the phone shows as a
+   remote next to the hub's.
+4. The remote: the header says "On · Home" and shows the volume. Try the
+   D-pad (each arrow held repeats), OK, OK held (a long press: options on a
+   tile), Back, Home, Home held, Menu, the rockers, mute, input, the media
+   keys in YouTube, the touchpad, and the phone's volume keys.
+5. Open YouTube's search, type in the keyboard field and Send; Delete and
+   Enter. Open Netflix from the launcher; paste a YouTube link.
+6. Power: to standby and back ("In standby" in the header). With the TV
+   fully off at the wall, Power says it sent a wake-up; that it wakes is up
+   to the TV's network standby setting.
+7. Stop the hub: everything above still works. Start it again: the web
+   app's TV card still works too.
+8. Remove droplet (the phone's entry, not the hub's) from the TV's remotes:
+   the phone says the TV forgot droplet and offers Pair again, which pairs
+   with a new code.
+9. Whether the Keystore key works for TLS on the phone: "This remote" on
+   the remote screen says where the key is.
+
 ## Local-first: home Wi-Fi first, Tailscale away
 
 The app follows [docs/local-first.md](../docs/local-first.md).
@@ -558,6 +687,29 @@ adb shell cmd notification post -t 'Title' tag 'Some text'
   refused, unpairing; then the roster through a hub, and direct delivery
   after the hub is stopped. The agent is driven by
   `src/test/python/mesh_agent.py`.
+- **`TvProtocolTest`** (always runs): the TV protocol against
+  androidtvremote2 itself. `src/test/resources/tv/vectors.json` was written
+  by the library's own code (`src/test/python/tv_vectors.py`): pairing
+  secrets from its `async_finish_pairing` for certificates from its own
+  generator (and the codes it refuses), the bytes of every message droplet
+  sends, and every message the TV sends, read back. Also unknown fields,
+  merged messages, broken input and framing.
+- **`TvCatalogTest`** (always runs): the keys and app catalogue against
+  `tv.py`'s own source, the https-only rule, codes, text, addresses on this
+  network only, MACs, Wake-on-LAN packets, mDNS names, the client
+  certificate and the TV list.
+- **`TvFakeTvTest`** (needs a Python with androidtvremote2, e.g. the hub's
+  venv): the phone against `tests/fake_tv.py` over real TLS, as a separate
+  process. Pairing with the code on screen, a typo caught before sending, a
+  code the TV turns down, then keys and long presses, volume, mute, text,
+  app links, Home and power with the TV's state reported back; pings keeping
+  a quiet connection up; the TV frozen (no FIN, no RST) and coming back; the
+  TV forgetting droplet (then pairing again); another TV at the same address;
+  and the app's TV list marking a TV that forgot it.
+- **`TvScreensTest`**: with the fake TV, pairing and driving it through the
+  screens themselves (Find my TV, a mistyped then a right code, the D-pad,
+  Home, play/pause, the phone's volume keys, typing, an app tile, power,
+  "Pair again"); with `DROPLET_SHOTS`, the TV screens as PNGs.
 - **`ScreensTest`** renders the remote, Settings, setup, the pairing code,
   the offline screen and the Bluetooth screens to PNGs for review.
 
@@ -571,6 +723,9 @@ DROPLET_HOME=$C DROPLET_PORT=8985 DROPLET_LAN_TLS_PORT=8986 DROPLET_PUSH=0 pytho
 cd android
 DROPLET_TEST_HUB=http://127.0.0.1:8831 DROPLET_TEST_PIN_HUB=http://127.0.0.1:8981 DROPLET_TEST_PIN=2468 \
   DROPLET_TEST_CLONE_HUB=http://127.0.0.1:8985 DROPLET_SHOTS=/tmp/shots ./gradlew testReleaseUnitTest
+
+# the TV remote against the fake TV (the hub's venv has androidtvremote2)
+DROPLET_TEST_TV_PY=../.venv/bin/python ./gradlew testReleaseUnitTest --tests 'dev.droplet.app.tv.*'
 
 # the mesh against the Linux agent (and a hub, which the test stops)
 python3 -m venv /tmp/v && /tmp/v/bin/pip install ../agent
