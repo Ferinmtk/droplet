@@ -429,6 +429,209 @@ public sealed class HubSetup(ConfigStore store, RouteManager routes, ILogger? lo
         routes.Reset();
     }
 
+    /// <summary>
+    /// Sets this PC up on a hub by its address (normally its tailnet URL: tailnet members
+    /// are let in at once, with nothing to compare), or renames it on the hub it's on
+    /// (<paramref name="hubUrl"/> null or that hub's URL). A new hub means a new device;
+    /// the paired hub's own tailnet URL, added now, keeps the device and adds the URL to
+    /// the hub's identity. The Go app's Settings "Save", less the local settings.
+    /// </summary>
+    public async Task<JoinResult> SetupAsync(string? hubUrl, string name, string? pin = null, CancellationToken ct = default)
+    {
+        name = CleanDeviceName(name);
+        var cfg = store.Get();
+        string? url = null;
+        if (!string.IsNullOrWhiteSpace(hubUrl))
+        {
+            try
+            {
+                url = HubClient.ParseUrl(hubUrl).AbsoluteUri.TrimEnd('/');
+            }
+            catch (FormatException e)
+            {
+                throw new FieldException("hub_url", e.Message);
+            }
+        }
+        if (url is null && string.IsNullOrEmpty(cfg.DeviceToken))
+        {
+            throw new FieldException("hub_url", "Choose your hub on this network, or enter its Tailscale address.");
+        }
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(20));
+        var moved = url is not null && !SameHub(url, cfg.HubUrl);
+        HubIdentity? ident = null;
+        if (moved && cfg.Hub is not null && !string.IsNullOrEmpty(cfg.DeviceToken) &&
+            await IdentityFromUrlAsync(url!, cts.Token).ConfigureAwait(false) is { } same && same.Id == cfg.Hub.Id)
+        {
+            // the paired hub's own tailnet URL, added now: the same device
+            moved = false;
+            ident = MergeUrlIdentity(cfg.Hub, same, url!);
+        }
+        var viaUrl = url is not null && (moved || string.IsNullOrEmpty(cfg.DeviceToken));
+        HubClient c;
+        if (viaUrl)
+        {
+            c = moved ? new HubClient(url!) : new HubClient(url!, cfg.DeviceToken, cfg.Session);
+        }
+        else
+        {
+            Route r;
+            try
+            {
+                r = await routes.EnsureAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is UnreachableException or NotPairedException)
+            {
+                throw new FieldException("hub_url", $"Can't reach {Polling.HubPoller.HubName(cfg)} right now: {e.Message}.");
+            }
+            c = r.Client(cfg.DeviceToken, cfg.Session);
+        }
+        using (c)
+        {
+            if (!string.IsNullOrEmpty(pin))
+            {
+                try
+                {
+                    await c.LoginAsync(pin, cts.Token).ConfigureAwait(false);
+                }
+                catch (WrongPinException)
+                {
+                    throw new FieldException("pin", "That PIN is wrong.");
+                }
+                catch (Exception e) when (e is HubException or HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
+                {
+                    throw new FieldException("hub_url", Unreachable(c, e));
+                }
+            }
+            Me me;
+            try
+            {
+                me = await c.MeAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch (PinRequiredException)
+            {
+                throw new FieldException("pin", "This hub asks for a PIN. Enter it and try again.");
+            }
+            catch (Exception e) when (e is HubException or HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
+            {
+                throw new FieldException("hub_url", Unreachable(c, e));
+            }
+            if (me.Device is null)
+            {
+                c.Token = null; // unknown to the hub (removed, or never registered)
+            }
+            Device dev;
+            if (me.Device is null || me.Device.Name != name)
+            {
+                try
+                {
+                    dev = await c.RegisterAsync(name, cts.Token).ConfigureAwait(false);
+                }
+                catch (NameTakenException)
+                {
+                    throw new FieldException("name", $"\"{name}\" is already a device on this hub (perhaps this PC's browser). " +
+                                                     "Pick another name, or link with a code instead.");
+                }
+                catch (HubStatusException e) when (!string.IsNullOrEmpty(e.HubMessage))
+                {
+                    throw new FieldException("name", e.HubMessage);
+                }
+                catch (Exception e) when (e is HubException or HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
+                {
+                    throw new FieldException("name", Unreachable(c, e));
+                }
+            }
+            else
+            {
+                dev = me.Device;
+            }
+            // a rename answers without the pending flag; /api/me had it
+            var (pending, code) = (dev.Pending, dev.Code);
+            if (me.Device is { Pending: true } && !string.IsNullOrEmpty(c.Token))
+            {
+                (pending, code) = (true, me.Device.Code);
+            }
+            if (viaUrl)
+            {
+                ident = await IdentityFromUrlAsync(url!, cts.Token).ConfigureAwait(false);
+            }
+            store.Update(n =>
+            {
+                if (moved || n.DeviceId != dev.Id)
+                {
+                    (n.InboxSeen, n.ChatSeen) = ([], []); // a new device: nothing seen yet
+                }
+                if (url is not null && (viaUrl || ident is not null))
+                {
+                    n.HubUrl = url;
+                }
+                if (ident is not null || moved)
+                {
+                    n.Hub = ident; // null: a hub that can't say who it is; the URL is used as it is
+                }
+                (n.DeviceToken, n.Session) = (c.Token, c.Session);
+                (n.DeviceId, n.DeviceName) = (dev.Id, dev.Name);
+                (n.PairPending, n.PairCode) = (pending, pending ? code : null);
+            });
+            routes.Reset();
+            var hubName = Polling.HubPoller.HubName(store.Get());
+            log.LogInformation("setup: {Name} on {Hub}{Pending}", dev.Name, hubName, pending ? $", waiting to be let in (code {code})" : "");
+            return new JoinResult(dev.Name, hubName, pending, pending ? code : null);
+        }
+    }
+
+    static string Unreachable(HubClient c, Exception e) => e switch
+    {
+        OperationCanceledException => $"No answer from {c.Base.Authority}. Is the hub on, and is Tailscale connected on this PC?",
+        HttpRequestException => $"Can't reach {c.Base.Authority}. Is the hub running, and is Tailscale connected on this PC?",
+        _ => e.Message,
+    };
+
+    /// <summary>
+    /// Asks a hub URL who the hub is. Only an https answer is trusted with its certificate
+    /// fingerprint; anything else is null, and the URL is used as it is.
+    /// </summary>
+    async Task<HubIdentity?> IdentityFromUrlAsync(string url, CancellationToken ct)
+    {
+        if (!Route.IsHttps(url))
+        {
+            return null;
+        }
+        try
+        {
+            var info = await routes.Deps.Info(url, null, ct).ConfigureAwait(false);
+            return HubIdentities.FromInfo(info, PinSources.Tailnet, url);
+        }
+        catch (Exception e) when (e is HubException or HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            log.LogInformation("hub identity from {Url}: {Error}", url, e.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Adds what a paired hub says over its (verified) URL to its stored identity. The pin
+    /// stays: a different fingerprint is an identity change, which only re-pairing accepts.
+    /// </summary>
+    internal static HubIdentity MergeUrlIdentity(HubIdentity stored, HubIdentity fromUrl, string url)
+    {
+        var h = stored.Clone();
+        h.Tailnet = url;
+        if (!string.IsNullOrEmpty(fromUrl.Name))
+        {
+            h.Name = fromUrl.Name;
+        }
+        if (string.IsNullOrEmpty(h.Fingerprint))
+        {
+            (h.Fingerprint, h.PinSource) = (fromUrl.Fingerprint, fromUrl.PinSource);
+        }
+        else if (h.Fingerprint == fromUrl.Fingerprint)
+        {
+            h.PinSource = PinSources.Tailnet; // now vouched for by verified TLS too
+        }
+        return h;
+    }
+
     /// <summary>A six-digit link code, checked.</summary>
     public static string LinkDigits(string? code)
     {
