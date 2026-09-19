@@ -1,0 +1,193 @@
+# droplet for Windows in .NET (windows-net/): build and test on Windows and Linux, and
+# produce the plain exe (for GitHub Releases) and an MSIX signed with a throwaway test
+# certificate (for sideloading). Store submissions are signed by Microsoft, so no signing
+# secret is needed. When the Partner Center identity is set as repository variables
+# (MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME; see
+# windows-net/packaging/README.md), an unsigned package for the Store is built too.
+name: windows-net
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'windows-net/**'
+      - '.github/workflows/windows-net.yml'
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'windows-net/**'
+      - '.github/workflows/windows-net.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-net-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+jobs:
+  windows:
+    name: Windows (build, unit tests, exe, MSIX)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows-net
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: windows-net/global.json
+
+      - name: Version
+        id: version
+        run: |
+          # a v1.2.3 tag gives 1.2.3; anything else 2.0.<run number>
+          $ref = '${{ github.ref }}'
+          if ($ref -match '^refs/tags/v(\d+)\.(\d+)\.(\d+)$') {
+            $v = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          } else {
+            $v = "2.0.${{ github.run_number }}"
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "msix=$v.0" >> $env:GITHUB_OUTPUT
+          Write-Host "version $v"
+
+      - name: Restore
+        run: dotnet restore Droplet.slnx
+
+      - name: Build
+        run: dotnet build Droplet.slnx -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+
+      # The test projects are Microsoft.Testing.Platform apps: run them directly. The interop
+      # tests need Linux (the reference agent), so they're left to the Linux job.
+      - name: Core tests (unit)
+        run: ./tests/Droplet.Core.Tests/bin/Release/net10.0/Droplet.Core.Tests.exe --filter-not-namespace Droplet.Core.Tests.Interop
+
+      - name: Windows tests
+        run: ./tests/Droplet.Windows.Tests/bin/Release/net10.0-windows10.0.19041.0/Droplet.Windows.Tests.exe
+
+      # the plain exe: self-contained, one file, not trimmed (WPF doesn't support trimming)
+      - name: Publish the exe
+        run: >
+          dotnet publish src/Droplet.Windows/Droplet.Windows.csproj -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:PublishTrimmed=false -p:DebugType=embedded -p:Version=${{ steps.version.outputs.version }}
+          -o artifacts/exe
+
+      # the app inside the MSIX: self-contained, plain files
+      - name: Publish for the MSIX
+        run: >
+          dotnet publish src/Droplet.Windows/Droplet.Windows.csproj -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=false -p:PublishTrimmed=false -p:Version=${{ steps.version.outputs.version }}
+          -o artifacts/app
+
+      - name: Make a throwaway test certificate
+        id: cert
+        run: |
+          $password = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
+          "::add-mask::$password"
+          $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=droplet test' -FriendlyName 'droplet test (sideloading only)' `
+            -KeyUsage DigitalSignature -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(2) `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
+          $pfx = Join-Path $env:RUNNER_TEMP 'droplet-test.pfx'
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password (ConvertTo-SecureString $password -AsPlainText -Force) | Out-Null
+          New-Item -ItemType Directory -Force artifacts/msix | Out-Null
+          Export-Certificate -Cert $cert -FilePath artifacts/msix/droplet-test.cer | Out-Null
+          Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)"
+          "pfx=$pfx" >> $env:GITHUB_OUTPUT
+          "password=$password" >> $env:GITHUB_OUTPUT
+
+      - name: Build and sign the MSIX (sideloading)
+        run: >
+          dotnet msbuild packaging/Droplet.Package.proj -t:Sign -nologo
+          -p:AppDir=${{ github.workspace }}/windows-net/artifacts/app
+          -p:PackageDir=${{ github.workspace }}/windows-net/artifacts/msix
+          -p:MsixVersion=${{ steps.version.outputs.msix }}
+          -p:CertificateFile=${{ steps.cert.outputs.pfx }}
+          -p:CertificatePassword=${{ steps.cert.outputs.password }}
+
+      - name: Build the Store package (unsigned)
+        if: vars.MSIX_IDENTITY_NAME != '' && vars.MSIX_PUBLISHER != ''
+        run: >
+          dotnet msbuild packaging/Droplet.Package.proj -t:Pack -nologo
+          -p:AppDir=${{ github.workspace }}/windows-net/artifacts/app
+          -p:PackageDir=${{ github.workspace }}/windows-net/artifacts/store
+          -p:MsixVersion=${{ steps.version.outputs.msix }}
+          -p:MsixIdentityName="${{ vars.MSIX_IDENTITY_NAME }}"
+          -p:MsixPublisher="${{ vars.MSIX_PUBLISHER }}"
+          -p:MsixPublisherDisplayName="${{ vars.MSIX_PUBLISHER_DISPLAY_NAME || 'Ferinmtk' }}"
+
+      - name: Remove the test key
+        if: always()
+        run: Remove-Item -ErrorAction SilentlyContinue '${{ steps.cert.outputs.pfx }}'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: droplet-windows-exe-${{ steps.version.outputs.version }}
+          path: windows-net/artifacts/exe/droplet.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: droplet-windows-msix-${{ steps.version.outputs.version }}
+          path: |
+            windows-net/artifacts/msix/*.msix
+            windows-net/artifacts/msix/droplet-test.cer
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: vars.MSIX_IDENTITY_NAME != '' && vars.MSIX_PUBLISHER != ''
+        with:
+          name: droplet-windows-store-${{ steps.version.outputs.version }}
+          path: windows-net/artifacts/store/*.msix
+          if-no-files-found: error
+
+  linux:
+    name: Linux (all Core tests, with the reference agent and hub)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: windows-net
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: windows-net/global.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # the hub (app.py) runs from the repository's .venv; the agent is installed into a
+      # throwaway one by the tests themselves
+      - name: The hub's Python
+        working-directory: .
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -q -r requirements.txt
+
+      - name: Build
+        run: dotnet build tests/Droplet.Core.Tests/Droplet.Core.Tests.csproj -c Release
+
+      - name: Core tests (unit and interop)
+        env:
+          DROPLET_TEST_LOG: ${{ runner.temp }}/engine.log
+        run: ./tests/Droplet.Core.Tests/bin/Release/net10.0/Droplet.Core.Tests
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: linux-test-log
+          path: ${{ runner.temp }}/engine.log
+          if-no-files-found: ignore
