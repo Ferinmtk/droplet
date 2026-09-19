@@ -110,7 +110,15 @@ class TvScreensTest {
     }
 
     private fun one(a: Activity, label: String): View = find(a.window.decorView, label).firstOrNull { it.isShown }
-        ?: throw AssertionError("no \"$label\" on screen")
+        ?: throw AssertionError("no \"$label\" on screen; showing: " + texts(a.window.decorView))
+
+    /** The visible texts, for a failure message. */
+    private fun texts(v: View): List<String> = when {
+        !v.isShown -> emptyList()
+        v is TextView -> listOfNotNull(v.text?.toString()?.takeIf { it.isNotBlank() })
+        v is ViewGroup -> (0 until v.childCount).flatMap { texts(v.getChildAt(it)) }
+        else -> emptyList()
+    }
 
     // --- screenshots ---------------------------------------------------------------------------
 
@@ -198,7 +206,10 @@ class TvScreensTest {
 
         // Find my TV: the only TV on the Wi-Fi is asked for a code without a tap
         val pair = Robolectric.buildActivity(TvPairActivity::class.java, next).setup().get()
-        one(pair, "Fake Google TV")
+        // listed at once, unless the auto-pair already moved on to asking it
+        assertTrue(texts(pair.window.decorView).toString(),
+            find(pair.window.decorView, "Fake Google TV").any { it.isShown } || !pair.findViewById<View>(R.id.step_find).isShown)
+        println("pair screen: " + texts(pair.window.decorView))
         idleFor(2_000)
         waitFor("the code step") { pair.findViewById<View>(R.id.step_code).isShown }
         shoot(pair, "tv-code-live")
