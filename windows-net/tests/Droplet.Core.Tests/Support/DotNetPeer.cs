@@ -8,6 +8,8 @@ namespace Droplet.Core.Tests.Support;
 /// <summary>Collects log lines, for asserting on what happened.</summary>
 public sealed class TestLog : ILoggerFactory, ILoggerProvider
 {
+    static readonly Lock FileGate = new();
+
     public ConcurrentQueue<string> Lines { get; } = new();
 
     public string Text => string.Join('\n', Lines);
@@ -28,9 +30,12 @@ public sealed class TestLog : ILoggerFactory, ILoggerProvider
         {
             var line = $"{DateTime.Now:HH:mm:ss.fff} {logLevel,-11} {category}: {formatter(state, exception)}{(exception is null ? "" : " " + exception.Message)}";
             log.Lines.Enqueue(line);
-            if (Environment.GetEnvironmentVariable("DROPLET_TEST_LOG") == "1")
+            if (Environment.GetEnvironmentVariable("DROPLET_TEST_LOG") is { Length: > 0 } file)
             {
-                Console.Error.WriteLine(line);
+                lock (FileGate)
+                {
+                    File.AppendAllText(file, line + "\n");
+                }
             }
         }
     }

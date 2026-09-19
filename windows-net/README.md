@@ -94,7 +94,7 @@ input, media, lock and screenshots reaching the fake platform services; the
 roster through a hub, the hub's mailbox, remote control through the hub's
 `/ws`, the poll loop, and direct delivery with the hub stopped; the hub
 found over mDNS, its LAN certificate pinned, and joining over the LAN until
-approved or declined. Set `DROPLET_TEST_LOG=1` to see the engine's log.
+approved or declined. Set `DROPLET_TEST_LOG` to a file to get the engine's log there.
 
 On a small machine, build with `-m:1 -p:UseSharedCompilation=false`.
 

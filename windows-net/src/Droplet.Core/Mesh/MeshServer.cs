@@ -150,6 +150,8 @@ public sealed partial class MeshServer : IAsyncDisposable
                 // Kestrel reports every refused handshake; the mesh counts those itself
                 l.AddFilter("Microsoft", LogLevel.Warning);
                 l.AddFilter("Microsoft.AspNetCore.Server.Kestrel", LogLevel.Error);
+                // a taken port is expected (the next one is tried): not an error
+                l.AddFilter("Microsoft.Extensions.Hosting", LogLevel.None);
             }
         });
         builder.WebHost.UseKestrelCore().ConfigureKestrel(k =>
