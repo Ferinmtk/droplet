@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The Windows shell's pure logic: key and virtual-key mapping, input translation, the
+    pointer's absolute coordinates, toast XML, droplet: links, the destination list, the
+    tray's wording and Settings' checks. They need the Windows Desktop runtime to run, so
+    they run on Windows (CI's windows-latest); they build anywhere.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseWPF>true</UseWPF>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- tests: sentence names, no ConfigureAwait, internals under test -->
+    <NoWarn>$(NoWarn);CA1707;CA2007;CA1515;CA2000;xUnit1051</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Droplet.Windows/Droplet.Windows.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

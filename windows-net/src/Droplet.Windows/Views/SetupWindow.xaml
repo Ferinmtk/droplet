@@ -1,0 +1,121 @@
+<Window x:Class="Droplet.Windows.Views.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Set up droplet" Width="640" Height="720" MinWidth="520" MinHeight="520"
+        WindowStartupLocation="CenterScreen" Icon="/Assets/droplet.ico">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="28,20,28,28">
+            <DockPanel Margin="0,0,0,12">
+                <Image Source="/Assets/droplet-256.png" Width="48" Height="48" Margin="0,0,14,0" DockPanel.Dock="Left" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="Heading" Text="Welcome to droplet" Style="{StaticResource PageTitle}" />
+                    <TextBlock x:Name="Subheading" Style="{StaticResource Caption}"
+                               Text="Your devices, together, on your own network. Connect this PC to your hub, or pair it with a device directly." />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- choosing how -->
+            <StackPanel x:Name="ChoosePanel">
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="This PC's name" Style="{StaticResource SectionTitle}" />
+                        <TextBox x:Name="NameBox" MaxLength="40" AutomationProperties.Name="This PC's name" />
+                        <TextBlock x:Name="NameError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button x:Name="ScanButton" Content="Scan again" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Click="Scan_Click" />
+                            <TextBlock Text="Hubs on this network" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <TextBlock x:Name="ScanStatus" Style="{StaticResource Caption}" Margin="0,0,0,6" />
+                        <ListBox x:Name="Hubs" MaxHeight="160" AutomationProperties.Name="Hubs on this network">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="2,4">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Detail}" Style="{StaticResource Caption}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,4"
+                                   Text="The hub's PIN, if it has one (or leave it empty and allow this PC from another device)" />
+                        <PasswordBox x:Name="PinBox" AutomationProperties.Name="PIN" />
+                        <TextBlock x:Name="PinError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                        <Button x:Name="JoinButton" Content="Join" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,12,0,0" Click="Join_Click" />
+                        <TextBlock x:Name="HubError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Link with a code" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Style="{StaticResource Body}">
+                            If this PC's browser already uses droplet: open droplet there, choose "Set up remote control of this device",
+                            and type the six-digit code here. This app and the browser become one device. Pick your hub above first to link
+                            on this network, or fill in the Tailscale address below.
+                        </TextBlock>
+                        <DockPanel>
+                            <Button x:Name="LinkButton" Content="Link" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="Link_Click" />
+                            <TextBox x:Name="CodeBox" MaxLength="7" AutomationProperties.Name="Link code" />
+                        </DockPanel>
+                        <TextBlock x:Name="CodeError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Over Tailscale" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Style="{StaticResource Body}"
+                                   Text="Away from home, or no hub showing up above: the hub's Tailscale address, like https://t15.tail7375fe.ts.net. Tailnet members are trusted, so there's no code to compare." />
+                        <DockPanel>
+                            <Button x:Name="TailnetButton" Content="Connect" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="Tailnet_Click" />
+                            <TextBox x:Name="UrlBox" AutomationProperties.Name="Tailscale address" />
+                        </DockPanel>
+                        <TextBlock x:Name="UrlError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="No hub" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Style="{StaticResource Body}"
+                                   Text="droplet works without one: pair this PC with your phone or another computer directly. You can add a hub later." />
+                        <Button Content="Pair directly with a device…" Style="{StaticResource PlainButton}" HorizontalAlignment="Left" Click="Direct_Click" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- waiting to be let in -->
+            <Border x:Name="WaitPanel" Style="{StaticResource Card}" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="WaitTitle" Style="{StaticResource SectionTitle}" />
+                    <TextBlock x:Name="WaitCode" Style="{StaticResource Code}" />
+                    <TextBlock x:Name="WaitText" Style="{StaticResource Body}" />
+                    <TextBlock Text="Or let it in with the hub's PIN:" Style="{StaticResource Caption}" Margin="0,10,0,4" />
+                    <DockPanel>
+                        <Button x:Name="WaitPinButton" Content="Use PIN" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="WaitPin_Click" />
+                        <PasswordBox x:Name="WaitPin" AutomationProperties.Name="PIN" />
+                    </DockPanel>
+                    <TextBlock x:Name="WaitError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                    <Button Content="Cancel" Style="{StaticResource PlainButton}" HorizontalAlignment="Left" Margin="0,14,0,0" Click="CancelJoin_Click" />
+                </StackPanel>
+            </Border>
+
+            <!-- done -->
+            <Border x:Name="DonePanel" Style="{StaticResource Card}" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="DoneTitle" Text="This PC is part of droplet" Style="{StaticResource SectionTitle}" FontSize="18" />
+                    <TextBlock x:Name="DoneText" Style="{StaticResource Body}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Show my devices" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="Devices_Click" />
+                        <Button Content="Close" Style="{StaticResource PlainButton}" Click="Close_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

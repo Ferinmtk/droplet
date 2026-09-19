@@ -1,0 +1,156 @@
+<Window x:Class="Droplet.Windows.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="droplet settings" Width="720" Height="760" MinWidth="560" MinHeight="480"
+        WindowStartupLocation="CenterScreen" Icon="/Assets/droplet.ico">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="28,20,28,28">
+            <TextBlock Text="Settings" Style="{StaticResource PageTitle}" />
+            <TextBlock Text="Changes are saved as you make them." Style="{StaticResource Caption}" Margin="0,0,0,16" />
+
+            <!-- this PC -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="This PC" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Text="Its name on your devices" Style="{StaticResource Caption}" Margin="0,0,0,4" />
+                    <DockPanel>
+                        <Button x:Name="SaveName" Content="Rename" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="SaveName_Click" />
+                        <TextBox x:Name="NameBox" MaxLength="40" AutomationProperties.Name="Name" />
+                    </DockPanel>
+                    <TextBlock x:Name="NameError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+
+            <!-- the hub -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Hub" Style="{StaticResource SectionTitle}" />
+                    <TextBlock x:Name="HubSummary" Style="{StaticResource Body}" />
+                    <Grid x:Name="HubDetails" Margin="0,4,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Reached" Style="{StaticResource Caption}" Margin="0,2,16,2" />
+                        <TextBlock x:Name="HubRoute" Grid.Column="1" TextWrapping="Wrap" Margin="0,2" />
+                        <TextBlock Text="Hub id" Grid.Row="1" Style="{StaticResource Caption}" Margin="0,2,16,2" />
+                        <TextBlock x:Name="HubId" Grid.Row="1" Grid.Column="1" FontFamily="Cascadia Mono, Consolas" Margin="0,2" />
+                        <TextBlock Text="Its certificate" Grid.Row="2" Style="{StaticResource Caption}" Margin="0,2,16,2" />
+                        <TextBlock x:Name="HubPin" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Margin="0,2" />
+                        <TextBlock Text="Tailscale" Grid.Row="3" Style="{StaticResource Caption}" Margin="0,2,16,2" />
+                        <TextBlock x:Name="HubTailnet" Grid.Row="3" Grid.Column="1" TextWrapping="Wrap" Margin="0,2" />
+                    </Grid>
+                    <WrapPanel>
+                        <Button x:Name="SetupButton" Content="Set up a hub…" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="Setup_Click" />
+                        <Button x:Name="RepairButton" Content="Re-pair" Style="{StaticResource PlainButton}" Margin="0,0,8,0" Click="Repair_Click" Visibility="Collapsed" />
+                    </WrapPanel>
+                    <TextBlock x:Name="HubError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+
+            <!-- remote control -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Remote control" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,6">
+                        What your other devices may do on this PC. The tray icon turns amber while one sends input,
+                        and "Pause remote control" in the tray switches everything off at once.
+                    </TextBlock>
+                    <CheckBox x:Name="RemoteInput" Content="Mouse and keyboard" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="RemoteMedia" Content="Media and volume, and what's playing" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="RemoteLock" Content="Lock this PC" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="RemoteScreenshot" Content="Screenshots (you're told each time)" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="ClipboardSync" Content="Clipboard sync" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="28,0,0,6">
+                        Sends everything you copy (up to 256 KB of text) to your devices, and writes theirs here. Copies a password
+                        manager marks as private are never sent.
+                    </TextBlock>
+                    <CheckBox x:Name="RemotePaused" Content="Pause all remote control" Style="{StaticResource Switch}" Click="Switch_Click" />
+                </StackPanel>
+            </Border>
+
+            <!-- files -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Files" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Text="Save received files in" Style="{StaticResource Caption}" Margin="0,0,0,4" />
+                    <DockPanel>
+                        <Button Content="Save" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="SaveFolder_Click" />
+                        <Button Content="Browse…" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="Browse_Click" />
+                        <TextBox x:Name="FolderBox" AutomationProperties.Name="Download folder" />
+                    </DockPanel>
+                    <TextBlock x:Name="FolderError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                    <CheckBox x:Name="AutoDownload" Content="Download files sent through the hub automatically" Style="{StaticResource Switch}" Margin="0,10,0,2" Click="Switch_Click" />
+                </StackPanel>
+            </Border>
+
+            <!-- notifications -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Notifications" Style="{StaticResource SectionTitle}" />
+                    <CheckBox x:Name="NotifyFiles" Content="When a file arrives" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="NotifyMessages" Content="When a message arrives" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="RingSound" Content="Play a sound when a device rings this PC" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="Paused" Content="Pause file and message notifications" Style="{StaticResource Switch}" Click="Switch_Click" />
+                </StackPanel>
+            </Border>
+
+            <!-- Windows -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Windows" Style="{StaticResource SectionTitle}" />
+                    <CheckBox x:Name="Autostart" Content="Start droplet when I sign in" Style="{StaticResource Switch}" Click="Autostart_Click" />
+                    <TextBlock x:Name="AutostartNote" Style="{StaticResource Caption}" Margin="28,0,0,6" Visibility="Collapsed" />
+                    <CheckBox x:Name="SendTo" Content="Add droplet to Explorer's &quot;Send to&quot; menu" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <TextBlock x:Name="SendToNote" Style="{StaticResource Caption}" Margin="28,0,0,6">
+                        One entry per device. Turning it off removes them.
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <!-- the mesh -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Direct connections (mesh)" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,6">
+                        Your devices talk to this PC directly, on your Wi-Fi or over Tailscale, and the hub is only a helper.
+                        Only devices you paired, or that your hub vouches for, can connect.
+                    </TextBlock>
+                    <CheckBox x:Name="MeshEnabled" Content="Let paired devices connect directly" Style="{StaticResource Switch}" />
+                    <CheckBox x:Name="MeshAnnounce" Content="Announce this PC on the local network" Style="{StaticResource Switch}" />
+                    <TextBlock Text="Port (empty: the first free one from 1739 to 1749)" Style="{StaticResource Caption}" Margin="0,8,0,4" />
+                    <DockPanel>
+                        <Button Content="Apply" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="ApplyMesh_Click" />
+                        <TextBox x:Name="PortBox" MaxLength="5" AutomationProperties.Name="Port" />
+                    </DockPanel>
+                    <TextBlock x:Name="MeshError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                    <TextBlock x:Name="MeshStatus" Style="{StaticResource Caption}" Margin="0,10,0,4" />
+                    <TextBlock Text="This PC's fingerprint (what paired devices check)" Style="{StaticResource Caption}" Margin="0,6,0,4" />
+                    <DockPanel>
+                        <Button Content="Copy" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="CopyFingerprint_Click" />
+                        <TextBox x:Name="Fingerprint" Style="{StaticResource Mono}" AutomationProperties.Name="Fingerprint" />
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- about -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="About" Style="{StaticResource SectionTitle}" />
+                    <TextBlock x:Name="AboutText" Style="{StaticResource Body}" />
+                    <WrapPanel>
+                        <Button Content="Open the log" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="OpenLog_Click" />
+                        <Button Content="Open the settings folder" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="OpenFolder_Click" />
+                        <Button x:Name="UninstallButton" Content="Remove from Windows…" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Uninstall_Click" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>
