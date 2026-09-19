@@ -1,9 +1,7 @@
 <Project DefaultTargets="Pack">
   <!--
-    Packs droplet as an MSIX, from an app already published (self-contained, win-x64):
-
-      dotnet publish ../src/Droplet.Windows -c Release -r win-x64 --self-contained -o ../artifacts/app
-      dotnet msbuild Droplet.Package.proj -p:AppDir=../artifacts/app [-p:MsixIdentityName=...]
+    Packs droplet as an MSIX, from an app already published self-contained for win-x64
+    (the commands are in README.md here; XML comments can't hold a double hyphen).
 
     The identity is three build properties. Until the app is reserved in Partner Center they
     default to test values, fine for sideloading with a test certificate; for the Store, pass
@@ -21,10 +19,13 @@
     <MsixVersion Condition="'$(MsixVersion)' == ''">2.0.0.0</MsixVersion>
     <MsixArchitecture Condition="'$(MsixArchitecture)' == ''">x64</MsixArchitecture>
     <AppDir Condition="'$(AppDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\app\</AppDir>
-    <AppDir>$([MSBuild]::EnsureTrailingSlash('$([System.IO.Path]::GetFullPath('$(AppDir)'))'))</AppDir>
+    <!-- command-line properties can't be changed, so the tidied paths get their own names -->
+    <AppRoot>$([System.IO.Path]::GetFullPath($(AppDir)))</AppRoot>
+    <AppRoot>$([MSBuild]::EnsureTrailingSlash($(AppRoot)))</AppRoot>
     <PackageDir Condition="'$(PackageDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\msix\</PackageDir>
-    <PackageDir>$([MSBuild]::EnsureTrailingSlash('$([System.IO.Path]::GetFullPath('$(PackageDir)'))'))</PackageDir>
-    <PackageFile Condition="'$(PackageFile)' == ''">$(PackageDir)droplet_$(MsixVersion)_$(MsixArchitecture).msix</PackageFile>
+    <PackageRoot>$([System.IO.Path]::GetFullPath($(PackageDir)))</PackageRoot>
+    <PackageRoot>$([MSBuild]::EnsureTrailingSlash($(PackageRoot)))</PackageRoot>
+    <PackageFile Condition="'$(PackageFile)' == ''">$(PackageRoot)droplet_$(MsixVersion)_$(MsixArchitecture).msix</PackageFile>
     <WorkDir>$(MSBuildThisFileDirectory)obj\$(MsixArchitecture)\</WorkDir>
     <LayoutDir>$(WorkDir)layout\</LayoutDir>
     <PriDir>$(WorkDir)pri\</PriDir>
@@ -86,9 +87,9 @@
   </UsingTask>
 
   <Target Name="Layout">
-    <Error Condition="!Exists('$(AppDir)droplet.exe')" Text="No published app at $(AppDir) (droplet.exe missing). Publish it first: see the top of this file." />
+    <Error Condition="!Exists('$(AppRoot)droplet.exe')" Text="No published app at $(AppRoot) (droplet.exe missing). Publish it first: see the top of this file." />
     <ItemGroup>
-      <_AppFiles Include="$(AppDir)**\*" Exclude="$(AppDir)**\*.pdb" />
+      <_AppFiles Include="$(AppRoot)**\*" Exclude="$(AppRoot)**\*.pdb" />
       <_Assets Include="$(MSBuildThisFileDirectory)Assets\*.png" />
       <_Values Include="Name" Value="$(MsixIdentityName)" />
       <_Values Include="Publisher" Value="$(MsixPublisher)" />
@@ -118,7 +119,7 @@
   </Target>
 
   <Target Name="Pack" DependsOnTargets="Layout;FindSdkTools">
-    <MakeDir Directories="$(PackageDir)" />
+    <MakeDir Directories="$(PackageRoot)" />
     <!-- resources.pri: lets Windows pick each image's best scale; indexes the images only -->
     <Exec Command="&quot;$(SdkToolsDir)makepri.exe&quot; createconfig /cf &quot;$(WorkDir)priconfig.xml&quot; /dq en-US /pv 10.0.0 /o" />
     <Exec Command="&quot;$(SdkToolsDir)makepri.exe&quot; new /pr &quot;$(PriDir.TrimEnd('\'))&quot; /cf &quot;$(WorkDir)priconfig.xml&quot; /mn &quot;$(PriDir)AppxManifest.xml&quot; /of &quot;$(LayoutDir)resources.pri&quot; /o" />
