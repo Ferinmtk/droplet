@@ -188,7 +188,7 @@ public partial class SetupWindow : Window
         ClearErrors();
         if (NullIfEmpty(UrlBox.Text) is not { } url)
         {
-            Show(UrlError, "Type the hub's Tailscale address, like https://t15.tail7375fe.ts.net.");
+            Show(UrlError, "Type the hub's Tailscale address, like https://your-hub.tailnet.ts.net.");
             return;
         }
         Busy(true);

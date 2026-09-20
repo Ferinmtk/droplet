@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>droplet — your devices, together</title>
+<meta name="description" content="Send files, messages and your clipboard between your phone and your computers, straight over your own Wi-Fi. No account, no cloud, no server in the middle.">
+<meta property="og:title" content="droplet — your devices, together">
+<meta property="og:description" content="Files, messages, clipboard and remote control between your own devices, over your own Wi-Fi. Free and open source.">
+<meta property="og:type" content="website">
+<link rel="icon" href="droplet.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #061419;
+    --panel: #0c2027;
+    --line: #17343d;
+    --ink: #e8f6f5;
+    --dim: #93b3b5;
+    --aqua: #4de8d4;
+    --coral: #ff8468;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 17px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+  a { color: var(--aqua); }
+
+  header { padding: 56px 0 8px; }
+  .logo { display: flex; align-items: center; gap: 14px; }
+  .logo svg { width: 44px; height: 44px; flex: none; }
+  .logo b { font-size: 34px; letter-spacing: -0.5px; }
+  h1 { font-size: clamp(30px, 6vw, 46px); line-height: 1.15; margin: 26px 0 10px; letter-spacing: -0.8px; }
+  .lede { font-size: clamp(17px, 2.4vw, 21px); color: var(--dim); max-width: 44ch; margin: 0 0 30px; }
+
+  .downloads { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 14px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--aqua); color: #04232a; text-decoration: none;
+    font-weight: 700; font-size: 18px; padding: 16px 26px; border-radius: 14px;
+    min-height: 56px;
+  }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .btn svg { width: 22px; height: 22px; }
+  .note { color: var(--dim); font-size: 15px; margin: 0 0 56px; }
+
+  h2 { font-size: clamp(22px, 3.4vw, 28px); margin: 56px 0 18px; letter-spacing: -0.4px; }
+  h3 { font-size: 18px; margin: 0 0 6px; }
+
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .card p { margin: 0; color: var(--dim); font-size: 15px; }
+
+  .shots { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); align-items: start; }
+  .shot img { width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--line); display: block; }
+  .shot p { color: var(--dim); font-size: 14px; margin: 10px 2px 0; }
+
+  ol.steps { padding-left: 20px; }
+  ol.steps li { margin-bottom: 14px; }
+  .warn { border-left: 3px solid var(--coral); padding-left: 16px; color: var(--dim); font-size: 15px; }
+  code { background: #0a1b21; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 72px; padding: 28px 0 60px; color: var(--dim); font-size: 15px; }
+  footer a { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.6c4.2 5 6.4 8.3 6.4 11.1A6.4 6.4 0 0 1 12 20.1a6.4 6.4 0 0 1-6.4-6.4c0-2.8 2.2-6.1 6.4-11.1Z" fill="#38bdf8"/><circle cx="9.7" cy="14.4" r="1.5" fill="#bae6fd"/></svg>
+      <b>droplet</b>
+    </div>
+
+    <h1>Your devices, together.</h1>
+    <p class="lede">Send files, messages and your clipboard between your phone and your computers — straight over your own Wi-Fi. No account. No cloud. Nothing in the middle.</p>
+
+    <div class="downloads">
+      <a class="btn" href="/android">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm5 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/></svg>
+        Android
+      </a>
+      <a class="btn" href="/windows">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.8 10.2 4.8v6.5H3V5.8Zm8.6-1.2L21 3.2v8.1h-9.4V4.6ZM3 12.7h7.2v6.5L3 18.2v-5.5Zm8.6 0H21v8.1l-9.4-1.4v-6.7Z"/></svg>
+        Windows
+      </a>
+      <a class="btn ghost" href="https://github.com/Ferinmtk/droplet">Source</a>
+    </div>
+    <p class="note">Free and open source, GPL-3.0. Works on Android 8+ and Windows 10/11. Linux runs the same thing from the command line.</p>
+  </header>
+
+  <h2>What it does</h2>
+  <div class="grid">
+    <div class="card"><h3>Send files</h3><p>Pick a file, or share to droplet from any app. It lands in the other device's Downloads, with its real name.</p></div>
+    <div class="card"><h3>Message your devices</h3><p>A chat between your own machines. Paste a link on the laptop, open it on the phone.</p></div>
+    <div class="card"><h3>Share the clipboard</h3><p>Copy on one device, paste on another.</p></div>
+    <div class="card"><h3>Ring a lost phone</h3><p>Loud, through silent mode, and it stops the moment you answer.</p></div>
+    <div class="card"><h3>Use your phone as a remote</h3><p>Touchpad, keyboard, volume, media, and a presentation clicker for your computer — or as a Bluetooth mouse and keyboard.</p></div>
+    <div class="card"><h3>Control the TV</h3><p>The phone pairs with an Android TV or Google TV and drives it directly.</p></div>
+  </div>
+
+  <h2>It works without a server</h2>
+  <div class="grid">
+    <div class="card"><h3>Straight between devices</h3><p>Two devices pair by matching a four-digit code, then talk directly over the Wi-Fi with each one checking the other's identity.</p></div>
+    <div class="card"><h3>Nothing to sign up for</h3><p>No account, no e-mail, no analytics, no ads. Your files never touch anyone else's computer.</p></div>
+    <div class="card"><h3>Away from home</h3><p>Add Tailscale and the same devices reach each other from anywhere, still directly.</p></div>
+  </div>
+
+  <h2>What it looks like</h2>
+  <div class="shots">
+    <figure class="shot" style="margin:0"><img src="shots/setup-choose.png" alt="The first screen: choose to pair directly, or connect to a droplet hub." loading="lazy" width="1179" height="2619"><p>Choose how to use it, on first run.</p></figure>
+    <figure class="shot" style="margin:0"><img src="shots/home-devices.png" alt="The home screen listing paired devices, each with buttons for files, message, ring, clipboard and remote." loading="lazy" width="1179" height="2619"><p>Your devices, and what you can do with each.</p></figure>
+    <figure class="shot" style="margin:0"><img src="shots/pair-code.png" alt="The pairing screen showing four large digits and the buttons They match and They don't match." loading="lazy" width="1179" height="2619"><p>Pairing: check the same four digits.</p></figure>
+  </div>
+
+  <h2>Getting started</h2>
+  <ol class="steps">
+    <li><strong>Install droplet on two devices</strong> — the Android app on your phone, the Windows app on your PC.</li>
+    <li><strong>Open it and choose “No hub: pair directly”.</strong> Give the device a name.</li>
+    <li><strong>On one of them, tap Pair a device</strong>, pick the other, and check both screens show the same four digits.</li>
+    <li>That's it. Send a file.</li>
+  </ol>
+
+  <p class="warn"><strong>Both machines will warn you.</strong> droplet isn't signed by Microsoft or distributed through Google Play yet, so Windows shows “Windows protected your PC” — click <em>More info</em>, then <em>Run anyway</em> — and Android asks permission to install apps from your browser. You can read every line of the source, and check the file against the published checksums.</p>
+
+  <h2>Run your own hub (optional)</h2>
+  <p style="color:var(--dim);max-width:62ch">Leave a spare computer or a Raspberry Pi running droplet's hub and it holds files and messages for devices that are switched off, introduces your devices to each other, and gives you a web page for all of it. Everything above keeps working without it.</p>
+
+  <footer>
+    <p>droplet is free software under the <a href="https://github.com/Ferinmtk/droplet/blob/main/LICENSE">GPL-3.0</a>. Built in Nairobi.<br>
+    <a href="https://github.com/Ferinmtk/droplet">Source and issues</a> · <a href="https://github.com/Ferinmtk/droplet/releases">All releases and checksums</a> · <a href="https://github.com/Ferinmtk/droplet/blob/main/docs/privacy.md">What it sends, and where</a></p>
+  </footer>
+
+</div>
+</body>
+</html>
