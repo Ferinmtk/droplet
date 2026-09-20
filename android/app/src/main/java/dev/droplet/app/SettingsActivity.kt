@@ -103,6 +103,36 @@ class SettingsActivity : AppCompatActivity() {
         b.about.text = getString(R.string.s_about, BuildConfig.VERSION_NAME)
 
         setUpRemote()
+        setUpMesh()
+    }
+
+    // --- the mesh -----------------------------------------------------------------
+
+    private fun setUpMesh() {
+        b.meshSwitch.setOnCheckedChangeListener { _, on ->
+            if (on == Prefs.meshEnabled) return@setOnCheckedChangeListener
+            Prefs.meshEnabled = on
+            Mesh.enabledChanged()
+        }
+        b.openPeers.setOnClickListener { startActivity(Intent(this, PeersActivity::class.java)) }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                Mesh.state.collect { showMesh(it) }
+            }
+        }
+    }
+
+    /** "Fingerprint 1a2b3c4d… · port 1739 · 3 devices", or why not. */
+    private fun showMesh(s: Mesh.Snapshot) {
+        b.meshSwitch.isChecked = Prefs.meshEnabled
+        b.meshDot.setBackgroundResource(if (s.status == Mesh.Status.RUNNING) R.drawable.dot_online else R.drawable.dot)
+        b.meshState.text = when (s.status) {
+            Mesh.Status.RUNNING -> getString(R.string.s_mesh_state, s.fp.orEmpty().take(8) + "…", s.port,
+                resources.getQuantityString(R.plurals.s_mesh_peers, s.peers, s.peers))
+            Mesh.Status.STARTING -> getString(R.string.mesh_status_starting)
+            Mesh.Status.FAILED -> getString(R.string.mesh_status_failed, s.error.orEmpty())
+            Mesh.Status.OFF -> if (Prefs.meshEnabled) getString(R.string.live_off) else getString(R.string.mesh_status_off)
+        }
     }
 
     // --- remote control ----------------------------------------------------------
@@ -162,6 +192,8 @@ class SettingsActivity : AppCompatActivity() {
     private fun capsChanged() {
         refresh()
         Live.refresh()
+        Presence.update()
+        Mesh.capsChanged()
     }
 
     private fun refreshCaps() {
@@ -233,6 +265,17 @@ class SettingsActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // shows this phone's mesh identity while Settings is open
+        Mesh.hold(MESH_TAG)
+    }
+
+    override fun onStop() {
+        Mesh.release(MESH_TAG)
+        super.onStop()
     }
 
     override fun onResume() {
@@ -361,5 +404,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private companion object {
         const val ROUTER_TAG = "settings"
+        const val MESH_TAG = "settings"
     }
 }

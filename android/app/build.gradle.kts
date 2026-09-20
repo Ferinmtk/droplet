@@ -24,8 +24,8 @@ android {
         applicationId = "dev.droplet.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.3"
+        versionCode = 6
+        versionName = "1.4"
     }
 
     signingConfigs {
@@ -62,6 +62,10 @@ android {
         // Robolectric runs the app's own code on the JVM (see src/test)
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
+            // Robolectric fits in this; left unset, the test JVM may take a quarter of the RAM.
+            // -PtestHeap=… overrides it; one test JVM at a time
+            it.maxHeapSize = (project.findProperty("testHeap") as String?) ?: "768m"
+            it.maxParallelForks = 1
             // the live-connection tests talk to a real hub when one is given
             it.systemProperty("droplet.testHub", System.getenv("DROPLET_TEST_HUB") ?: "")
             // the local-first tests: a second hub with DROPLET_PIN, and a "clone" that
@@ -69,6 +73,14 @@ android {
             it.systemProperty("droplet.testPinHub", System.getenv("DROPLET_TEST_PIN_HUB") ?: "")
             it.systemProperty("droplet.testPin", System.getenv("DROPLET_TEST_PIN") ?: "")
             it.systemProperty("droplet.testCloneHub", System.getenv("DROPLET_TEST_CLONE_HUB") ?: "")
+            // the mesh interop tests: a venv Python with ./agent installed, the hub's pid (the
+            // roster test stops it), and optionally the LAN address and a scratch folder
+            it.systemProperty("droplet.testAgentPy", System.getenv("DROPLET_TEST_AGENT_PY") ?: "")
+            it.systemProperty("droplet.testHubPid", System.getenv("DROPLET_TEST_HUB_PID") ?: "")
+            it.systemProperty("droplet.testLanIp", System.getenv("DROPLET_TEST_LAN_IP") ?: "")
+            it.systemProperty("droplet.testScratch", System.getenv("DROPLET_TEST_SCRATCH") ?: "")
+            // a real peer to shake hands with, and nothing more: "host:port:fingerprint"
+            it.systemProperty("droplet.testRealPeer", System.getenv("DROPLET_TEST_REAL_PEER") ?: "")
             // screens rendered for review land here when set (see ScreensTest)
             it.systemProperty("droplet.shots", System.getenv("DROPLET_SHOTS") ?: "")
         }

@@ -104,10 +104,92 @@ class UploadService : Service() {
         return Share(files, text, to, intent.getStringExtra(EXTRA_TO_NAME) ?: to)
     }
 
+    /** The mesh peer a share goes to: a "mesh:<fp>" target, or a hub device the mesh also knows. */
+    private suspend fun meshTarget(to: String): String? {
+        if (to == "hub") return null
+        val direct = to.startsWith(PeersActivity.MESH_PREFIX)
+        if (!direct && !Prefs.meshEnabled) return null
+        // the node may still be starting
+        for (i in 0 until 100) {
+            val n = Mesh.node
+            if (n != null) return if (direct) to.removePrefix(PeersActivity.MESH_PREFIX) else Mesh.peerById(to)?.fp
+            if (Mesh.state.value.status == Mesh.Status.FAILED || Mesh.state.value.status == Mesh.Status.OFF && i > 5) break
+            kotlinx.coroutines.delay(100)
+        }
+        if (direct) throw HubException(getString(R.string.mesh_off_now))
+        return null
+    }
+
+    /**
+     * Through the mesh's routes (docs/mesh.md §5): directly if the peer is
+     * reachable, else the hub, else kept in the outbox until one of them is.
+     */
+    private suspend fun runMesh(share: Share, fp: String, files: List<Outgoing>) {
+        val n = Mesh.node ?: throw HubException(getString(R.string.mesh_off_now))
+        val where = share.toName
+        val routes = mutableListOf<String>()
+        var kept = false
+        val jobs = mutableListOf<Pair<String, Outgoing?>>()
+        try {
+            for (f in files) jobs += n.sendFile(fp, if (f.uri.scheme == "file") f.uri.path!! else f.uri.toString(), f.name, f.mime ?: "application/octet-stream", f.size).getString("id") to f
+            share.text?.let { jobs += n.sendText(fp, it).getString("id") to null }
+            val title = getString(R.string.up_sending, where)
+            for ((id, f) in jobs) {
+                while (true) {
+                    val j = withContext(Dispatchers.IO) { n.awaitJob(id, 500) } ?: throw HubException("The transfer was lost")
+                    if (f != null && f.size > 0) {
+                        val done = n.jobSent(id).coerceAtMost(f.size)
+                        val pct = (done * 100 / f.size).toInt()
+                        notifyProgress(title, getString(R.string.up_progress, pct, Formatter.formatShortFileSize(this, done),
+                            Formatter.formatShortFileSize(this, f.size)), pct, 100)
+                    } else notifyProgress(title, getString(R.string.up_text), 0, 0)
+                    when (j.optString("state")) {
+                        dev.droplet.app.mesh.Outbox.DONE -> { routes += j.optString("route"); break }
+                        dev.droplet.app.mesh.Outbox.FAILED -> throw HubException(j.optString("error").ifEmpty { "failed" })
+                        dev.droplet.app.mesh.Outbox.QUEUED -> if (j.optInt("attempts") > 0 && !j.optBoolean("retry")) { kept = true; break }
+                    }
+                }
+                // a job that has to wait holds the ones after it: they wait too
+                if (kept) break
+            }
+        } catch (e: CancellationException) {
+            for ((id, _) in jobs) n.outbox.update(id, "state" to dev.droplet.app.mesh.Outbox.FAILED, "error" to "cancelled")
+            throw e
+        }
+        val what = when {
+            files.isEmpty() -> getString(R.string.up_what_text)
+            files.size == 1 -> files[0].name
+            else -> resources.getQuantityString(R.plurals.up_files, files.size, files.size)
+        }
+        if (kept) done(getString(R.string.up_kept, where), getString(R.string.up_kept_body, where), ok = true)
+        else done(getString(R.string.up_done_route, where, routes.distinct().joinToString(", ") { Mesh.describeRoute(this, it) }), what, ok = true)
+    }
+
     private suspend fun run(share: Share) {
+        Mesh.hold(MESH_TAG)
+        try {
+            runShare(share)
+        } finally {
+            Mesh.release(MESH_TAG)
+        }
+    }
+
+    private suspend fun runShare(share: Share) {
         val where = if (share.to == "hub") getString(R.string.up_the_hub) else share.toName
         val temp = mutableListOf<File>()
         try {
+            val fp = try {
+                meshTarget(share.to)
+            } catch (e: HubException) {
+                done(getString(R.string.up_failed, where), e.message.orEmpty(), ok = false)
+                return
+            }
+            if (fp != null) {
+                val files = share.files.map { f -> if (f.size >= 0) f else spool(f).also { temp += File(it.uri.path!!) } }
+                // a spooled copy is only this service's: the mesh keeps its own if it has to wait
+                runMesh(share, fp, files)
+                return
+            }
             var sent = emptyList<String>()
             if (share.files.isNotEmpty()) {
                 val title = getString(R.string.up_sending, where)
@@ -199,6 +281,7 @@ class UploadService : Service() {
 
     companion object {
         private const val ACTION_CANCEL = "dev.droplet.app.CANCEL_UPLOAD"
+        private const val MESH_TAG = "upload"
         private const val EXTRA_URIS = "uris"
         private const val EXTRA_NAMES = "names"
         private const val EXTRA_SIZES = "sizes"

@@ -16,6 +16,7 @@ object Notifs {
     const val CH_TRANSFERS = "transfers"
     const val CH_RING = "ring"
     const val CH_INBOX = "inbox"
+    const val CH_PEERS = "peers"
 
     const val ID_CONNECTION = 1
     const val ID_UPLOAD = 2
@@ -46,6 +47,9 @@ object Notifs {
                 },
                 NotificationChannel(CH_INBOX, context.getString(R.string.ch_inbox), NotificationManager.IMPORTANCE_HIGH).apply {
                     description = context.getString(R.string.ch_inbox_desc)
+                },
+                NotificationChannel(CH_PEERS, context.getString(R.string.ch_peers), NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = context.getString(R.string.ch_peers_desc)
                 },
             )
         )

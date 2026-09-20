@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Droplet.Core/Droplet.Core.csproj" />
+    <Project Path="src/Droplet.Windows/Droplet.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Droplet.Core.Tests/Droplet.Core.Tests.csproj" />
+    <Project Path="tests/Droplet.Windows.Tests/Droplet.Windows.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -183,7 +183,7 @@ object MediaBridge {
             val expected = lastPosition?.let { it + if (lastPlaying) (now - lastPositionAt) / 1000.0 else 0.0 }
             if (activePosition == null || expected == null || abs(activePosition!! - expected) < DRIFT_S) return
         }
-        if (!Live.sendState("media", data)) return
+        if (!States.publish("media", data)) return
         lastSignature = signature
         lastPosition = activePosition
         lastPositionAt = now

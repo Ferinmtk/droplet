@@ -5,6 +5,12 @@ mouse and keyboard, the presentation remote, media playback and volume,
 locking, screenshots and clipboard sync. It keeps a WebSocket open to the hub
 and acts on what arrives. The protocol is [docs/remote.md](../docs/remote.md).
 
+It's also a **mesh peer** ([docs/mesh.md](../docs/mesh.md)): your devices
+talk to it directly, like KDE Connect, and it keeps working when the hub is
+down. Chat, files, ringing, clipboard and remote control all go device to
+device, and fall back to the hub only when the other device can't be
+reached directly.
+
 ## Install
 
 On the computer you want to control, open droplet in its browser, go to
@@ -25,8 +31,9 @@ curl -fsSL https://<hub's tailnet name>/agent/install.sh | sh -s -- --code 12345
 The installer needs no sudo. It:
 
 - creates a Python virtual environment in `~/.local/share/droplet-agent`,
-- installs the agent, downloaded from the hub itself (only its small
-  dependencies, `websockets`, `jeepney` and `zeroconf`, come from PyPI),
+- installs the agent, downloaded from the hub itself (only its
+  dependencies, `websockets`, `jeepney`, `zeroconf` and `cryptography`,
+  come from PyPI),
 - links to the hub, and saves the token and the hub's identity in
   `~/.config/droplet-agent/config.json` (mode 600),
 - installs and starts a systemd user service, `droplet-agent.service`, which
@@ -83,6 +90,78 @@ again: `droplet-agent setup --name NAME` or `--code`.
 An agent set up before this (its config holds only a hub URL) reads the
 hub's identity from that URL the first time it runs, and stores it.
 
+## The mesh: talking to your devices directly
+
+Each agent has its own key and certificate (made the first time it runs,
+kept in `~/.config/droplet-agent/mesh/`, owner-only), and listens on port
+**1739** (or the next free one up to 1749). It announces itself on the LAN
+over mDNS (`_droplet-peer._tcp`).
+
+**Who it trusts:**
+
+- **Every device on your hub**, automatically. The hub sends the agent its
+  **roster**: the certificates of all the devices you've let in. The agent
+  keeps a copy, so they keep reaching each other when the hub is down,
+  and over Tailscale when you're away. Remove a device on the hub and every
+  agent stops trusting it.
+- **Devices you pair with directly**, for a computer with no hub, or a
+  friend's laptop:
+
+  ```sh
+  droplet-agent peers              # who's around, and who's trusted
+  droplet-agent pair beta          # its name, id, or address[:port]
+  ```
+
+  Both screens show the same four-digit code. On the other computer:
+
+  ```sh
+  droplet-agent pair               # shows who's asking, and the code; answer y
+  droplet-agent pair --accept      # or answer straight away (--deny to refuse)
+  ```
+
+  The agent also shows a desktop notification when someone asks. Answer
+  only if the codes match: that's what proves nobody is in the middle.
+  `droplet-agent unpair beta` undoes it, on both sides if the other is
+  reachable.
+
+**Sending**, from scripts or the terminal (the agent must be running):
+
+| command | what it does |
+|---|---|
+| `droplet-agent text beta "on my way"` | a chat message |
+| `droplet-agent send-file beta photo.jpg …` | files; they land in the other computer's `~/Downloads/droplet` |
+| `droplet-agent ring beta` | rings it (`--stop` to stop) |
+| `droplet-agent clip beta` | sends this computer's clipboard (`--text '…'` to send some text instead) |
+| `droplet-agent send beta '{"t":"input","ev":[{"k":"key","key":"ArrowRight"}]}'` | one `input`, `media` or `cmd` message (docs/remote.md) |
+
+Each says how it went: directly over the LAN, directly over Tailscale,
+through the hub, or to the hub's mailbox when the other device is off.
+When nothing can reach it (no hub, and the device is off), chat and files
+wait in the **outbox** (`~/.local/share/droplet-agent/mesh/outbox.json`)
+and go out as soon as the device or the hub is back, in order. A file waits
+where it is, so don't delete or change it before it's sent. Remote
+control, ringing and the clipboard are never queued: an hour late, they'd
+be wrong.
+
+A big file that stops part-way (Wi-Fi dropped, one side restarted) carries
+on from where it stopped the next time.
+
+**Receiving** needs nothing: messages from trusted devices show as desktop
+notifications (and are kept in `~/.local/share/droplet-agent/mesh/chat.jsonl`),
+files land in `~/Downloads/droplet` (never overwriting anything), a ring
+plays the incoming-call sound, and remote control, media, lock, screenshot
+and clipboard work exactly as they do through the hub. A screenshot goes
+back to whoever asked, the way the request came.
+
+**The firewall.** Other devices must be able to reach the mesh port. On
+Fedora (firewalld), `droplet-agent doctor` says so and gives the command:
+
+```sh
+sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --reload
+```
+
+**Without a hub**, `droplet-agent run` (and the service) runs the mesh alone.
+
 ## Commands
 
 | command | what it does |
@@ -91,7 +170,11 @@ hub's identity from that URL the first time it runs, and stores it.
 | `droplet-agent doctor` | how to fix what's missing, with the exact commands |
 | `droplet-agent setup` | find the hub on this network and join it (lists the hubs it finds; asks when there's more than one). On a linked computer: read the hub's identity again |
 | `droplet-agent setup --hub URL --code 123456` | link to a given hub (`http://<address>:8000`, or its tailnet URL). `--name NAME` joins as a new device, `--pin` uses the hub's PIN instead of waiting to be allowed |
-| `droplet-agent run` | run in the foreground (the service does this). `--dry-run` only logs what it would do; `-v` for more detail |
+| `droplet-agent run` | run in the foreground (the service does this). `--dry-run` only logs what it would do; `-v` for more detail. Without a hub, runs the mesh alone |
+| `droplet-agent peers` | the devices this one talks to directly, who's nearby, who's asking to pair, and what's waiting to be sent |
+| `droplet-agent pair [PEER]` | pair directly with a device; with nothing, answer the devices asking (`--accept`, `--deny`) |
+| `droplet-agent unpair PEER` | stop trusting a directly paired device |
+| `droplet-agent text`, `send-file`, `ring`, `clip`, `send` | send to a device: see [the mesh](#the-mesh-talking-to-your-devices-directly) |
 | `droplet-agent uninstall` | stop the service and remove the agent, its settings and the service file |
 
 Logs: `journalctl --user -u droplet-agent -f`.
@@ -168,7 +251,8 @@ acceleration to the virtual mouse.
   "uinput_text": "auto",
   "lock_command": null,
   "screenshot_command": null,
-  "clipboard_max_bytes": 262144
+  "clipboard_max_bytes": 262144,
+  "mesh": {"enabled": true, "port": null, "downloads": null, "max_rate": 0, "announce": true}
 }
 ```
 
@@ -182,6 +266,12 @@ acceleration to the virtual mouse.
 - **lock_command**: e.g. `["swaylock", "-f"]`. `null` picks one.
 - **screenshot_command**: e.g. `["grim", "{out}"]`, where `{out}` is the PNG
   path to write. `null` picks one.
+- **mesh**: `enabled: false` turns direct connections off (the agent then
+  only talks to the hub). `port`: a fixed mesh port (`null`: 1739, or the
+  next free one up to 1749). `downloads`: where files sent directly land
+  (`null`: `~/Downloads/droplet`, following your desktop's download folder).
+  `max_rate`: bytes a second when sending files directly (0: no limit).
+  `announce: false` stops announcing over mDNS (peers then need its address).
 
 Restart the service after editing: `systemctl --user restart droplet-agent`.
 
@@ -192,7 +282,19 @@ the same trust as the rest of droplet (your tailnet, the PIN, or a device
 you've allowed in). The agent only sends its token to the hub it paired
 with: over the LAN, to the pinned certificate; over the tailnet, with
 verified TLS; on the hub machine, over loopback. Switch off
-what you don't want under `caps`. The agent never runs anything a message
+what you don't want under `caps`.
+
+On the mesh, a device is trusted only by its certificate's fingerprint:
+your hub's roster (which lists only devices you've let in, and carries no
+tokens), or a direct pairing you confirmed by comparing codes. Every
+connection is mutual TLS. A device whose certificate isn't trusted is
+refused in the TLS handshake; one with no certificate can only ask to
+pair. Pairing commits both sides to random numbers before the code exists,
+and the asking device signs with its key, so an attacker in the middle
+can't make the two codes match, and nobody can pair with someone else's
+certificate. Files offered to one device can only be fetched by that
+device. The agent's local commands reach it over a socket only your user
+can open. The agent never runs anything a message
 supplies: commands are a fixed list, media players must be ones `playerctl`
 lists, and numbers are clamped. Clipboard text that a password manager marks as
 secret (KeePassXC does) is never sent.
@@ -205,6 +307,8 @@ python -m venv .venv && .venv/bin/pip install websockets jeepney zeroconf pytest
 .venv/bin/python -m pytest tests                 # unit tests
 .venv/bin/python tests/e2e_local.py http://127.0.0.1:8822   # against a local hub
 .venv/bin/python tests/e2e_lan.py 8851           # routes, against a hub on the LAN
+.venv/bin/python tests/e2e_mesh.py direct        # two agents with no hub, and an untrusted third
+.venv/bin/python tests/e2e_mesh.py hub http://127.0.0.1:8861 <hub pid>   # the roster, hub down, mailbox, outbox
 ```
 
 `tests/e2e_local.py` links an agent to a throwaway hub with a real link code,
@@ -212,6 +316,14 @@ runs it with the dry-run backends and drives it from a fake controller.
 `tests/e2e_lan.py` needs a throwaway hub listening on the LAN
 (`DROPLET_HOST=0.0.0.0`): it finds it over mDNS, checks the hub-local route,
 and moves a dry-run agent from the pinned LAN to a stand-in tailnet and back.
+`tests/e2e_mesh.py` runs separate dry-run agent processes, each with its
+own HOME, and drives them with the real commands: pairing, a 50 MB file
+interrupted and resumed, input, ring, clip, an untrusted third agent,
+unpairing; with a throwaway hub, the roster, the hub stopped and
+restarted, the mailbox and the outbox.
+
+The mesh lives in `droplet_agent/mesh/` and reaches the rest of the agent
+only through `mesh_host.py`.
 
 The hub serves the agent at `/agent/install.sh`, `/agent/droplet-agent.tar.gz`
 and `/agent/droplet_agent-<version>-py3-none-any.whl`, built from this

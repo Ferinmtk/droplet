@@ -1,0 +1,162 @@
+<Window x:Class="Droplet.Windows.Views.DevicesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="droplet" Width="940" Height="640" MinWidth="680" MinHeight="480"
+        WindowStartupLocation="CenterScreen" Icon="/Assets/droplet.ico">
+    <Grid Margin="24,20,24,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Margin="0,0,0,16">
+            <Image Source="/Assets/droplet-256.png" Width="44" Height="44" Margin="0,0,14,0" DockPanel.Dock="Left" />
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                <Button Content="Open droplet" Style="{StaticResource PlainButton}" Margin="0,0,8,0" Click="OpenWeb_Click"
+                        ToolTip="The hub's web app, in your browser" />
+                <Button Content="Settings" Style="{StaticResource PlainButton}" Click="Settings_Click" />
+            </StackPanel>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Devices" Style="{StaticResource PageTitle}" />
+                <TextBlock x:Name="StatusText" Style="{StaticResource Caption}" />
+            </StackPanel>
+        </DockPanel>
+
+        <StackPanel Grid.Row="1">
+            <Border x:Name="RingBanner" Style="{StaticResource Banner}" Visibility="Collapsed">
+                <DockPanel>
+                    <Button Content="Stop ringing" Style="{StaticResource PrimaryButton}" DockPanel.Dock="Right" Click="StopRing_Click" />
+                    <TextBlock x:Name="RingText" VerticalAlignment="Center" TextWrapping="Wrap" />
+                </DockPanel>
+            </Border>
+            <Border x:Name="ControlBanner" Style="{StaticResource Banner}" Visibility="Collapsed">
+                <DockPanel>
+                    <Button Content="Pause remote control" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Click="PauseRemote_Click" />
+                    <TextBlock x:Name="ControlText" VerticalAlignment="Center" TextWrapping="Wrap" />
+                </DockPanel>
+            </Border>
+        </StackPanel>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="20" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <DockPanel>
+                <Button Content="Pair a device…" Style="{StaticResource PlainButton}" DockPanel.Dock="Bottom" HorizontalAlignment="Stretch"
+                        Margin="0,12,0,0" Click="ShowPairing_Click" />
+                <ListBox x:Name="List" SelectionChanged="List_SelectionChanged" AutomationProperties.Name="Devices">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="2,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="18" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Width="8" Height="8" Fill="{DynamicResource DropletAccentBrush}" Opacity="{Binding DotOpacity}"
+                                         VerticalAlignment="Top" Margin="0,6,0,0" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Detail}" Style="{StaticResource Caption}" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Border x:Name="RequestsCard" Style="{StaticResource Card}" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="Wants to pair" Style="{StaticResource SectionTitle}" />
+                            <ItemsControl x:Name="Requests">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,4,0,8">
+                                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                                                <Button Content="Accept" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Tag="{Binding Request}" Click="Accept_Click" />
+                                                <Button Content="Deny" Style="{StaticResource PlainButton}" Tag="{Binding Request}" Click="Deny_Click" />
+                                            </StackPanel>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                <TextBlock Style="{StaticResource Caption}">
+                                                    <Run Text="Code" /> <Run Text="{Binding Code, Mode=OneWay}" FontWeight="Bold" FontSize="14" />
+                                                    <Run Text="· accept only if the other device shows the same code." />
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="DetailCard" Style="{StaticResource Card}" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock x:Name="DetailName" Style="{StaticResource SectionTitle}" FontSize="20" />
+                            <TextBlock x:Name="DetailRoute" Style="{StaticResource Caption}" Margin="0,0,0,12" />
+                            <WrapPanel>
+                                <Button x:Name="SendFilesButton" Content="Send files…" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" Click="SendFiles_Click" />
+                                <Button x:Name="MessageButton" Content="Message…" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Message_Click" />
+                                <Button x:Name="ClipboardButton" Content="Send clipboard" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Clipboard_Click" />
+                                <Button x:Name="RingButton" Content="Ring" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Ring_Click" />
+                                <Button x:Name="UnpairButton" Content="Unpair" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Unpair_Click" />
+                            </WrapPanel>
+                            <TextBlock x:Name="DetailNote" Style="{StaticResource Caption}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="PairCard" Style="{StaticResource Card}" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="Pair a device" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Style="{StaticResource Body}">
+                                Pairing lets a device reach this PC directly, on your Wi-Fi or over Tailscale, with no hub in between.
+                                Both of you see a four-digit code: say yes only if they match.
+                            </TextBlock>
+                            <TextBlock Text="On this network" Style="{StaticResource Caption}" Margin="0,8,0,4" />
+                            <ItemsControl x:Name="Nearby">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,2,0,6">
+                                            <Button Content="Pair" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Tag="{Binding Target}" Click="PairNearby_Click" />
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Detail}" Style="{StaticResource Caption}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock x:Name="NoNearby" Style="{StaticResource Caption}"
+                                       Text="No unpaired droplet devices are announcing themselves on this network. You can type one's address instead." />
+                            <TextBlock Text="Or by address (an IP or name, with :port if it isn't 1739)" Style="{StaticResource Caption}" Margin="0,12,0,4" />
+                            <DockPanel>
+                                <Button Content="Pair" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="PairAddress_Click" />
+                                <TextBox x:Name="Address" AutomationProperties.Name="Address" />
+                            </DockPanel>
+                            <Border x:Name="PairProgress" Style="{StaticResource Banner}" Margin="0,14,0,0" Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock x:Name="PairText" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="PairCode" Style="{StaticResource Code}" />
+                                    <StackPanel x:Name="PairButtons" Orientation="Horizontal">
+                                        <Button Content="They match" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="PairMatch_Click" />
+                                        <Button Content="Cancel" Style="{StaticResource PlainButton}" Click="PairCancel_Click" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock x:Name="PairError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock x:Name="EmptyText" Style="{StaticResource Body}" Visibility="Collapsed">
+                        No devices yet. Set up a hub in Settings, or pair a device directly with "Pair a device…".
+                    </TextBlock>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>

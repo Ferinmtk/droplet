@@ -64,7 +64,8 @@ object Prefs {
     /** Forgets everything about the hub (Settings → Forget this hub). */
     fun forgetHub() = sp.edit {
         for (k in listOf("hub_url", "hub_id", "hub_fp", "pin_source", "hub_name", "lan_addrs", "device_token",
-            "seen_inbox", "seen_unread", "inbox_primed", "last_target", "remote_target", "silenced_ring")) remove(k)
+            "seen_inbox", "seen_unread", "inbox_primed", "last_target", "remote_target", "silenced_ring",
+            "mesh_device_id")) remove(k)
     }
 
     const val PIN_TAILNET = "tailnet"
@@ -154,6 +155,25 @@ object Prefs {
     var remoteTarget: String?
         get() = sp.getString("remote_target", null)
         set(v) = sp.edit { putString("remote_target", v) }
+
+    // --- the mesh (see Mesh) -------------------------------------------------------
+    // Direct links to your other devices. The identity and trust list live in
+    // files under the app's private storage, not here.
+
+    /** Direct connections on or off (Settings). On by default: the server only listens while Stay connected runs. */
+    var meshEnabled: Boolean
+        get() = sp.getBoolean("mesh_enabled", true)
+        set(v) = sp.edit { putBoolean("mesh_enabled", v) }
+
+    /** This phone's device id on the hub, learned from the live connection: the mesh peer id. */
+    var meshDeviceId: String?
+        get() = sp.getString("mesh_device_id", null)
+        set(v) = sp.edit { putString("mesh_device_id", v) }
+
+    /** This phone's name on the hub, which the mesh uses too. */
+    var meshDeviceName: String?
+        get() = sp.getString("mesh_device_name", null)
+        set(v) = sp.edit { putString("mesh_device_name", v) }
 
     // --- Bluetooth mouse and keyboard (see BtHid) -----------------------------------
     // Not about the hub, so forgetting the hub leaves these alone.

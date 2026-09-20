@@ -11,18 +11,21 @@ readme = "README.md"
 requires-python = ">=3.9"
 # websockets and jeepney are pure Python. zeroconf (finding the hub on the
 # LAN) has wheels for the usual platforms and builds without a compiler
-# elsewhere, as pure Python.
+# elsewhere, as pure Python. cryptography makes the mesh's key and
+# certificate and checks pairing signatures; it has wheels for x86-64 and
+# ARM64 Linux (glibc and musl).
 dependencies = [
     "websockets>=15.0",
     "jeepney>=0.8",
     "zeroconf>=0.132",
+    "cryptography>=42.0",
 ]
 
 [project.scripts]
 droplet-agent = "droplet_agent.cli:main"
 
 [tool.setuptools]
-packages = ["droplet_agent", "droplet_agent.inject"]
+packages = ["droplet_agent", "droplet_agent.inject", "droplet_agent.mesh"]
 
 [tool.setuptools.dynamic]
 version = { attr = "droplet_agent.__version__" }

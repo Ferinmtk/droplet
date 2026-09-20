@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  droplet's MSIX manifest. Droplet.Package.proj fills in the $...$ values:
+    $Name$, $Publisher$, $PublisherDisplayName$   the package identity, from Partner Center
+                                                  (Product management → Product identity);
+                                                  test values until then, see packaging/README.md
+    $Version$                                     four parts, the last 0 for the Store
+    $Architecture$                                x64 or arm64
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop desktop2 rescap">
+
+  <Identity Name="$Name$" Publisher="$Publisher$" Version="$Version$" ProcessorArchitecture="$Architecture$" />
+
+  <Properties>
+    <DisplayName>droplet</DisplayName>
+    <PublisherDisplayName>$PublisherDisplayName$</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Your devices, together, on your own network: files, messages, clipboard, rings and remote control between your phone and your PCs.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="droplet.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="droplet"
+        Description="Your devices, together, on your own network"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" Square71x71Logo="Assets\Square71x71Logo.png"
+                         Square310x310Logo="Assets\Square310x310Logo.png" ShortName="droplet" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#061419" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- notification buttons and links: droplet:… starts droplet.exe with the link -->
+        <uap3:Extension Category="windows.protocol">
+          <uap3:Protocol Name="droplet" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>droplet</uap:DisplayName>
+          </uap3:Protocol>
+        </uap3:Extension>
+
+        <!-- Start with Windows: declared off; only the person turns it on (Settings, or Settings → Apps → Startup) -->
+        <desktop:Extension Category="windows.startupTask" Executable="droplet.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="dropletStartup" Enabled="false" DisplayName="droplet" />
+        </desktop:Extension>
+
+        <!-- "droplet" on the command line and in shortcuts -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="droplet.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="droplet.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Extensions>
+    <!--
+      The mesh port (TCP 1739–1749, the first free one) takes connections from paired devices
+      on the LAN and over Tailscale, on any network profile (Windows often calls a new home
+      Wi-Fi "public", and the tailnet's adapter may be too): every connection is checked, and
+      a device that isn't paired, or vouched for by your hub, fails the TLS handshake.
+      mDNS (UDP 5353) answers "who's here?" so devices find this PC, but only on private and
+      work networks: on a café's Wi-Fi, droplet doesn't tell strangers it's there.
+    -->
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="droplet.exe">
+        <desktop2:Rule Direction="in" IPProtocol="TCP" LocalPortMin="1739" LocalPortMax="1749" Profile="all" />
+        <desktop2:Rule Direction="in" IPProtocol="UDP" LocalPortMin="5353" LocalPortMax="5353" Profile="domainAndPrivate" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <Capability Name="privateNetworkClientServer" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

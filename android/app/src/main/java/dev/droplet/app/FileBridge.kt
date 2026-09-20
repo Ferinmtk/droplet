@@ -47,12 +47,28 @@ object FileBridge {
         ).map { (path, name, rel) -> Root(path, name, File(top, rel)) }
     }
 
-    suspend fun call(context: Context, method: String, params: JSONObject, from: JSONObject?): JSONObject = when (method) {
+    /**
+     * Takes a file to the device that asked: an upload to its "For this
+     * device" list on the hub, or a file offer over a direct link. Returns
+     * the name it was saved under.
+     */
+    fun interface Sender {
+        fun send(file: File, mime: String?, progress: (sent: Long, total: Long) -> Unit): String
+    }
+
+    /** The hub way: POST /upload?to=<the requester>. */
+    fun hubSender(context: Context, to: String) = Sender { file, mime, progress ->
+        Hub.upload(context, listOf(Outgoing(Uri.fromFile(file), file.name, file.length(), mime)), to, progress).firstOrNull()
+            ?: throw RpcError("The hub didn't save it")
+    }
+
+    suspend fun call(context: Context, method: String, params: JSONObject, from: JSONObject?,
+                     sender: Sender? = null): JSONObject = when (method) {
         "files.roots" -> JSONObject().put("roots", JSONArray(roots().filter { it.dir.isDirectory }.map {
             JSONObject().put("path", it.path).put("name", it.name)
         }))
         "files.list" -> list(params.optString("path"))
-        "files.get" -> get(context, params.optString("path"), from)
+        "files.get" -> get(context, params.optString("path"), from, sender)
         else -> throw RpcError("The phone doesn't know $method")
     }
 
@@ -104,13 +120,13 @@ object FileBridge {
      * list. Waits up to 20 s so small files report real success or failure;
      * a big one keeps going and the answer says it's on its way.
      */
-    private suspend fun get(context: Context, path: String, from: JSONObject?): JSONObject {
+    private suspend fun get(context: Context, path: String, from: JSONObject?, sender: Sender?): JSONObject {
         val to = from?.optString("id")?.takeIf { it.isNotEmpty() } ?: throw RpcError("No one to send it to")
+        val send = sender ?: hubSender(context, to)
         val (_, file) = resolve(path)
         if (!file.isFile) throw RpcError("No such file")
         if (!file.canRead()) throw RpcError("Can't read that file. Is All files access still allowed?")
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase())
-        val item = Outgoing(Uri.fromFile(file), file.name, file.length(), mime)
         val upload = Live.scope.async {
             val wake = context.getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "droplet:files-get").apply { acquire(30 * 60_000L) }
@@ -118,13 +134,13 @@ object FileBridge {
             try {
                 progress(context, note, file.name, from.optString("name", "another device"), 0)
                 var last = 0L
-                Hub.upload(context, listOf(item), to) { sent, total ->
+                send.send(file, mime) { sent, total ->
                     val now = SystemClock.elapsedRealtime()
                     if (now - last > 1_000 && total > 0) {
                         last = now
                         progress(context, note, file.name, from.optString("name"), (sent * 100 / total).toInt())
                     }
-                }.firstOrNull() ?: throw RpcError("The hub didn't save it")
+                }
             } finally {
                 NotificationManagerCompat.from(context).cancel(note)
                 if (wake.isHeld) wake.release()

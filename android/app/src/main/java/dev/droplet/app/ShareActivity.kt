@@ -25,6 +25,11 @@ import kotlinx.coroutines.withContext
  * named devices, then a background upload with a progress notification.
  */
 class ShareActivity : AppCompatActivity() {
+    private companion object {
+        const val MESH_TAG = "share"
+        val DIRECT = setOf("lan", "tailnet")
+    }
+
     private lateinit var sheet: BottomSheetDialog
     private lateinit var b: SheetShareBinding
     private var files: List<Outgoing> = emptyList()
@@ -35,7 +40,8 @@ class ShareActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!Prefs.hasHub) {
+        // with no hub, directly paired devices are still there
+        if (!Prefs.hasHub && !Prefs.meshEnabled) {
             Toast.makeText(this, R.string.share_no_hub, Toast.LENGTH_LONG).show()
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
@@ -62,8 +68,21 @@ class ShareActivity : AppCompatActivity() {
             b.summary.text = summary()
             renderTargets()
             sheet.show()
-            loadDevices()
+            if (Prefs.hasHub) loadDevices()
+            // mesh peers appear as the mesh starts, and their routes as they change
+            launch { Mesh.changes.collect { renderTargets() } }
+            launch { Mesh.state.collect { renderTargets() } }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Mesh.hold(MESH_TAG)
+    }
+
+    override fun onStop() {
+        Mesh.release(MESH_TAG)
+        super.onStop()
     }
 
     private fun loadDevices() {
@@ -102,17 +121,27 @@ class ShareActivity : AppCompatActivity() {
     }
 
     private fun renderTargets() {
+        if (!::b.isInitialized) return
         b.targets.removeAllViews()
         val last = Prefs.lastTarget
-        val hubRow = row(getString(R.string.share_hub), getString(R.string.share_hub_sub) + " · " + Hub.hostLabel(),
-            R.drawable.ic_hub, online = null, lastUsed = last == "hub" || last == null) { send("hub", getString(R.string.share_hub)) }
+        val hubRow = if (Prefs.hasHub) row(getString(R.string.share_hub), getString(R.string.share_hub_sub) + " · " + Hub.hostLabel(),
+            R.drawable.ic_hub, online = null, lastUsed = last == "hub" || last == null) { send("hub", getString(R.string.share_hub)) } else null
+        val mesh = Mesh.peers()
         val rows = devices.map { d ->
-            val usable = named || text == null
-            d.id to row(d.name, getString(if (d.online) R.string.share_online else R.string.share_offline),
-                R.drawable.ic_device, online = d.online, lastUsed = last == d.id, enabled = usable) { send(d.id, d.name) }
+            // a device the mesh knows goes directly when it can (and through the hub when not)
+            val peer = mesh.firstOrNull { it.entry.id == d.id }
+            val usable = named || text == null || peer != null
+            val sub = getString(if (d.online) R.string.share_online else R.string.share_offline) +
+                (peer?.let { " · " + Mesh.describeRoute(this, it.route) } ?: "")
+            d.id to row(d.name, sub, R.drawable.ic_device, online = d.online || peer?.route in DIRECT,
+                lastUsed = last == d.id, enabled = usable) { send(d.id, d.name) }
+        } + mesh.filter { p -> devices.none { it.id == p.entry.id } }.map { p ->
+            val id = PeersActivity.MESH_PREFIX + p.entry.fp
+            id to row(p.entry.name, Mesh.describeRoute(this, p.route), R.drawable.ic_device, online = p.route in DIRECT,
+                lastUsed = last == id) { send(id, p.entry.name) }
         }
         // the last destination goes first: sharing tends to repeat
-        val ordered = listOf("hub" to hubRow) + rows
+        val ordered = listOfNotNull(hubRow?.let { "hub" to it }) + rows
         ordered.sortedByDescending { it.first == last }.forEach { b.targets.addView(it.second) }
     }
 
@@ -123,7 +152,7 @@ class ShareActivity : AppCompatActivity() {
         v.findViewById<TextView>(R.id.sub).text = sub
         v.findViewById<ImageView>(R.id.icon).setImageResource(icon)
         v.findViewById<View>(R.id.dot).visibility = if (online == true) View.VISIBLE else View.GONE
-        v.findViewById<View>(R.id.last).visibility = if (lastUsed && (devices.isNotEmpty())) View.VISIBLE else View.GONE
+        v.findViewById<View>(R.id.last).visibility = if (lastUsed && (devices.isNotEmpty() || Mesh.peers().isNotEmpty())) View.VISIBLE else View.GONE
         v.isEnabled = enabled
         v.alpha = if (enabled) 1f else 0.45f
         v.setOnClickListener { onClick() }
