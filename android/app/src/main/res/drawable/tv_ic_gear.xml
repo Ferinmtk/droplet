@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the TV remote's "gear" glyph, from the web remote (static/tv.js) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.9"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M9.0,12.0a3.0,3.0 0 1 0 6.0,0a3.0,3.0 0 1 0 -6.0,0z" />
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.9"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" />
+</vector>

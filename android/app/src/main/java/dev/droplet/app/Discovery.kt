@@ -103,7 +103,7 @@ object Discovery {
     fun browse(context: Context, onChange: (List<Announced>) -> Unit, onError: (Int) -> Unit = {}): Handle {
         val nsd = context.applicationContext.getSystemService(NsdManager::class.java)
             ?: return Handle { }.also { onError(-1) }
-        return Browser(nsd, SERVICE_TYPE, { host, port, attrs -> parse(host, port, attrs) }, onChange, onError).also { it.start() }
+        return Browser(nsd, SERVICE_TYPE, { _, host, port, attrs -> parse(host, port, attrs) }, onChange, onError).also { it.start() }
     }
 
     /**
@@ -113,6 +113,14 @@ object Discovery {
      */
     fun <T> browseType(context: Context, type: String, parse: (String?, Int, Map<String, ByteArray?>) -> T?,
                        onChange: (List<T>) -> Unit, onError: (Int) -> Unit = {}): Handle {
+        val nsd = context.applicationContext.getSystemService(NsdManager::class.java)
+            ?: return Handle { }.also { onError(-1) }
+        return Browser(nsd, type, { _, host, port, attrs -> parse(host, port, attrs) }, onChange, onError).also { it.start() }
+    }
+
+    /** [browseType], with the service's instance name too (a TV announces itself by its name). */
+    fun <T> browseNamed(context: Context, type: String, parse: (String, String?, Int, Map<String, ByteArray?>) -> T?,
+                        onChange: (List<T>) -> Unit, onError: (Int) -> Unit = {}): Handle {
         val nsd = context.applicationContext.getSystemService(NsdManager::class.java)
             ?: return Handle { }.also { onError(-1) }
         return Browser(nsd, type, parse, onChange, onError).also { it.start() }
@@ -143,7 +151,7 @@ object Discovery {
     private class Browser<T>(
         private val nsd: NsdManager,
         private val type: String,
-        private val parser: (String?, Int, Map<String, ByteArray?>) -> T?,
+        private val parser: (String, String?, Int, Map<String, ByteArray?>) -> T?,
         private val onChange: (List<T>) -> Unit,
         private val onError: (Int) -> Unit,
     ) : NsdManager.DiscoveryListener, Handle {
@@ -223,7 +231,7 @@ object Discovery {
         }
 
         private fun record(info: NsdServiceInfo, host: String?) {
-            val hub = parser(host, info.port, info.attributes ?: emptyMap()) ?: return
+            val hub = parser(info.serviceName.orEmpty(), host, info.port, info.attributes ?: emptyMap()) ?: return
             synchronized(lock) {
                 if (stopped) return
                 found[info.serviceName] = hub

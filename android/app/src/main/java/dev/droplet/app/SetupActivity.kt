@@ -33,8 +33,14 @@ import java.net.InetAddress
 import javax.net.ssl.SSLException
 
 /**
- * Finding the hub and getting let in (docs/local-first.md §4), with or
- * without Tailscale:
+ * First run: droplet with a hub, or without one.
+ *
+ * **Without a hub** ("No hub: pair directly with my devices"): name the
+ * phone, and it's ready. Its mesh identity is made, Stay connected starts
+ * the peer server, and the home screen shows how to pair a first device.
+ *
+ * **With a hub**, finding it and getting let in (docs/local-first.md §4),
+ * with or without Tailscale (also Settings → Add a hub, later):
  *
  * 1. **Find:** hubs announcing themselves on the Wi-Fi, an address typed in,
  *    or the tailnet URL.
@@ -47,7 +53,7 @@ import javax.net.ssl.SSLException
  * its identity changed ([EXTRA_REPAIR]).
  */
 class SetupActivity : AppCompatActivity() {
-    private enum class Panel { FIND, NAME, CODE, DECLINED }
+    private enum class Panel { CHOOSE, DIRECT, FIND, NAME, CODE, DECLINED }
 
     private lateinit var b: ActivitySetupBinding
     private var panel = Panel.FIND
@@ -62,6 +68,8 @@ class SetupActivity : AppCompatActivity() {
     private var info: HubInfo? = null
     private var waiting: Pairing.Standing.Waiting? = null
     private var trustedRoute = false
+    /** Not set up yet: the choice between a hub and none comes first, and Back returns to it. */
+    private var firstRun = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // droplet's dark teal, whatever the system theme
@@ -91,10 +99,22 @@ class SetupActivity : AppCompatActivity() {
         b.askAgain.setOnClickListener { showName() }
         b.declinedBack.setOnClickListener { showFind() }
 
+        b.chooseDirect.setOnClickListener { showDirect() }
+        b.chooseHub.setOnClickListener { showFind() }
+        b.findBack.setOnClickListener { showChoose() }
+        b.directBack.setOnClickListener { showChoose() }
+        b.directGo.setOnClickListener { goDirect() }
+        b.directName.setOnEditorActionListener { _, id, _ ->
+            if (id == EditorInfo.IME_ACTION_GO) { goDirect(); true } else false
+        }
+
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (panel != Panel.FIND) showFind()
-                else { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+                when {
+                    panel == Panel.DIRECT || (panel == Panel.FIND && firstRun) -> showChoose()
+                    panel != Panel.FIND && panel != Panel.CHOOSE -> showFind()
+                    else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+                }
             }
         })
 
@@ -110,13 +130,14 @@ class SetupActivity : AppCompatActivity() {
                 proceed()
             }
         } else {
-            showFind()
+            firstRun = !Prefs.isSetUp && !intent.getBooleanExtra(EXTRA_REPAIR, false)
+            if (firstRun) showChoose() else showFind()
         }
     }
 
     override fun onStart() {
         super.onStart()
-        if (panel == Panel.FIND) startBrowsing()
+        if (panel == Panel.FIND || panel == Panel.CHOOSE) startBrowsing()
         if (panel == Panel.CODE) startPolling()
     }
 
@@ -130,11 +151,14 @@ class SetupActivity : AppCompatActivity() {
 
     private fun show(p: Panel) {
         panel = p
+        b.panelChoose.visibility = if (p == Panel.CHOOSE) View.VISIBLE else View.GONE
+        b.panelDirect.visibility = if (p == Panel.DIRECT) View.VISIBLE else View.GONE
         b.panelFind.visibility = if (p == Panel.FIND) View.VISIBLE else View.GONE
         b.panelName.visibility = if (p == Panel.NAME) View.VISIBLE else View.GONE
         b.panelCode.visibility = if (p == Panel.CODE) View.VISIBLE else View.GONE
         b.panelDeclined.visibility = if (p == Panel.DECLINED) View.VISIBLE else View.GONE
-        if (p == Panel.FIND) startBrowsing() else stopBrowsing()
+        // hubs are looked for while choosing too, so the hub card can say one is here
+        if (p == Panel.FIND || p == Panel.CHOOSE) startBrowsing() else stopBrowsing()
         if (p != Panel.CODE) poll?.cancel()
         b.root.scrollTo(0, 0)
     }
@@ -143,7 +167,20 @@ class SetupActivity : AppCompatActivity() {
         busy?.cancel()
         show(Panel.FIND)
         b.findError.visibility = View.GONE
+        b.findBack.visibility = if (firstRun) View.VISIBLE else View.GONE
         setBusy(false)
+    }
+
+    private fun showChoose() {
+        busy?.cancel()
+        show(Panel.CHOOSE)
+        setBusy(false)
+    }
+
+    private fun showDirect() {
+        show(Panel.DIRECT)
+        if (b.directName.text.isNullOrBlank()) b.directName.setText(Prefs.meshDeviceName ?: suggestedName(this))
+        showError(b.directError, null)
     }
 
     private fun showName(error: String? = null) {
@@ -178,7 +215,9 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun setBusy(on: Boolean) {
-        for (v in listOf(b.connect, b.tailscale, b.join, b.nameLink, b.pin, b.codeLink, b.askAgain)) v.isEnabled = !on
+        for (v in listOf(b.connect, b.tailscale, b.join, b.nameLink, b.pin, b.codeLink, b.askAgain, b.directGo,
+                b.chooseDirect, b.chooseHub)) v.isEnabled = !on
+        b.directGo.setText(if (on && panel == Panel.DIRECT) R.string.setup_direct_busy else R.string.setup_direct_go)
         b.connect.setText(if (on && panel == Panel.FIND) R.string.setup_checking else R.string.setup_connect)
         for (i in 0 until b.hubs.childCount) b.hubs.getChildAt(i).isEnabled = !on
     }
@@ -243,6 +282,12 @@ class SetupActivity : AppCompatActivity() {
         if (found.isNotEmpty()) {
             b.findHint.visibility = View.GONE
             b.findStatus.setText(if (found.size == 1) R.string.setup_found_one else R.string.setup_found_some)
+        }
+        // the hub card in the choice says when there's one right here
+        b.chooseHubBody.text = when (found.size) {
+            0 -> getString(R.string.setup_choose_hub_body)
+            1 -> getString(R.string.setup_choose_hub_found, found[0].name)
+            else -> getString(R.string.setup_choose_hub_found_some, found.size)
         }
         b.hubs.removeAllViews()
         for (a in found) {
@@ -477,9 +522,33 @@ class SetupActivity : AppCompatActivity() {
         addView(v)
     }
 
+    // --- no hub -----------------------------------------------------------------------------
+
+    /**
+     * "No hub": the phone's mesh identity (made now, so a problem shows here
+     * rather than later), its name, and Stay connected, which runs the peer
+     * server so paired devices can reach it. Then the home screen.
+     */
+    private fun goDirect() {
+        val name = b.directName.text?.toString()?.trim()?.split(Regex("\\s+"))?.joinToString(" ").orEmpty()
+        if (name.isEmpty()) return showError(b.directError, getString(R.string.setup_name_empty))
+        work(b.directError) {
+            io { if (Mesh.node == null) dev.droplet.app.mesh.MeshIdentity.loadOrCreate(java.io.File(Mesh.dir(), "identity")) }
+            Prefs.meshDeviceName = name
+            Prefs.meshEnabled = true
+            Prefs.noHub = true
+            Prefs.stayConnected = true
+            Mesh.capsChanged()
+            runCatching { ConnectionService.start(this) }
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK))
+            finish()
+        }
+    }
+
     /** Let in: this route is the one to use now. */
     private fun done(r: Router.Route) {
         poll?.cancel()
+        Prefs.noHub = false
         Router.use(r)
         Router.pairingNeeded(false)
         Hub.setToken(Hub.deviceToken())
@@ -518,7 +587,11 @@ class SetupActivity : AppCompatActivity() {
             host.all { it.isDigit() || it == '.' } && host.count { it == '.' } == 3 ||
                 (':' in host && runCatching { InetAddress.getByName(host) }.isSuccess)
 
-        /** Forgets the hub entirely: its identity, this phone's token on it, cookies, the route. */
+        /**
+         * Forgets the hub entirely: its identity, this phone's token on it,
+         * cookies, the route. Directly paired devices stay, and so does Stay
+         * connected (it runs the peer server they reach the phone through).
+         */
         fun forget(context: Context) {
             Hub.clearToken()  // first: it needs the origins the hub was reached on
             // the peers that hub vouched for go too; directly paired ones stay
@@ -526,7 +599,8 @@ class SetupActivity : AppCompatActivity() {
             Prefs.forgetHub()
             Router.reset()
             Live.refresh()
-            if (!Prefs.hasHub) ConnectionService.stop(context)
+            Mesh.capsChanged()
+            if (!Prefs.meshEnabled) ConnectionService.stop(context)
         }
     }
 }

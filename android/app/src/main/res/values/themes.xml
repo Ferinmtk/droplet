@@ -172,4 +172,105 @@
         <item name="strokeColor">@color/r_line_2</item>
         <item name="iconTint">@color/r_tab_text</item>
     </style>
+
+    <!-- the TV remote's round keys: an icon in a circle -->
+    <style name="Droplet.Teal.RoundKey" parent="Widget.Material3.Button">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="backgroundTint">@color/r_card_2</item>
+        <item name="strokeColor">@color/r_line_2</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cornerRadius">999dp</item>
+        <item name="iconTint">@color/r_text</item>
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconGravity">textStart</item>
+    </style>
+
+    <!-- key buttons made in code on the TV remote pick up Droplet.Teal.RoundKey through this -->
+    <style name="ThemeOverlay.Droplet.RoundKey" parent="">
+        <item name="materialButtonStyle">@style/Droplet.Teal.RoundKey</item>
+    </style>
+
+    <!-- the volume and channel rockers: a tall pill with + and - -->
+    <style name="Droplet.Teal.Rocker" parent="">
+        <item name="android:background">@drawable/tv_rocker</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:gravity">center_horizontal</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+    </style>
+    <!-- the home screen's tiles (TV remote, mouse and keyboard, hub) -->
+    <style name="Droplet.Teal.Tile" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:minHeight">112dp</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">14dp</item>
+        <item name="android:background">@drawable/r_card_tap</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="Droplet.Teal.TileIcon" parent="">
+        <item name="android:layout_width">28dp</item>
+        <item name="android:layout_height">28dp</item>
+        <item name="android:tint">@color/r_accent</item>
+        <item name="android:importantForAccessibility">no</item>
+    </style>
+
+    <style name="Droplet.Teal.TileTitle" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:textColor">@color/r_text</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Droplet.Teal.TileSub" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:textColor">@color/r_dim</item>
+        <item name="android:textSize">12.5sp</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- a device's actions on the home screen: an icon over a word, big enough for a thumb -->
+    <style name="Droplet.Teal.Action" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:minHeight">68dp</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingVertical">8dp</item>
+        <item name="android:background">@drawable/r_action</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="Droplet.Teal.ActionIcon" parent="">
+        <item name="android:layout_width">24dp</item>
+        <item name="android:layout_height">24dp</item>
+        <item name="android:tint">@color/r_accent</item>
+        <item name="android:importantForAccessibility">no</item>
+    </style>
+
+    <style name="Droplet.Teal.ActionLabel" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">5dp</item>
+        <item name="android:textColor">@color/r_text</item>
+        <item name="android:textSize">12.5sp</item>
+        <item name="android:maxLines">1</item>
+    </style>
 </resources>

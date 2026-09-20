@@ -333,7 +333,10 @@ class LocalFirstHubTest {
 
     private fun startSetup(vararg hubs: Announced): org.robolectric.android.controller.ActivityController<SetupActivity> {
         SetupActivity.browser = { _, onChange, _ -> onChange(hubs.toList()); Discovery.Handle { } }
-        return Robolectric.buildActivity(SetupActivity::class.java).setup()
+        val c = Robolectric.buildActivity(SetupActivity::class.java).setup()
+        // a first run asks "with a hub, or without?" first: with one
+        if (c.get().visible(R.id.panel_choose)) c.get().findViewById<View>(R.id.choose_hub).performClick()
+        return c
     }
 
     private fun SetupActivity.visible(id: Int) = findViewById<View>(id).visibility == View.VISIBLE

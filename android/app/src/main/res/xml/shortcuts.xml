@@ -10,4 +10,15 @@
             android:targetPackage="dev.droplet.app"
             android:targetClass="dev.droplet.app.SettingsActivity" />
     </shortcut>
+    <shortcut
+        android:shortcutId="tv"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_tv"
+        android:shortcutShortLabel="@string/tv_open"
+        android:shortcutLongLabel="@string/tv_shortcut_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="dev.droplet.app"
+            android:targetClass="dev.droplet.app.tv.TvActivity" />
+    </shortcut>
 </shortcuts>

@@ -24,8 +24,8 @@ android {
         applicationId = "dev.droplet.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.4"
+        versionCode = 8
+        versionName = "1.6"
     }
 
     signingConfigs {
@@ -81,6 +81,8 @@ android {
             it.systemProperty("droplet.testScratch", System.getenv("DROPLET_TEST_SCRATCH") ?: "")
             // a real peer to shake hands with, and nothing more: "host:port:fingerprint"
             it.systemProperty("droplet.testRealPeer", System.getenv("DROPLET_TEST_REAL_PEER") ?: "")
+            // the TV remote against tests/fake_tv.py: a Python with androidtvremote2 (the hub's venv)
+            it.systemProperty("droplet.testTvPy", System.getenv("DROPLET_TEST_TV_PY") ?: "")
             // screens rendered for review land here when set (see ScreensTest)
             it.systemProperty("droplet.shots", System.getenv("DROPLET_SHOTS") ?: "")
         }

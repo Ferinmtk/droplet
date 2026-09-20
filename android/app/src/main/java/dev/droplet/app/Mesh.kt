@@ -129,6 +129,14 @@ object Mesh {
         stop()
     }
 
+    /** Tests only: forget every holder and stop, so the next test starts from nothing. */
+    @androidx.annotation.VisibleForTesting
+    @Synchronized
+    fun resetForTests() {
+        holders.clear()
+        stop()
+    }
+
     /** The switch in Settings changed. */
     @Synchronized
     fun enabledChanged() {
@@ -262,9 +270,48 @@ object Mesh {
         return sent
     }
 
+    /**
+     * Like [clipToPeers] with no hub, but waits: each peer that takes a
+     * clipboard is reached directly (dialled if need be). Blocks; the names
+     * of the devices that got it.
+     */
+    fun clipToPeersNow(text: String): List<String> {
+        val n = node ?: return emptyList()
+        val msg = JSONObject().put("t", "clip").put("text", text)
+        return n.trust.all().filter { "clipboard" in it.caps }
+            .filter { e -> runCatching { n.direct(e.fp)?.send(msg) == true }.getOrDefault(false) }
+            .map { it.name }
+    }
+
     // --- for screens ------------------------------------------------------------------
 
     data class PeerView(val entry: TrustList.Entry, val route: String)
+
+    /** Peers being looked for right now (see [probe]), so screens can say "looking" rather than "offline". */
+    private val probing = ConcurrentHashMap.newKeySet<String>()
+
+    fun isProbing(fp: String): Boolean = fp in probing
+
+    /**
+     * Tries to open a link to each peer that has none, in the background, so
+     * the home screen shows who's really reachable (a link is only opened when
+     * something is sent otherwise). A peer that answers is then "on Wi-Fi".
+     */
+    fun probe() {
+        val n = node ?: return
+        for (e in n.trust.all()) {
+            if (n.openLink(e.fp) != null || !probing.add(e.fp)) continue
+            bump()
+            scope.launch {
+                try {
+                    runCatching { n.direct(e.fp) }
+                } finally {
+                    probing.remove(e.fp)
+                    bump()
+                }
+            }
+        }
+    }
 
     fun peers(): List<PeerView> {
         val n = node ?: return emptyList()
@@ -374,6 +421,12 @@ object Mesh {
 
         override fun saveFile(entry: TrustList.Entry, part: File, name: String, mime: String): String {
             val saved = saver(app, part, name, mime)
+            // the home screen lists it under Received
+            runCatching {
+                Received.add(Received.Item(saved.where.substringAfterLast('/'), entry.name, entry.fp, saved.uri?.toString(),
+                    mime, saved.where, System.currentTimeMillis()))
+            }
+            bump()
             val view = saved.uri?.let {
                 Intent(Intent.ACTION_VIEW).setDataAndType(it, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }

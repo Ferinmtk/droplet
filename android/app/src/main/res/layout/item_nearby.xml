@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- a droplet device on the Wi-Fi (or one asking to pair), on the pairing screen: tap to pair -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="10dp"
+    android:background="@drawable/r_card_tap"
+    android:gravity="center_vertical"
+    android:minHeight="76dp"
+    android:orientation="horizontal"
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="12dp">
+
+    <FrameLayout
+        android:layout_width="46dp"
+        android:layout_height="46dp"
+        android:background="@drawable/r_icon_bg">
+
+        <ImageView
+            android:id="@+id/icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:contentDescription="@null"
+            android:tint="@color/r_accent"
+            tools:ignore="UseAppTint"
+            tools:src="@drawable/ic_laptop" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/r_text"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            tools:text="office-pc" />
+
+        <TextView
+            android:id="@+id/sub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/r_dim"
+            android:textSize="13sp"
+            tools:text="Windows · 192.168.100.31" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/verb"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:background="@drawable/r_pill"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="6dp"
+        android:text="@string/pair_verb"
+        android:textColor="@color/r_accent"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+</LinearLayout>

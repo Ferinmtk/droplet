@@ -88,6 +88,25 @@ object ClipBridge {
         return Result.SENT
     }
 
+    /**
+     * Reads the clipboard (the caller must have window focus) and takes it
+     * straight to each paired device that takes a clipboard, waiting to know
+     * it got there: "Send clipboard" with no hub. Suspends while it sends.
+     */
+    suspend fun sendDirect(context: Context): Result {
+        if (!Prefs.capClipboard) return Result.OFF
+        val cm = context.getSystemService(ClipboardManager::class.java) ?: return Result.EMPTY
+        Prefs.clipSeenAt = cm.primaryClipDescription?.timestamp ?: 0L
+        val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
+        if (text.isNullOrEmpty()) return Result.EMPTY
+        if (text.toByteArray().size > MAX_BYTES) return Result.TOO_BIG
+        val got = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Mesh.clipToPeersNow(text) }
+        if (got.isEmpty()) return Result.OFFLINE
+        lastSentAt = SystemClock.elapsedRealtime()
+        Prefs.clipLast = fingerprint(text)
+        return Result.SENT
+    }
+
     private fun sensitive(desc: ClipDescription): Boolean {
         val extras = desc.extras ?: return false
         val key = if (Build.VERSION.SDK_INT >= 33) ClipDescription.EXTRA_IS_SENSITIVE else "android.content.extra.IS_SENSITIVE"

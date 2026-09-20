@@ -61,6 +61,18 @@ object Prefs {
     /** True once a hub is known in any way. */
     val hasHub: Boolean get() = hubUrl != null || (hubId != null && hubFingerprint != null)
 
+    /**
+     * Chose "No hub" in setup (or forgot the hub later): the phone works with
+     * its directly paired devices alone. Not about the hub, so forgetting the
+     * hub leaves it alone (and sets it).
+     */
+    var noHub: Boolean
+        get() = sp.getBoolean("no_hub", false)
+        set(v) = sp.edit { putBoolean("no_hub", v) }
+
+    /** Set up either way: with a hub, or without one. Until then the app opens on setup. */
+    val isSetUp: Boolean get() = hasHub || noHub
+
     /** Forgets everything about the hub (Settings → Forget this hub). */
     fun forgetHub() = sp.edit {
         for (k in listOf("hub_url", "hub_id", "hub_fp", "pin_source", "hub_name", "lan_addrs", "device_token",
@@ -198,4 +210,26 @@ object Prefs {
 
     /** Presentation remote targets that are Bluetooth hosts are stored as this prefix and the address. */
     const val BT_TARGET = "bt:"
+
+    // --- the TV remote (dev.droplet.app.tv) ---------------------------------------------------
+
+    /** The paired TV the remote shows (its id in tv/tvs.json). */
+    var tvSelected: String?
+        get() = sp.getString("tv_selected", null)
+        set(v) = sp.edit { putString("tv_selected", v) }
+
+    /** The TV remote shows the touchpad rather than the D-pad. */
+    var tvTouchpad: Boolean
+        get() = sp.getBoolean("tv_touchpad", false)
+        set(v) = sp.edit { putBoolean("tv_touchpad", v) }
+
+    /** The TV remote shows every button, not just the essentials. */
+    var tvMore: Boolean
+        get() = sp.getBoolean("tv_more", false)
+        set(v) = sp.edit { putBoolean("tv_more", v) }
+
+    /** The TV remote vibrates on each press. */
+    var tvHaptics: Boolean
+        get() = sp.getBoolean("tv_haptics", true)
+        set(v) = sp.edit { putBoolean("tv_haptics", v) }
 }
