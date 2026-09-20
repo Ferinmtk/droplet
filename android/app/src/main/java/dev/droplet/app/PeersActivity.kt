@@ -24,6 +24,9 @@ import dev.droplet.app.mesh.MeshNode
 import dev.droplet.app.mesh.MeshPairing
 import dev.droplet.app.mesh.Seen
 import dev.droplet.app.mesh.TrustList
+import dev.droplet.app.tv.Tv
+import dev.droplet.app.tv.TvActivity
+import dev.droplet.app.tv.TvPairActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +69,7 @@ class PeersActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { Mesh.state.collect { render() } }
                 launch { Mesh.changes.collect { render() } }
+                launch { Tv.changes.collect { render() } }
                 launch { Mesh.pairRequests.collect { answer(it.request) } }
             }
         }
@@ -128,6 +132,8 @@ class PeersActivity : AppCompatActivity() {
                 online = p.route in setOf("lan", "tailnet", "hub")) { actions(p.entry) })
         }
 
+        renderTvs()
+
         val trusted = peers.map { it.entry.fp }.toSet()
         val nearby = n?.nearby().orEmpty().filter { it.fp !in trusted }.distinctBy { it.fp }
         b.nearby.removeAllViews()
@@ -136,6 +142,21 @@ class PeersActivity : AppCompatActivity() {
             b.nearby.addView(row(s2.name, listOf(s2.os.ifEmpty { "?" }, s2.addresses.firstOrNull().orEmpty()).joinToString(" · "),
                 R.drawable.ic_device, online = null) { pair(s2) })
         }
+    }
+
+    /** The TVs this phone controls itself: tap one for its remote; the last row pairs another. */
+    private fun renderTvs() {
+        b.tvs.removeAllViews()
+        for (tv in Tv.tvs()) {
+            val sub = listOfNotNull(tv.model, tv.host, getString(R.string.tv_state_forgot).takeIf { !tv.paired }).joinToString(" · ")
+            b.tvs.addView(row(tv.name, sub, R.drawable.ic_tv, online = null) {
+                Tv.select(tv.id)
+                startActivity(TvActivity.intent(this))
+            })
+        }
+        b.tvs.addView(row(getString(R.string.mesh_tv_add), getString(R.string.mesh_tv_add_sub), R.drawable.ic_tv, online = null) {
+            startActivity(Intent(this, TvPairActivity::class.java).putExtra(TvPairActivity.EXTRA_FIND, true))
+        })
     }
 
     private fun row(name: String, sub: String, icon: Int, online: Boolean?, onClick: () -> Unit): View {

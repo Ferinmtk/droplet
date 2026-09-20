@@ -97,6 +97,14 @@
                 android:text="@string/offline_open_tailscale" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/offline_tv"
+                style="@style/Droplet.Teal.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/offline_tv" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/offline_settings"
                 style="@style/Droplet.Teal.Text"
                 android:layout_width="wrap_content"

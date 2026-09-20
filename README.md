@@ -176,8 +176,8 @@ machine in the middle can't fake it.
 
 The **Linux agent** is the first peer (`droplet-agent peers`, `pair`,
 `text`, `send-file`, `ring`, `clip`); Android and Windows follow. Browsers
-still go through the hub. Details: [agent/README.md](agent/README.md) and
-[docs/mesh.md](docs/mesh.md).
+still go through the hub. The Android app also controls your TV directly.
+Details: [agent/README.md](agent/README.md) and [docs/mesh.md](docs/mesh.md).
 
 ## Tailnet: real HTTPS from anywhere
 
@@ -678,6 +678,20 @@ Hold a key to repeat it or long-press. On a computer, the keyboard drives it
 (arrows, Enter = OK, Backspace = Back, +/- = volume, Space = play/pause).
 **Turn on** works while the TV is in network standby (most Google TVs keep
 it on). From deep standby, droplet also tries Wake-on-LAN.
+
+**From the phone, without the hub.** The Android app (1.5+) has its own TV
+remote. It pairs with the TV itself and controls it over Wi-Fi with the same
+protocol, so it keeps working when the hub is off.
+
+- **Opening it:** the quick-settings tile, the launcher shortcut, Settings,
+  or the devices screen.
+- **Layout:** it opens on the essentials (D-pad, Back, Home, volume, power),
+  with **More buttons** for the rest.
+- **Volume keys:** the phone's volume keys drive the TV's volume.
+
+The TV lists the phone as a remote of its own, next to the hub's; pairing one
+doesn't pair the other. Details:
+[android/README.md](android/README.md#tv-remote).
 
 It needs `androidtvremote2` (in requirements.txt). The hub's client
 certificate and paired TVs live in `tv/` under DROPLET_HOME (owner-only,

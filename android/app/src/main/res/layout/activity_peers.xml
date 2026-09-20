@@ -55,6 +55,13 @@
                 android:layout_height="wrap_content" android:layout_marginHorizontal="24dp"
                 android:text="@string/mesh_trusted_none" />
 
+            <!-- TVs this phone controls directly (dev.droplet.app.tv) -->
+            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp" android:text="@string/mesh_tvs" />
+
+            <LinearLayout android:id="@+id/tvs" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" />
+
             <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_marginHorizontal="16dp" android:text="@string/mesh_nearby" />
 

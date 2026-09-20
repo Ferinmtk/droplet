@@ -140,6 +140,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun setUpRemote() {
         b.openRemote.setOnClickListener { startActivity(Intent(this, RemoteActivity::class.java)) }
         b.openBt.setOnClickListener { startActivity(Intent(this, BluetoothActivity::class.java)) }
+        b.openTv.setOnClickListener { startActivity(dev.droplet.app.tv.TvActivity.intent(this)) }
         b.linkRow.setOnClickListener { askLinkCode() }
 
         b.capMedia.setOnCheckedChangeListener { _, on -> if (on != Prefs.capMedia) { Prefs.capMedia = on; capsChanged() } }

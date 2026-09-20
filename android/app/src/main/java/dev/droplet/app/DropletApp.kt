@@ -12,6 +12,7 @@ class DropletApp : Application() {
         Live.init(this)
         Mesh.init(this)
         BtHid.init(this)
+        dev.droplet.app.tv.Tv.init(this)
         // Native code reads the WebView's cookies (the device token) to call the
         // hub. Loading the cookie store here, on the main thread, means the
         // services can use it from background threads later.
