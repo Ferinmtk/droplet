@@ -21,8 +21,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * "Share → droplet" from any app: a native sheet listing the hub and the
- * named devices, then a background upload with a progress notification.
+ * "Share → droplet" from any app: a native sheet listing your devices (and
+ * the hub, when there is one), then a background transfer with a progress
+ * notification. Without a hub the devices are the directly paired ones, and
+ * everything goes to them directly.
  */
 class ShareActivity : AppCompatActivity() {
     private companion object {
@@ -41,7 +43,7 @@ class ShareActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // with no hub, directly paired devices are still there
-        if (!Prefs.hasHub && !Prefs.meshEnabled) {
+        if (!Prefs.isSetUp || !Prefs.hasHub && !Prefs.meshEnabled) {
             Toast.makeText(this, R.string.share_no_hub, Toast.LENGTH_LONG).show()
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
@@ -143,6 +145,21 @@ class ShareActivity : AppCompatActivity() {
         // the last destination goes first: sharing tends to repeat
         val ordered = listOfNotNull(hubRow?.let { "hub" to it }) + rows
         ordered.sortedByDescending { it.first == last }.forEach { b.targets.addView(it.second) }
+        // no hub and nothing paired yet: say how to get somewhere to send it
+        if (ordered.isEmpty() && !Prefs.hasHub && Mesh.node != null) {
+            status(getString(R.string.share_no_devices))
+            b.retry.setText(R.string.home_pair)
+            b.retry.setOnClickListener {
+                startActivity(Intent(this, PeersActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                sheet.dismiss()
+            }
+            b.retry.visibility = View.VISIBLE
+        } else if (!Prefs.hasHub) {
+            b.status.visibility = View.GONE
+            b.retry.visibility = View.GONE
+        }
+        // no hub: the list is the mesh's, which may still be starting
+        if (!Prefs.hasHub) b.loading.visibility = if (Mesh.node == null && Prefs.meshEnabled) View.VISIBLE else View.GONE
     }
 
     private fun row(name: String, sub: String, icon: Int, online: Boolean?, lastUsed: Boolean,

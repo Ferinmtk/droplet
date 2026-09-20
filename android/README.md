@@ -1,7 +1,11 @@
 # droplet for Android
 
-A native companion app for the droplet hub. It does eight things that the web
-app can't do as a browser tab or PWA:
+The native droplet app. It works **on its own**, paired directly with your
+other devices ([Without a hub](#without-a-hub)), or with a droplet hub. It
+opens on a native home screen: your devices and one tap for each thing to do
+with them, pairing, the phone's own remotes, and what arrived. With a hub,
+the hub's web app is one tap away. It does eight things that the web app
+can't do as a browser tab or PWA:
 
 - **Share → droplet from any app.** A native sheet lists the hub and your
   named devices. Files stream up in the background with a progress
@@ -33,10 +37,11 @@ app can't do as a browser tab or PWA:
   volume keys too), apps, typing and power, with the hub off. See
   [TV remote](#tv-remote).
 
-Everything else is the droplet web app, full screen in a WebView. It uses the
-same device token as the page, so the app is the same device the page named.
-The app talks only to your hub and your own devices: no Firebase, no
-Google Play Services, no analytics.
+With a hub, the **Hub** tile opens the droplet web app in a WebView, with an
+arrow back to the home screen. It uses the same device token as the page, so
+the app is the same device the page named. The app talks only to your own
+devices (and your hub, if you have one): no Firebase, no Google Play
+Services, no analytics.
 
 It's **local-first**, like KDE Connect: at home it talks to the hub straight
 over the Wi-Fi, and Tailscale is only the way in when you're away. See
@@ -86,22 +91,108 @@ keytool -genkeypair -keystore ~/.android/droplet-release.jks -storetype PKCS12 \
 
 ## Install on the phone
 
-1. Put the APK where the phone can reach it, e.g. the hub's `shared/` folder,
-   then download it in droplet or the browser.
+1. Download the APK on the phone: from the
+   [GitHub release](https://github.com/Ferinmtk/droplet/releases), or the
+   hub's `shared/` folder.
 2. Open it. Android asks to allow installs from that app once.
-3. Open droplet on the same Wi-Fi as the hub. It shows "Looking for droplet
-   on your Wi-Fi…" and lists the hubs it finds. Tap yours. (Or enter its IP,
-   or use its Tailscale address.)
-4. Name the phone (it suggests the phone's own name) and tap **Ask to join**.
+3. Open droplet. It asks how you want to use it:
+   - **No hub: pair directly**: name the phone, and it's ready. See
+     [Without a hub](#without-a-hub).
+   - **I have a droplet hub**: go on below. (The card says when a hub is on
+     this Wi-Fi.)
+4. On the same Wi-Fi as the hub, it shows "Looking for droplet on your
+   Wi-Fi…" and lists the hubs it finds. Tap yours. (Or enter its IP, or use
+   its Tailscale address.)
+5. Name the phone (it suggests the phone's own name) and tap **Ask to join**.
    A four-digit code shows. On one of your devices that's already in, droplet
    shows "<name> wants to join" with the same code: check it matches and
    allow it. The hub's PIN, if it has one, or a link code also let it in.
    Over Tailscale, naming the phone lets it in straight away.
-5. Open Settings (⚙ at the top right) and turn on what you want.
+6. The home screen opens. Settings is the ⚙ at the top right.
+
+**Updating from 1.5** needs nothing: the app opens on the new home screen,
+with the **Hub** tile for the web app. Notification links into the web app
+(a chat, the inbox) still open it there.
 
 Updating from 1.1 (which knew only the tailnet URL) needs nothing: the first
 time it reaches the hub, the app learns what it needs for the Wi-Fi. See
 [Upgrading from 1.1](#upgrading-from-11).
+
+## Without a hub
+
+droplet doesn't need a hub. The phone pairs directly with your computers,
+tablets and friends' phones, like Bluetooth, and talks to them over the
+Wi-Fi (or Tailscale), with mutual TLS and each device's certificate pinned
+(see [Direct connections](#direct-connections-the-mesh)).
+
+**Setting up.** On first run choose **No hub: pair directly**, name the
+phone (it suggests the phone's own name), and tap **Continue**. That makes
+the phone's identity (its key, in the Android Keystore when the phone
+allows it), turns on **Stay connected**, which runs the server your devices
+reach the phone through, and opens the home screen.
+
+**Pairing a device.** The home screen starts with **No devices yet** and the
+steps:
+
+1. Get droplet on the other device: the Android or Windows app from the
+   [GitHub release](https://github.com/Ferinmtk/droplet/releases). (The
+   Linux agent pairs directly too, with `droplet-agent pair`.) **Send the
+   download link** shares the link with a friend.
+2. Open it there, on the same Wi-Fi. With no hub, it too chooses to pair
+   directly.
+3. Tap **Pair your first device**. The droplet devices on the Wi-Fi are
+   listed; tap one. Both screens show the same four digits: tap **They
+   match**, and accept on the other device. (A device that doesn't show up,
+   because the router hides devices from each other, pairs by its address.)
+
+A device can also ask to pair with the phone: a notification and a coral
+card on the home screen say so; **Answer** shows its code, and **They match**
+pairs.
+
+**The home screen.**
+
+- **Your devices:** each paired device with how it's reached now
+  (**Connected on Wi-Fi**, **Connected via Tailscale**, **On this Wi-Fi**,
+  **Via the hub**, or **Offline**, when what you send waits for it; opening
+  the screen tries each device, so the line is current) and one tap for
+  **Files** (the file picker), **Message** (the chat), **Ring**,
+  **Clipboard** (sends the phone's clipboard), and **Remote** (the
+  presentation remote, aimed at it) for computers that take input. **⋮** has
+  Stop ringing, Unpair and About this device.
+- **Pair a device.**
+- **On this phone:** the **TV remote**, the Bluetooth **Mouse & keyboard**,
+  and, with a hub, **Hub**: the web app, with an arrow back home.
+- **Received:** the latest files your devices sent (tap to open, or share),
+  and **Messages:** the latest from each device.
+- A coral **ringing** card with **Stop** while a device rings the phone,
+  and a note when something keeps your devices from reaching the phone
+  (Stay connected or direct connections off).
+
+**What works without a hub:** sending files and text (also from any app's
+share sheet), messages, ringing either way (the loud alarm), the clipboard
+both ways (and the Send clipboard tile), the presentation remote, your
+computers controlling the phone's media, SMS and files, notifications for
+what arrives, the TV remote and the Bluetooth mouse and keyboard.
+
+**What needs a hub:** the web app for browsers, notification mirroring (the
+Phone card lives on the hub), the hub's mailbox for a device that's off
+(without one, things you send wait on the phone and go when the device is
+back), Link with code, and reaching devices on another network without
+Tailscale.
+
+**Adding a hub later**: Settings → **Add a hub**. The phone joins it as
+usual, and your hub's devices appear next to the ones you paired. **Forget
+this hub** takes it away again: the devices the hub vouched for go, the ones
+you paired directly stay, and the phone carries on without a hub.
+
+**Renaming**: without a hub, Settings → This phone → **Rename** (with one,
+the name is the hub's, set on its page).
+
+**Privacy note.** A paired device is trusted like one of your own: with
+Clipboard sync on (Settings → What other devices can do), it gets the
+phone's clipboard when you open droplet and can set it, and a computer can
+browse the phone's shared folders if Files is on. Turn those off before
+pairing with a friend's device if that isn't what you want.
 
 ## Permissions, and why
 
@@ -283,11 +374,12 @@ trust list:
   hub's roster (`POST /api/mesh/announce`, `GET /api/mesh/roster`), and
   again whenever the hub says the roster changed. Removing a device on the
   hub removes it everywhere.
-- **Anything else pairs directly**, like Bluetooth: Settings → Direct
-  connections → **Devices and pairing**, tap a device on the Wi-Fi (or
-  **Pair by address**), and check both screens show the same four-digit
-  code. A device asking to pair with the phone shows a notification; tap it
-  to see the code and answer.
+- **Anything else pairs directly**, like Bluetooth: **Pair a device** on the
+  home screen, tap a device on the Wi-Fi (or **Pair by address**), and check
+  both screens show the same four-digit code. A device asking to pair with
+  the phone shows a notification; tap it to see the code and answer. With
+  no hub at all, this is how every device joins (see
+  [Without a hub](#without-a-hub)).
 
 **How a message gets there**, the first that works: directly over the
 Wi-Fi; directly over Tailscale; through the hub; the hub's mailbox (for a
@@ -300,13 +392,14 @@ they go directly or through the hub, or not at all.
 - **Share → droplet** lists your devices with how each is reached now
   ("Direct · Wi-Fi", "Via the hub", "Offline"). Files and text go directly
   when they can, and still reach devices on the hub the usual way.
-- **Messages:** the devices screen has a chat per device. Messages that
-  arrive show a notification.
+- **Messages:** each device on the home screen has a chat. Messages that
+  arrive show a notification, and the latest are on the home screen.
 - **Files sent to the phone** land in **Download/droplet**, with a
-  notification that opens them. A transfer that stops part-way carries on
+  notification that opens them, and under **Received** on the home screen. A transfer that stops part-way carries on
   where it stopped when the sender offers it again.
 - **Ring, clipboard:** a device can ring the phone (the same loud ring) or
-  put text on its clipboard directly; the devices screen rings them back.
+  put text on its clipboard directly; the home screen rings them back, and
+  sends them the clipboard.
 - **Remote control:** media, SMS and files answer over a direct link
   exactly as through the hub. A file taken off the phone that way goes back
   directly, not through the hub. The phone doesn't take keyboard and mouse
@@ -318,14 +411,15 @@ they go directly or through the hub, or not at all.
 connected** runs (and while a droplet screen that sends is open), on port
 1739 (or the next free one up to 1749), announced on the Wi-Fi as
 `_droplet-peer._tcp`. With no hub at all, Stay connected keeps the phone
-reachable by its directly paired devices. Settings → Direct connections
-turns it all off.
+reachable by its directly paired devices, and its notification says
+"Ready for your 2 devices". Settings → Direct connections turns it all off.
 
 **Security.** Mutual TLS with self-signed certificates; the fingerprint is
 the identity, never a hostname or CA. The phone's key is made in the
 Android Keystore and never leaves it (if a phone's Keystore can't do TLS
 with it, which the app tests when the key is made, it's kept in the app's
-private storage instead, and the devices screen says so). A device whose
+private storage instead, and Settings → Direct connections says so). A
+device whose
 certificate isn't trusted fails the TLS handshake; a device with no
 certificate may only ask to pair. The phone checks each server's
 fingerprint before sending anything. Pairing uses committed nonces and a
@@ -416,10 +510,10 @@ connection state machine against a fake stack. They can't show:
 
 ## TV remote
 
-One tap from anywhere: the **TV remote** quick-settings tile (add it from
-the tile editor), the **TV remote** shortcut on droplet's launcher icon
-(long-press it), Settings → **TV remote**, the **TVs** list on the devices
-screen, or **TV remote** on the "can't reach the hub" screen. It opens on the
+One tap from anywhere: the **TV remote** tile on the home screen, the **TV
+remote** quick-settings tile (add it from the tile editor), the **TV remote**
+shortcut on droplet's launcher icon (long-press it), Settings → **TV
+remote**, or **TV remote** on the "can't reach the hub" screen. It opens on the
 last TV and connects by itself; the header says "Connecting…" meanwhile. The phone talks to the TV
 itself, over Google's Android TV Remote protocol v2 (what the Google TV
 phone app uses), so it works when the hub is off or away.
@@ -723,8 +817,30 @@ adb shell cmd notification post -t 'Title' tag 'Some text'
   D-pad, Home, play/pause, the phone's volume keys, typing, an app tile,
   power, "Pair again"); the simple and full views; with `DROPLET_SHOTS`,
   the TV screens as PNGs.
-- **`ScreensTest`** renders the remote, Settings, setup, the pairing code,
-  the offline screen and the Bluetooth screens to PNGs for review.
+- **`NoHubUnitTest`** (always runs): setup offering "No hub" first only on
+  a fresh install (and Settings → Add a hub going straight to finding one),
+  where a notification's link goes with and without a hub, and forgetting
+  the hub: its devices go, the directly paired ones stay, and the app
+  carries on rather than asking to be set up again.
+- **`NoHubTest`** (needs the Linux agent in a venv): the whole hub-less
+  flow, over real sockets and with no hub anywhere. A fresh install picks
+  "No hub" and names the phone; Stay connected runs the peer server (and the
+  notification says it's ready, never that a hub is missing); the home
+  screen shows the empty state; the pairing screen lists a real
+  `droplet-agent run --dry-run` process, both sides show the same code and
+  pair; the device appears as "Connected on Wi-Fi"; a file goes each way
+  (picked through the home screen, saved by the agent; and the agent's file
+  into Received, with its notification), a message each way, a ring each
+  way (the alarm stream at full volume, the ring card, Stop, the volume put
+  back), the clipboard each way and through the Send clipboard tile, and a
+  share from another app. Its second test needs a hub as well
+  (`DROPLET_TEST_HUB`): a 1.5 user updating opens straight on the home
+  screen with the **Hub** tile, the web app loads from the hub, its arrow
+  goes back home, and a notification's link still opens the web app.
+- **`ScreensTest`** renders the home screen (empty, with devices, ringing,
+  and with a hub), the pairing screen and its code, setup's choice and the
+  "No hub" naming step, the remote, Settings, the hub pairing code, the
+  offline screen and the Bluetooth screens to PNGs for review.
 
 ```bash
 # the hub, a second one with a PIN, and a "clone" with the first one's id but its own certificate
@@ -740,21 +856,25 @@ DROPLET_TEST_HUB=http://127.0.0.1:8831 DROPLET_TEST_PIN_HUB=http://127.0.0.1:898
 # the TV remote against the fake TV (the hub's venv has androidtvremote2)
 DROPLET_TEST_TV_PY=../.venv/bin/python ./gradlew testReleaseUnitTest --tests 'dev.droplet.app.tv.*'
 
-# the mesh against the Linux agent (and a hub, which the test stops)
+# the mesh, and the whole no-hub flow, against the Linux agent
+# (the roster test also needs a hub, which it stops)
 python3 -m venv /tmp/v && /tmp/v/bin/pip install ../agent
 H=$(mktemp -d); DROPLET_HOME=$H DROPLET_PORT=8881 DROPLET_LAN_TLS_PORT=8882 DROPLET_HOST=0.0.0.0 DROPLET_PUSH=0 python ../app.py &
 DROPLET_TEST_AGENT_PY=/tmp/v/bin/python DROPLET_TEST_HUB=http://127.0.0.1:8881 DROPLET_TEST_HUB_PID=$! \
-  ./gradlew testReleaseUnitTest --tests '*MeshInteropTest*'
+  ./gradlew testReleaseUnitTest --tests '*MeshInteropTest*' --tests '*NoHubTest*'
 ```
 
 ### What only the real phone can confirm (the mesh)
 
 - that the Keystore key works for TLS on MIUI/HyperOS (the app tests it
-  when it makes the key, and falls back if not; the devices screen says
-  which it got);
+  when it makes the key, and falls back if not; Settings → Direct
+  connections says when it fell back);
 - NsdManager announcing `_droplet-peer._tcp` and finding other peers on
   the Wi-Fi (Robolectric has no NsdManager; the TXT parsing is tested);
 - MediaStore saving into Download/droplet, and opening a received file;
 - the server staying reachable with the screen off under MIUI's battery
   rules (Stay connected is a foreground service, as before);
-- the devices, pairing and chat screens by hand.
+- the home, pairing and chat screens on a real phone (the JVM tests drive
+  them, and the PNGs show them, but not on a real display);
+- pairing with a friend's phone across a real Wi-Fi network, including
+  routers that hide devices from each other.

@@ -64,11 +64,12 @@
         android:theme="@style/Theme.Droplet"
         tools:targetApi="35">
 
+        <!-- the home screen: your devices, pairing, the phone's remotes (with or without a hub) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustResize">
+            android:theme="@style/Theme.Droplet.Teal">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -77,6 +78,12 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- the hub's web app, from the home screen's Hub tile -->
+        <activity
+            android:name=".HubActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".SetupActivity"
@@ -112,11 +119,14 @@
             </intent-filter>
         </activity>
 
+        <!-- pairing: keeps the code on screen through a rotation -->
         <activity
             android:name=".PeersActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:exported="false"
+            android:label="@string/pair_title"
             android:launchMode="singleTop"
-            android:label="@string/mesh_title" />
+            android:theme="@style/Theme.Droplet.Teal" />
 
         <activity
             android:name=".ChatActivity"

@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- one of your devices on the home screen: how it's reached, and one tap for each thing to do -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="10dp"
+    android:background="@drawable/r_card"
+    android:orientation="vertical"
+    android:paddingHorizontal="14dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <FrameLayout
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="@drawable/r_icon_bg">
+
+            <ImageView
+                android:id="@+id/icon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:tint="@color/r_accent"
+                tools:ignore="UseAppTint"
+                tools:src="@drawable/ic_laptop" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/r_text"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                tools:text="slim" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/dot"
+                    android:layout_width="9dp"
+                    android:layout_height="9dp"
+                    android:background="@drawable/r_dot_on" />
+
+                <TextView
+                    android:id="@+id/route"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="7dp"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/r_dim"
+                    android:textSize="13.5sp"
+                    tools:text="Connected on Wi-Fi" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/more"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="-8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/home_more"
+            android:src="@drawable/ic_more"
+            android:tint="@color/r_dim"
+            tools:ignore="UseAppTint" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <LinearLayout android:id="@+id/act_files" style="@style/Droplet.Teal.Action" android:layout_marginEnd="4dp">
+            <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_files"
+                tools:ignore="ContentDescription,UseAppTint" />
+            <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_files" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/act_message" style="@style/Droplet.Teal.Action" android:layout_marginHorizontal="4dp">
+            <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_message"
+                tools:ignore="ContentDescription,UseAppTint" />
+            <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_message" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/act_ring" style="@style/Droplet.Teal.Action" android:layout_marginHorizontal="4dp">
+            <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_ring"
+                tools:ignore="ContentDescription,UseAppTint" />
+            <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_ring" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/act_clip" style="@style/Droplet.Teal.Action" android:layout_marginHorizontal="4dp">
+            <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_clip"
+                tools:ignore="ContentDescription,UseAppTint" />
+            <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_clip" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/act_remote" style="@style/Droplet.Teal.Action" android:layout_marginStart="4dp">
+            <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_remote"
+                tools:ignore="ContentDescription,UseAppTint" />
+            <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_remote" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

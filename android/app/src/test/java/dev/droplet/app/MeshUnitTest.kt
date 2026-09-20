@@ -200,7 +200,7 @@ class MeshUnitTest {
 
     // --- the server's rules, over real sockets ------------------------------------------------
 
-    private open class QuietHost : MeshHost {
+    internal open class QuietHost : MeshHost {
         override fun deviceName() = "unit"
         override fun hubDeviceId(): String? = null
         override fun hubId(): String? = null

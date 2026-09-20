@@ -19,8 +19,9 @@ class ClipSendActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // brings the connection up if Stay connected is off
-        Live.hold(TAG)
+        // brings the connections up if Stay connected is off
+        if (Prefs.hasHub) Live.hold(TAG)
+        Mesh.hold(TAG)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -28,8 +29,10 @@ class ClipSendActivity : AppCompatActivity() {
         if (!hasFocus || started) return
         started = true
         lifecycleScope.launch {
-            val up = withTimeoutOrNull(8_000) { Live.state.first { it.connected } } != null
-            val result = if (up) ClipBridge.send(this@ClipSendActivity, manual = true) else ClipBridge.Result.OFFLINE
+            val result = if (Prefs.hasHub) {
+                val up = withTimeoutOrNull(8_000) { Live.state.first { it.connected } } != null
+                if (up) ClipBridge.send(this@ClipSendActivity, manual = true) else sendDirect()
+            } else sendDirect()
             val msg = when (result) {
                 ClipBridge.Result.SENT, ClipBridge.Result.SAME -> R.string.clip_sent
                 ClipBridge.Result.EMPTY -> R.string.clip_empty
@@ -42,8 +45,15 @@ class ClipSendActivity : AppCompatActivity() {
         }
     }
 
+    /** No hub (or it's out of reach): straight to each paired device, waiting to know it got there. */
+    private suspend fun sendDirect(): ClipBridge.Result {
+        withTimeoutOrNull(8_000) { Mesh.state.first { it.status != Mesh.Status.STARTING && it.status != Mesh.Status.OFF || !Prefs.meshEnabled } }
+        return ClipBridge.sendDirect(this)
+    }
+
     override fun onDestroy() {
-        Live.release(TAG)
+        if (Prefs.hasHub) Live.release(TAG)
+        Mesh.release(TAG)
         super.onDestroy()
     }
 

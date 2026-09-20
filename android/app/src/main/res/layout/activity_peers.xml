@@ -1,82 +1,319 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Pair a device (PeersActivity): droplet devices on this Wi-Fi, requests
+     from others, and the code both screens show. Always droplet's dark teal. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
-    android:orientation="vertical">
+    android:background="@color/r_bg"
+    android:fillViewport="true">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="@color/bg"
-        app:navigationContentDescription="Back"
-        app:navigationIcon="@drawable/ic_back"
-        app:title="@string/mesh_title"
-        app:titleTextColor="@color/text" />
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipToPadding="false">
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="28dp">
 
         <LinearLayout
             android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/back"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="-8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/setup_back"
+                android:src="@drawable/ic_back"
+                android:tint="@color/r_text"
+                tools:ignore="UseAppTint" />
+
+            <TextView
+                android:id="@+id/title"
+                style="@style/Droplet.Teal.Title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:text="@string/pair_title" />
+        </LinearLayout>
+
+        <!-- ============ what's around ============ -->
+        <LinearLayout
+            android:id="@+id/panel_list"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingBottom="32dp">
+            android:orientation="vertical">
 
-            <LinearLayout style="@style/Droplet.Card" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:layout_marginHorizontal="16dp">
+            <TextView
+                android:id="@+id/intro"
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="4dp"
+                android:layout_marginTop="4dp"
+                android:textSize="15sp"
+                tools:text="This phone shows up on this Wi-Fi as Redmi Note 11E Pro. Open droplet on the other device, on the same Wi-Fi, and pick it below (or pick this phone there)." />
 
-                <TextView android:id="@+id/me_name" style="@style/Droplet.Title" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:textStyle="bold" />
+            <TextView
+                android:id="@+id/off"
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/r_banner"
+                android:padding="14dp"
+                android:textColor="@color/r_text"
+                android:visibility="gone"
+                tools:text="Direct connections are off" />
 
-                <TextView android:id="@+id/me_state" style="@style/Droplet.Body" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textIsSelectable="true" />
-            </LinearLayout>
-
-            <TextView android:id="@+id/asking_title" style="@style/Droplet.Section" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:layout_marginHorizontal="16dp" android:text="@string/mesh_asking"
+            <TextView
+                android:id="@+id/asking_title"
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="24dp"
+                android:text="@string/pair_asking"
                 android:visibility="gone" />
 
-            <LinearLayout android:id="@+id/asking" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/asking"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
 
-            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp" android:text="@string/mesh_trusted" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="24dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <LinearLayout android:id="@+id/trusted" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="vertical" />
+                <TextView
+                    style="@style/Droplet.Teal.Eyebrow"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/pair_nearby" />
 
-            <TextView android:id="@+id/trusted_none" style="@style/Droplet.Body" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:layout_marginHorizontal="24dp"
-                android:text="@string/mesh_trusted_none" />
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/spinner"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:indeterminate="true"
+                    app:indicatorColor="@color/r_accent"
+                    app:indicatorSize="16dp"
+                    app:trackThickness="2dp" />
+            </LinearLayout>
 
-            <!-- TVs this phone controls directly (dev.droplet.app.tv) -->
-            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp" android:text="@string/mesh_tvs" />
+            <LinearLayout
+                android:id="@+id/nearby"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
 
-            <LinearLayout android:id="@+id/tvs" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="vertical" />
+            <TextView
+                android:id="@+id/nearby_none"
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/r_card"
+                android:padding="16dp"
+                android:text="@string/pair_nearby_none"
+                android:textSize="14.5sp" />
 
-            <TextView style="@style/Droplet.Section" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp" android:text="@string/mesh_nearby" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/pair_address"
+                style="@style/Droplet.Teal.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/pair_by_address" />
 
-            <LinearLayout android:id="@+id/nearby" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="vertical" />
+            <TextView
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="4dp"
+                android:layout_marginTop="20dp"
+                android:text="@string/pair_get_droplet"
+                android:textSize="13.5sp" />
 
-            <TextView android:id="@+id/nearby_none" style="@style/Droplet.Body" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:layout_marginHorizontal="24dp"
-                android:text="@string/mesh_nearby_none" />
-
-            <com.google.android.material.button.MaterialButton android:id="@+id/pair_address"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp" android:layout_marginTop="16dp"
-                android:text="@string/mesh_pair_address" app:cornerRadius="10dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/share_link"
+                style="@style/Droplet.Teal.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="-8dp"
+                android:text="@string/home_share_link"
+                app:icon="@drawable/ic_share"
+                app:iconTint="@color/r_accent" />
         </LinearLayout>
-    </ScrollView>
-</LinearLayout>
+
+        <!-- ============ the code on both screens ============ -->
+        <LinearLayout
+            android:id="@+id/panel_code"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/pair_check_eyebrow" />
+
+            <TextView
+                android:id="@+id/code_title"
+                style="@style/Droplet.Teal.Title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                tools:text="Pair with slim?" />
+
+            <TextView
+                android:id="@+id/code"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/r_code"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.35"
+                android:paddingVertical="24dp"
+                android:textColor="@color/r_accent"
+                android:textSize="52sp"
+                android:textStyle="bold"
+                tools:text="4821" />
+
+            <TextView
+                android:id="@+id/code_help"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:gravity="center"
+                android:lineSpacingExtra="2dp"
+                android:textColor="@color/r_text"
+                android:textSize="17sp"
+                tools:text="Check that slim shows the same four digits." />
+
+            <LinearLayout
+                android:id="@+id/code_wait"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="10dp"
+                    android:indeterminate="true"
+                    app:indicatorColor="@color/r_accent"
+                    app:indicatorSize="16dp"
+                    app:trackThickness="2dp" />
+
+                <TextView
+                    android:id="@+id/code_status"
+                    style="@style/Droplet.Teal.Body"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    tools:text="Waiting for slim to accept…" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/code_yes"
+                style="@style/Droplet.Teal.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/pair_they_match" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/code_no"
+                style="@style/Droplet.Teal.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/cancel" />
+        </LinearLayout>
+
+        <!-- ============ paired ============ -->
+        <LinearLayout
+            android:id="@+id/panel_done"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="40dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <FrameLayout
+                android:layout_width="88dp"
+                android:layout_height="88dp"
+                android:background="@drawable/r_icon_bg">
+
+                <ImageView
+                    android:id="@+id/done_icon"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_laptop"
+                    android:tint="@color/r_accent"
+                    tools:ignore="UseAppTint" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/done_title"
+                style="@style/Droplet.Teal.Title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center"
+                tools:text="Paired with slim" />
+
+            <TextView
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="@string/pair_done_body"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/done"
+                style="@style/Droplet.Teal.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/pair_done" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/done_another"
+                style="@style/Droplet.Teal.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/pair_another" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
