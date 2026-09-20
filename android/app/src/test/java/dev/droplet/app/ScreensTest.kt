@@ -258,6 +258,9 @@ class ScreensTest {
 
     private fun releaseMesh() {
         Mesh.release("shots")
+        // an activity that held the mesh may outlive the test: left alone, the next shot would
+        // show this test's peers and pairing requests, or fail to start a mesh of its own
+        Mesh.resetForTests()
         Mesh.dirOverride = null
         Mesh.portOverride = null
         Mesh.directoryFactory = { NsdPeerDirectory(it) }
@@ -411,7 +414,8 @@ class ScreensTest {
         assumeTrue(out.isNotEmpty())
         val n = fakeMesh()
         try {
-            Prefs.hubUrl = "https://t15.tail7375fe.ts.net"
+            // a name that can never resolve: the shot must not depend on a real t15 being up
+            Prefs.hubUrl = "https://t15.example.invalid"
             Prefs.hubName = "t15"
             Prefs.hubId = t15.id
             Prefs.hubFingerprint = t15.fingerprint

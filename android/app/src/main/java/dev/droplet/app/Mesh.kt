@@ -129,6 +129,14 @@ object Mesh {
         stop()
     }
 
+    /** Tests only: forget every holder and stop, so the next test starts from nothing. */
+    @androidx.annotation.VisibleForTesting
+    @Synchronized
+    fun resetForTests() {
+        holders.clear()
+        stop()
+    }
+
     /** The switch in Settings changed. */
     @Synchronized
     fun enabledChanged() {

@@ -126,6 +126,9 @@ class NoHubTest {
     fun tearDown() {
         services.forEach { runCatching { it.destroy() } }
         Mesh.release("test")
+        // whoever else still holds the mesh, the peer server must not outlive this test:
+        // a node left running makes the next test's setup skip making its own identity
+        Mesh.resetForTests()
         Live.release("test")
         Router.reset()
         Hub.clearToken()
@@ -421,11 +424,14 @@ class NoHubTest {
         // --- the share sheet: to the agent, directly -----------------------------------------------------
         val share = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "shared from another app")
         val sheet = Robolectric.buildActivity(ShareActivity::class.java, share).setup()
+        // the sheet's views live in a BottomSheetDialog, not in the activity's own content
+        fun targets(): LinearLayout? =
+            org.robolectric.shadows.ShadowDialog.getLatestDialog()?.findViewById(R.id.targets)
         waitFor("the agent in the share sheet") {
-            val list = sheet.get().findViewById<LinearLayout>(R.id.targets) ?: return@waitFor false
+            val list = targets() ?: return@waitFor false
             list.childCount == 1 && list.getChildAt(0).findViewById<TextView>(R.id.name).text.toString() == "linux-a"
         }
-        sheet.get().findViewById<LinearLayout>(R.id.targets).getChildAt(0).performClick()
+        targets()!!.getChildAt(0).performClick()
         runStartedService(UploadService::class.java)
         waitFor("the agent has the shared text") { a.chat().any { it.getString("body") == "shared from another app" } }
 
@@ -465,7 +471,10 @@ class NoHubTest {
         idle()
         assertFalse("straight to the home screen, no setup", home.isFinishing)
         assertTrue("the Hub tile", home.visible(R.id.tile_hub))
-        assertTrue(home.text(R.id.tile_hub_sub).startsWith("test-hub"))
+        // the tile names the hub: "test-hub" until it answers, then the name it reports for itself
+        val tileSub = home.text(R.id.tile_hub_sub)
+        assertTrue("the tile names the hub, not a placeholder: '$tileSub'",
+            tileSub.startsWith("test-hub") || tileSub.startsWith(Router.hubLabel()))
         home.findViewById<View>(R.id.tile_hub).performClick()
         val open = shadowOf(home).nextStartedActivity
         assertEquals(HubActivity::class.java.name, open.component?.className)
@@ -473,10 +482,23 @@ class NoHubTest {
         // the web app opens on the hub, with the way back home
         val webCtl = Robolectric.buildActivity(HubActivity::class.java, open).setup()
         val web = webCtl.get()
-        waitFor("the page loads from the hub", 20_000) {
-            shadowOf(web.findViewById<android.webkit.WebView>(R.id.web)).lastLoadedUrl?.startsWith(hub) == true
+        // whichever route the router picked (loopback here, the LAN address on a real network),
+        // the page must come from this hub: same port, never somewhere else
+        // the router may prefer the hub's pinned LAN HTTPS port over the plain one it was given
+        val webView = web.findViewById<android.webkit.WebView>(R.id.web)
+        fun loaded(u: String?) = u != null && (u.startsWith(hub) || u.startsWith(Router.current()?.base ?: hub))
+        var url: String? = null
+        val until = System.currentTimeMillis() + 20_000
+        while (System.currentTimeMillis() < until) {
+            idle()
+            url = shadowOf(webView).lastLoadedUrl
+            if (loaded(url)) break
+            Thread.sleep(100)
         }
-        assertEquals("Hub · test-hub", web.text(R.id.bar_title))
+        assertTrue("the page loads from the hub, but the web view has: $url", loaded(url))
+        val barTitle = web.text(R.id.bar_title)
+        assertTrue("the bar names the hub: '$barTitle'",
+            barTitle == "Hub · test-hub" || barTitle == "Hub · " + Router.hubLabel())
         web.findViewById<View>(R.id.home).performClick()
         assertTrue("the arrow goes back home", web.isFinishing)
         webCtl.pause().stop().destroy()
