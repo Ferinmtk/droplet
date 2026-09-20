@@ -48,11 +48,14 @@ import kotlinx.coroutines.withContext
 class MainActivity : AppCompatActivity() {
     private lateinit var b: ActivityHomeBinding
     private var sendTo: TrustList.Entry? = null
+    /** Which device the file picker is for, kept across a restart while the picker is on screen. */
+    private var sendToFp: String? = null
     private val onRing: () -> Unit = { runOnUiThread { if (::b.isInitialized) renderRinging() } }
 
     private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        val to = sendTo ?: return@registerForActivityResult
+        val to = sendTo ?: sendToFp?.let { Mesh.peer(it) } ?: return@registerForActivityResult
         sendTo = null
+        sendToFp = null
         if (uris.isEmpty()) return@registerForActivityResult
         lifecycleScope.launch {
             val files = withContext(Dispatchers.IO) {
@@ -107,12 +110,18 @@ class MainActivity : AppCompatActivity() {
             Prefs.askedNotifications = true
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        sendToFp = savedInstanceState?.getString(STATE_SEND_TO)
         if (savedInstanceState == null) followLink(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         followLink(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        sendTo?.fp?.let { outState.putString(STATE_SEND_TO, it) }
     }
 
     override fun onStart() {
@@ -267,6 +276,7 @@ class MainActivity : AppCompatActivity() {
         })
         v.findViewById<View>(R.id.act_files).setOnClickListener {
             sendTo = e
+            sendToFp = e.fp
             try {
                 pickFiles.launch(arrayOf("*/*"))
             } catch (x: ActivityNotFoundException) {
@@ -481,6 +491,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         /** A path in the hub's web app ("/#chat-<id>", "/"), from a notification. */
         const val EXTRA_PATH = "path"
+        private const val STATE_SEND_TO = "send_to"
         const val RELEASES = "https://github.com/Ferinmtk/droplet/releases/latest"
         private const val MESH_TAG = "home"
         private const val ROUTER_TAG = "home"

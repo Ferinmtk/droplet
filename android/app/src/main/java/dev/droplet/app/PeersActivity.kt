@@ -44,6 +44,8 @@ class PeersActivity : AppCompatActivity() {
     private var outgoing: MeshPairing.Outgoing? = null
     /** A request from another device, while its code is on screen. */
     private var incoming: MeshPairing.Request? = null
+    /** Bumped whenever a pairing is started or given up, so a late answer to an old one is dropped. */
+    private var attempt = 0
     private var answering: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -208,6 +210,7 @@ class PeersActivity : AppCompatActivity() {
     private fun startPair(label: String, host: String, port: Int, expect: String?, os: String) {
         outgoing = null
         incoming = null
+        val mine = ++attempt
         show(Panel.CODE)
         b.codeTitle.text = getString(R.string.pair_with, label)
         b.code.text = getString(R.string.pair_code_blank)
@@ -219,7 +222,7 @@ class PeersActivity : AppCompatActivity() {
         b.doneIcon.setImageResource(iconFor(os))
         lifecycleScope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { (Mesh.node ?: error(getString(R.string.mesh_off_now))).pairStart(host, port, expect) } }
-            if (panel != Panel.CODE || outgoing != null || incoming != null) {
+            if (mine != attempt || panel != Panel.CODE || outgoing != null || incoming != null) {
                 // cancelled meanwhile
                 r.getOrNull()?.let { og -> Mesh.node?.pairConfirm(og.request!!, false) }
                 return@launch
@@ -277,6 +280,7 @@ class PeersActivity : AppCompatActivity() {
 
     /** Cancel on the code screen: the codes didn't match, or the owner changed their mind. */
     private fun cancelCode() {
+        attempt++
         outgoing?.let { og ->
             outgoing = null
             if (og.localOk) Mesh.scope.launch { runCatching { og.cancel() } }
