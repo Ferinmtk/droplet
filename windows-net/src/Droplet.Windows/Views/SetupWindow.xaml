@@ -70,7 +70,7 @@
                     <StackPanel>
                         <TextBlock Text="Over Tailscale" Style="{StaticResource SectionTitle}" />
                         <TextBlock Style="{StaticResource Body}"
-                                   Text="Away from home, or no hub showing up above: the hub's Tailscale address, like https://t15.tail7375fe.ts.net. Tailnet members are trusted, so there's no code to compare." />
+                                   Text="Away from home, or no hub showing up above: the hub's Tailscale address, like https://your-hub.tailnet.ts.net. Tailnet members are trusted, so there's no code to compare." />
                         <DockPanel>
                             <Button x:Name="TailnetButton" Content="Connect" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="Tailnet_Click" />
                             <TextBox x:Name="UrlBox" AutomationProperties.Name="Tailscale address" />
