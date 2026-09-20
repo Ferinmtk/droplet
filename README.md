@@ -728,7 +728,7 @@ Redmi's SMS and file access under MIUI; the real TV.
 | `DROPLET_HOME` | app dir | where `received/`, `shared/`, `certs/` live |
 | `DROPLET_MAX_MB` | `1024` | max upload size |
 | `DROPLET_TAILSCALE` | *(off)* | `1` = also serve at `https://<machine>.<tailnet>.ts.net` with a real certificate, via `tailscale serve` (see [Tailnet](#tailnet-real-https-from-anywhere)) |
-| `DROPLET_TAILNET_TRUST` | `1` | with `DROPLET_PIN` set, tailnet devices skip the PIN. `0` = they enter it like everyone else |
+| `DROPLET_TAILNET_TRUST` | `1` | `1` = your **own** tailnet devices (the account the hub runs as) get in without a code; anyone else you share the hub with over Tailscale must be let in like a LAN device. `all` = every tailnet member is trusted. `0` = none |
 | `DROPLET_LAN_GUESTS` | `drop` | what a device on the LAN can do before it's let in: `drop` = send files to the hub, `none` = nothing (see [Local-first](#local-first-home-wi-fi-first-tailscale-when-away)) |
 | `DROPLET_LAN_TLS_PORT` | `8443` | LAN HTTPS port for the native apps, with a pinned self-signed certificate. `0` = off |
 | `DROPLET_PUSH` | `1` | `0` = no push notifications (nothing goes through Google/Mozilla); devices see new items while droplet is open. See [Devices](#devices-send-to-one-chat-get-notified) |
