@@ -162,7 +162,8 @@ The native apps are local-first.
 
 droplet's native apps are **peers**, like KDE Connect: they find each other
 on the Wi-Fi and talk directly over mutual TLS, and over Tailscale when
-you're away.
+you're away. The Android app controls your TV directly too, and since 1.6 it
+starts and runs with no hub at all.
 
 The hub is an **optional helper**. When it's up, it vouches for your devices
 (every device you've let in trusts the others automatically), and it holds
@@ -467,8 +468,20 @@ sound.
 
 ## Android app
 
-A native companion in `android/` (see [android/README.md](android/README.md)).
-It adds what a web app can't do on a phone:
+A native app in `android/` (see [android/README.md](android/README.md)).
+**It works with or without a hub.** On first run it asks: pair directly with
+your devices, or connect to a droplet hub. Either way it opens on its own home
+screen — your devices, with one tap each for files, a message, a ring, the
+clipboard and the presentation remote; pairing; the phone's TV remote and
+Bluetooth mouse & keyboard; and the files and messages that arrived. With a
+hub, the **Hub** tile opens the web app as before.
+
+Without a hub, a phone and a PC (or two phones) pair with a matching four-digit
+code and talk directly over the Wi-Fi or Tailscale — nothing in the middle,
+nothing else to install. See
+[Without a hub](android/README.md#without-a-hub).
+
+It also adds what a web app can't do on a phone:
 
 - **Share → droplet** from any app, with a device picker and the original
   file names (Xiaomi Gallery otherwise hands over bare numbers).
@@ -481,10 +494,11 @@ It adds what a web app can't do on a phone:
 
 Everything else is the normal web app inside it.
 
-**Install:** open droplet on the phone, tap **droplet.apk** under Shared, and
-allow installs from your browser when Android asks. Open the droplet app,
-keep the default hub address (Tailscale must be on), and name the phone in
-the page. Then open ⚙ (top right) for settings:
+**Install:** download `droplet-android-<version>.apk` from the
+[releases page](https://github.com/Ferinmtk/droplet/releases) (or tap
+**droplet.apk** under Shared on your own hub) and open it; Android asks once to
+allow installs from your browser. Then open droplet and choose **No hub: pair
+directly** or **I have a droplet hub**. Settings live behind ⚙ (top right):
 
 - **Stay connected** lets other devices ring the phone and notifies you about
   files and messages. It shows a quiet "droplet connected" notification.

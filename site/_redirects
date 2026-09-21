@@ -1,0 +1,6 @@
+# Short links to the newest release assets. Cloudflare Pages serves these.
+/android   https://github.com/Ferinmtk/droplet/releases/latest/download/droplet-android.apk   302
+/windows   https://github.com/Ferinmtk/droplet/releases/latest/download/droplet-windows.exe   302
+/linux     https://github.com/Ferinmtk/droplet/blob/main/agent/README.md                      302
+/releases  https://github.com/Ferinmtk/droplet/releases                                        302
+/source    https://github.com/Ferinmtk/droplet                                                 302
