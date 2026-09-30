@@ -49,6 +49,12 @@ USE_TAILSCALE = os.environ.get("DROPLET_TAILSCALE", "") not in ("", "0", "false"
 # tailnet devices are already approved by the tailnet admin, so by default
 # they skip the PIN; set to 0 to make them enter it like LAN guests
 TAILNET_TRUST = os.environ.get("DROPLET_TAILNET_TRUST", "1") not in ("", "0", "false")
+# which tailnet devices are trusted without being let in: by default only the
+# hub owner's own (the tailnet account the hub runs as), so a friend you share
+# the hub with over Tailscale still has to be allowed in with a code; "all"
+# trusts every tailnet member, as before
+TAILNET_TRUST_ALL = os.environ.get("DROPLET_TAILNET_TRUST", "1") == "all"
+TAILNET_OWNER: str | None = None  # the owner's tailnet login, set by setup_tailnet
 TAILNET_URL: str | None = None  # set at startup once `tailscale serve` is confirmed
 # 0 = no push notifications (fully local; devices only see new items while open)
 USE_PUSH = os.environ.get("DROPLET_PUSH", "1") not in ("", "0", "false")
@@ -399,8 +405,9 @@ def trusted() -> bool:
     if "trusted" not in g:
         if request.remote_addr in ("127.0.0.1", "::1") and not (TAILNET_URL and request.headers.get("X-Forwarded-For")):
             g.trusted = True  # a process on the hub machine
-        elif via_tailnet() and TAILNET_TRUST and request.headers.get("X-Forwarded-For"):
-            g.trusted = True  # a tailnet member, through tailscale serve
+        elif (via_tailnet() and TAILNET_TRUST and request.headers.get("X-Forwarded-For")
+              and (TAILNET_TRUST_ALL or (TAILNET_OWNER and tailnet_user() == TAILNET_OWNER))):
+            g.trusted = True  # the owner's own tailnet device, through tailscale serve
         else:
             g.trusted = bool(session.get("authed")) or devices.is_approved(current_device())
     return g.trusted
@@ -791,6 +798,9 @@ def setup_tailnet() -> str | None:
         print("  tailnet: tailscale isn't connected (run `tailscale up`) — LAN only")
         return None
 
+    global TAILNET_OWNER
+    owner_id = (status.get("Self") or {}).get("UserID")
+    TAILNET_OWNER = ((status.get("User") or {}).get(str(owner_id)) or {}).get("LoginName") or None
     domain = (status.get("Self") or {}).get("DNSName", "").rstrip(".")
     if not domain or domain not in (status.get("CertDomains") or []):
         print("  tailnet: HTTPS certificates are off for this tailnet — LAN only.")

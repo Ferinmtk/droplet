@@ -32,7 +32,7 @@ public sealed class HubClient : IDisposable
     public static string UserAgent { get; set; } = "droplet-windows/2 (.NET)";
 
     /// <summary>
-    /// A client for the hub at <paramref name="baseUrl"/> (e.g. https://t15.tail7375fe.ts.net).
+    /// A client for the hub at <paramref name="baseUrl"/> (e.g. https://your-hub.tailnet.ts.net).
     /// <paramref name="handler"/> connects: the pinned LAN handler, or null for normal,
     /// fully verified TLS. A handler passed in is shared, not disposed.
     /// </summary>
@@ -84,7 +84,7 @@ public sealed class HubClient : IDisposable
         if (!Uri.TryCreate(s, UriKind.Absolute, out var u) || (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps) ||
             string.IsNullOrEmpty(u.Host) || !string.IsNullOrEmpty(u.UserInfo))
         {
-            throw new FormatException($"\"{s}\" isn't a hub URL (expected e.g. https://t15.tail7375fe.ts.net)");
+            throw new FormatException($"\"{s}\" isn't a hub URL (expected e.g. https://your-hub.tailnet.ts.net)");
         }
         var b = new UriBuilder(u) { Query = "", Fragment = "" };
         b.Path = b.Path.TrimEnd('/');

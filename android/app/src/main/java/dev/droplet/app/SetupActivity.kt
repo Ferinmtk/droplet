@@ -83,9 +83,15 @@ class SetupActivity : AppCompatActivity() {
             if (id == EditorInfo.IME_ACTION_GO) { connectTyped(); true } else false
         }
         b.connect.setOnClickListener { connectTyped() }
-        val tailnet = Prefs.hubUrl?.takeIf { it.startsWith("https://") } ?: DEFAULT_HUB
-        b.tailscale.text = getString(R.string.setup_use_tailscale, tailnet.removePrefix("https://"))
-        b.tailscale.setOnClickListener { b.url.setText(tailnet); connectTyped() }
+        // only this phone's own hub is offered by name: a fresh install knows no address yet
+        val tailnet = Prefs.hubUrl?.takeIf { it.startsWith("https://") }
+        if (tailnet != null) {
+            b.tailscale.text = getString(R.string.setup_use_tailscale, tailnet.removePrefix("https://"))
+            b.tailscale.setOnClickListener { b.url.setText(tailnet); connectTyped() }
+        } else {
+            b.tailscale.text = getString(R.string.setup_use_tailscale_any)
+            b.tailscale.setOnClickListener { b.url.requestFocus() }
+        }
 
         b.name.setOnEditorActionListener { _, id, _ ->
             if (id == EditorInfo.IME_ACTION_GO) { join(); true } else false
@@ -559,7 +565,6 @@ class SetupActivity : AppCompatActivity() {
     }
 
     companion object {
-        const val DEFAULT_HUB = "https://t15.tail7375fe.ts.net"
         /** The hub said this phone isn't let in: go straight to pairing on the current route. */
         const val EXTRA_PAIR = "pair"
         /** The hub's identity changed: explain, and pair again. */
