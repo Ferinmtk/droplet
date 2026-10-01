@@ -2,7 +2,7 @@
 # produce the plain exe (for GitHub Releases) and an MSIX signed with a throwaway test
 # certificate (for sideloading). Store submissions are signed by Microsoft, so no signing
 # secret is needed. When the Partner Center identity is set as repository variables
-# (MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME; see
+# (MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME, MSIX_DISPLAY_NAME; see
 # windows-net/packaging/README.md), an unsigned package for the Store is built too.
 name: windows-net
 
@@ -125,6 +125,7 @@ jobs:
           -p:MsixIdentityName="${{ vars.MSIX_IDENTITY_NAME }}"
           -p:MsixPublisher="${{ vars.MSIX_PUBLISHER }}"
           -p:MsixPublisherDisplayName="${{ vars.MSIX_PUBLISHER_DISPLAY_NAME || 'Ferinmtk' }}"
+          -p:MsixDisplayName="${{ vars.MSIX_DISPLAY_NAME || 'droplet' }}"
 
       - name: Remove the test key
         # only when the key was made: an empty path makes Remove-Item fail
