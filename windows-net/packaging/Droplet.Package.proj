@@ -16,6 +16,7 @@
     <MsixIdentityName Condition="'$(MsixIdentityName)' == ''">Ferinmtk.droplet.Test</MsixIdentityName>
     <MsixPublisher Condition="'$(MsixPublisher)' == ''">CN=droplet test</MsixPublisher>
     <MsixPublisherDisplayName Condition="'$(MsixPublisherDisplayName)' == ''">Ferinmtk</MsixPublisherDisplayName>
+    <MsixDisplayName Condition="'$(MsixDisplayName)' == ''">droplet</MsixDisplayName>
     <MsixVersion Condition="'$(MsixVersion)' == ''">2.0.0.0</MsixVersion>
     <MsixArchitecture Condition="'$(MsixArchitecture)' == ''">x64</MsixArchitecture>
     <AppDir Condition="'$(AppDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\app\</AppDir>
@@ -94,6 +95,7 @@
       <_Values Include="Name" Value="$(MsixIdentityName)" />
       <_Values Include="Publisher" Value="$(MsixPublisher)" />
       <_Values Include="PublisherDisplayName" Value="$(MsixPublisherDisplayName)" />
+      <_Values Include="DisplayName" Value="$(MsixDisplayName)" />
       <_Values Include="Version" Value="$(MsixVersion)" />
       <_Values Include="Architecture" Value="$(MsixArchitecture)" />
     </ItemGroup>

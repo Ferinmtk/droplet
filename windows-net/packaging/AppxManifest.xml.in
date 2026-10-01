@@ -4,6 +4,8 @@
     $Name$, $Publisher$, $PublisherDisplayName$   the package identity, from Partner Center
                                                   (Product management → Product identity);
                                                   test values until then, see packaging/README.md
+    $DisplayName$                                 the name reserved in Partner Center; the Store
+                                                  rejects a package whose name it didn't reserve
     $Version$                                     four parts, the last 0 for the Store
     $Architecture$                                x64 or arm64
 -->
@@ -19,7 +21,7 @@
   <Identity Name="$Name$" Publisher="$Publisher$" Version="$Version$" ProcessorArchitecture="$Architecture$" />
 
   <Properties>
-    <DisplayName>droplet</DisplayName>
+    <DisplayName>$DisplayName$</DisplayName>
     <PublisherDisplayName>$PublisherDisplayName$</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>Your devices, together, on your own network: files, messages, clipboard, rings and remote control between your phone and your PCs.</Description>

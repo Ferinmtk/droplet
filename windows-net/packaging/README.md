@@ -23,14 +23,15 @@ the package uses test values:
 | `MsixIdentityName` | `Ferinmtk.droplet.Test` | Product identity → **Package/Identity/Name** |
 | `MsixPublisher` | `CN=droplet test` | Product identity → **Package/Identity/Publisher** (the whole `CN=…` string) |
 | `MsixPublisherDisplayName` | `Ferinmtk` | Product identity → **Package/Properties/PublisherDisplayName** |
+| `MsixDisplayName` | `droplet` | the name you reserved (Product management → **Manage app names**); the Store rejects any other |
 | `MsixVersion` | `2.0.0.0` | yours to choose; the Store wants the last part `0` |
 
 (Partner Center → Apps and games → droplet → Product management → **Product identity**.)
 
 Pass them on the command line (`-p:MsixIdentityName=...`), or, for CI, set them as
 **repository variables** (not secrets; they're public in the Store anyway): Settings →
-Secrets and variables → Actions → Variables: `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER` and
-`MSIX_PUBLISHER_DISPLAY_NAME`. The workflow then also builds an unsigned
+Secrets and variables → Actions → Variables: `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER`,
+`MSIX_PUBLISHER_DISPLAY_NAME` and `MSIX_DISPLAY_NAME`. The workflow then also builds an unsigned
 `droplet-windows-store-*` package, which is what you upload to Partner Center; Microsoft
 signs Store packages.
 
