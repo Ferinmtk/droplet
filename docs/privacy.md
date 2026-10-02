@@ -1,6 +1,6 @@
 # droplet privacy policy
 
-*Draft, for the Microsoft Store listing's privacy URL. Last updated: September 2026.*
+*Last updated: October 2026.*
 
 droplet connects your own devices (phones, PCs, a TV) so they can send each other files,
 messages, clipboard text and rings, and so one can control another. It's free software
