@@ -157,6 +157,57 @@ def test_txt_records_that_are_not_a_peer(change):
     assert discovery.parse_txt(wire) is None
 
 
+def test_network_switch_moves_mdns(monkeypatch):
+    """Home Wi-Fi to a phone's hotspot: mDNS follows, and old sightings go."""
+    addrs = ["192.168.100.33"]
+    d = discovery.Directory("ab" * 32, lambda: list(addrs))
+
+    class ZC:
+        def __init__(self):
+            self.rebound = 0
+            self.registered = []
+
+        def update_interfaces(self):
+            self.rebound += 1
+
+        def register_service(self, info, allow_name_change=False):
+            self.registered.append(info)
+
+        def unregister_service(self, info):
+            pass
+    d.zc = zc = ZC()
+    d._port, d._txt = 1739, {"id": "0123456789abcdef", "name": "slim"}
+    d._register()
+    d._seen["old"] = object()
+    addrs[:] = ["192.168.109.134"]
+    d._rebind()
+    d.update()
+    assert zc.rebound == 1 and d.zc is zc
+    assert d._seen == {}
+    assert d._addrs == ["192.168.109.134"]
+    assert socket.inet_aton("192.168.109.134") in zc.registered[-1].addresses
+
+
+def test_network_switch_restarts_older_zeroconf(monkeypatch):
+    import zeroconf
+    made = []
+
+    class ZC:
+        def __init__(self):
+            made.append(self)
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+    monkeypatch.setattr(zeroconf, "Zeroconf", ZC)
+    monkeypatch.setattr(zeroconf, "ServiceBrowser", lambda zc, svc, handlers: ("browser", zc))
+    d = discovery.Directory("ab" * 32, lambda: [])
+    d.zc = old = ZC()
+    d._rebind()
+    assert old.closed and d.zc is made[-1] and d.zc is not old
+    assert d.browser == ("browser", d.zc)
+
+
 # --- the trust list ---------------------------------------------------------------------
 
 def test_trust_list_roster_and_paired(tmp_path):

@@ -176,7 +176,45 @@ class Directory:
         while not self._stop.wait(15):
             if self._addresses() != self._addrs:
                 log.info("this computer's addresses changed; announcing again")
+                self._rebind()
                 self.update()
+
+    def _rebind(self):
+        """Move mDNS onto the network the computer is on now.
+
+        zeroconf binds its sockets to the addresses it saw when it started, so
+        after a switch (home Wi-Fi to a phone's hotspot) it kept announcing on
+        the old network and never heard the new one. Peers seen on the old
+        network are forgotten: their addresses aren't reachable from here.
+        """
+        with self._lock:
+            self._seen.clear()
+        zc = self.zc
+        if zc is None:
+            return
+        update_interfaces = getattr(zc, "update_interfaces", None)
+        if update_interfaces is not None:
+            try:
+                update_interfaces()
+                return
+            except Exception as e:
+                log.warning("couldn't move mDNS to the new network (%s); restarting it", e)
+        # older zeroconf, or the update failed: start it again
+        from zeroconf import ServiceBrowser, Zeroconf
+        try:
+            if self.browser is not None:
+                self.browser.cancel()
+            zc.close()
+        except Exception:
+            pass
+        self.info = self.browser = None
+        try:
+            self.zc = Zeroconf()
+        except OSError as e:
+            self.zc = None
+            log.warning("mDNS isn't available (%s): peers can't find this computer on the LAN", e)
+            return
+        self.browser = ServiceBrowser(self.zc, SERVICE, handlers=[self._on_change])
 
     def _on_change(self, zeroconf, service_type, name, state_change):
         from zeroconf import ServiceStateChange
