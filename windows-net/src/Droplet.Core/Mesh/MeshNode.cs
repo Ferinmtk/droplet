@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -117,6 +118,9 @@ public sealed record MeshOptions
     /// <summary>This machine's LAN addresses, the main one first.</summary>
     public Func<IReadOnlyList<string>> LocalAddresses { get; init; } = Addresses.Lan;
 
+    /// <summary>This machine's IPv4 default gateways: on a phone's hotspot, the phone.</summary>
+    public Func<IReadOnlyList<string>> Gateways { get; init; } = Addresses.Gateways;
+
     /// <summary>How often the outbox looks for routes (and at once when a peer or the hub appears).</summary>
     public TimeSpan RetryEvery { get; init; } = TimeSpan.FromSeconds(15);
 
@@ -172,6 +176,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     readonly ConcurrentDictionary<string, ConcurrentDictionary<string, JsonNode?>> peerState = new();
     readonly HashSet<(string, string)> downloading = [];
     readonly HashSet<string> workers = [];
+    readonly HashSet<(string Gateway, string Fp)> gatewayMisses = []; // a gateway that wasn't that peer; under gate
     readonly Lock workersGate = new();
     readonly SemaphoreSlim kick = new(0, 1);
     readonly CancellationTokenSource stop = new();
@@ -272,6 +277,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
         Track(Task.Run(DeliverLoopAsync, CancellationToken.None));
         Track(Task.Run(HousekeepingAsync, CancellationToken.None));
+        Track(Task.Run(ProbeGatewaysQuietlyAsync, CancellationToken.None));
         Kick();
     }
 
@@ -320,7 +326,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             {
                 return;
             }
-            foreach (var link in AllLinks().Where(l => l.Outbound && l.Idle > IdleClose))
+            foreach (var link in AllLinks().Where(l => l.Outbound && !l.Keep && l.Idle > IdleClose))
             {
                 await link.CloseAsync(WebSocketCloseStatus.NormalClosure, "idle").ConfigureAwait(false);
             }
@@ -332,6 +338,113 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             {
                 log.LogWarning(e, "mesh: announcing again");
             }
+            await ProbeGatewaysQuietlyAsync().ConfigureAwait(false);
+        }
+    }
+
+    async Task ProbeGatewaysQuietlyAsync()
+    {
+        try
+        {
+            await ProbeGatewaysAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception e)
+        {
+            log.LogWarning(e, "mesh: looking for a paired device at the gateway");
+        }
+    }
+
+    /// <summary>
+    /// Links with a trusted device that is this network's gateway: a phone serving a hotspot.
+    /// Android doesn't announce on a hotspot it serves, and can't see who joined it, so
+    /// neither side would find the other. The phone is always the hotspot's gateway, though.
+    /// The link stays open (it's how the phone knows this device is there), and only the
+    /// device whose certificate is pinned for that peer gets one. A gateway that turned out
+    /// not to be a peer isn't tried for it again until the network changes. Returns the link, or null.
+    /// </summary>
+    public async Task<MeshLink?> ProbeGatewaysAsync()
+    {
+        var gateways = options.Gateways();
+        lock (gate)
+        {
+            gatewayMisses.RemoveWhere(m => !gateways.Contains(m.Gateway));
+        }
+        foreach (var gw in gateways)
+        {
+            if (AllLinks().Any(l => l.Address == gw && !l.Closed))
+            {
+                continue;
+            }
+            var listening = new Dictionary<int, bool>();
+            foreach (var entry in Trust.All())
+            {
+                var port = entry.Port ?? MeshProtocol.DefaultPort;
+                if (OpenLink(entry.Fp) is not null || GatewayMissed(gw, entry.Fp))
+                {
+                    continue;
+                }
+                if (!listening.TryGetValue(port, out var up))
+                {
+                    listening[port] = up = await ListeningAsync(gw, port).ConfigureAwait(false);
+                }
+                if (!up)
+                {
+                    continue; // nothing listening there: no peer at this gateway on that port
+                }
+                var gateFp = dialLocks.GetOrAdd(entry.Fp, _ => new SemaphoreSlim(1, 1));
+                await gateFp.WaitAsync(stop.Token).ConfigureAwait(false);
+                MeshLink? link;
+                try
+                {
+                    link = OpenLink(entry.Fp) is null ? await DialAsync(entry, gw, port, "lan").ConfigureAwait(false) : null;
+                }
+                finally
+                {
+                    gateFp.Release();
+                }
+                if (link is null)
+                {
+                    if (OpenLink(entry.Fp) is null)
+                    {
+                        lock (gate)
+                        {
+                            gatewayMisses.Add((gw, entry.Fp));
+                        }
+                    }
+                    continue;
+                }
+                link.Keep = true;
+                log.LogInformation("mesh: link open with {Who} at the gateway ({Address}): its hotspot", entry.Name, gw);
+                return link;
+            }
+        }
+        return null;
+    }
+
+    bool GatewayMissed(string gw, string fp)
+    {
+        lock (gate)
+        {
+            return gatewayMisses.Contains((gw, fp));
+        }
+    }
+
+    async Task<bool> ListeningAsync(string address, int port)
+    {
+        using var tcp = new TcpClient();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+        cts.CancelAfter(LanTimeout);
+        try
+        {
+            await tcp.ConnectAsync(address, port, cts.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception e) when ((e is SocketException or OperationCanceledException) && !stop.IsCancellationRequested)
+        {
+            return false;
         }
     }
 
@@ -548,8 +661,8 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         return link;
     }
 
-    /// <summary>Where a peer may be reached: mDNS first, then its known LAN addresses, then its tailnet address.</summary>
-    List<(string Address, int Port, string Kind)> Candidates(TrustEntry entry)
+    /// <summary>Where a peer may be reached: mDNS first, then its known LAN addresses and the gateway, then its tailnet address.</summary>
+    internal List<(string Address, int Port, string Kind)> Candidates(TrustEntry entry)
     {
         var output = new List<(string, int, string)>();
         var port = entry.Port ?? MeshProtocol.DefaultPort;
@@ -561,6 +674,8 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             }
         }
         output.AddRange(entry.Lan.Select(a => (a, port, Addresses.IsTailnet(a) ? "tailnet" : "lan")));
+        // a phone serving a hotspot doesn't announce itself on it, but it's the hotspot's gateway
+        output.AddRange(options.Gateways().Where(gw => !GatewayMissed(gw, entry.Fp)).Select(gw => (gw, port, "lan")));
         if (entry.TailnetIp is { } t)
         {
             output.Add((t, port, "tailnet"));

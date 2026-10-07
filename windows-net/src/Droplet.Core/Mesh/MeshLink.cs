@@ -64,6 +64,9 @@ public sealed class MeshLink
     /// <summary>What the peer said about itself in hello or welcome.</summary>
     public JsonObject Hello { get; internal set; } = [];
 
+    /// <summary>Kept open however idle: the link with a phone serving this network's hotspot, which is how it knows this device is there.</summary>
+    public bool Keep { get; internal set; }
+
     /// <summary>Input arrived over it: held buttons must be let go when it ends.</summary>
     internal bool SentInput { get; set; }
 
