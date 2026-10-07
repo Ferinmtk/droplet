@@ -5,7 +5,7 @@ Everything Partner Center asks for under **Store listings** (English). Fill in t
 
 ## Product name
 
-droplet
+NOXERA Droplet (the name reserved in Partner Center; the package's DisplayName must match it)
 
 ## Short description (up to 100 characters)
 
@@ -13,7 +13,7 @@ Your devices, together: files, messages, clipboard and remote control, on your o
 
 ## Description
 
-droplet brings your phone and your PCs together, like KDE Connect, without anyone else's
+droplet brings your phone and your PCs together, without anyone else's
 cloud. Send a file from your phone and it lands in Downloads. Copy on one device, paste on
 another. Ring your phone when it's lost in the sofa. Use your phone as a touchpad, keyboard,
 media remote or presentation clicker for your PC.
@@ -54,7 +54,7 @@ analytics.
 
 ## Search terms (up to 7)
 
-phone to pc, file transfer, clipboard sync, kde connect, remote control, lan, tailscale
+phone to pc, file transfer, clipboard sync, send files to pc, remote control, wifi file sharing, android to windows
 
 ## Category
 
