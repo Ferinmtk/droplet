@@ -82,6 +82,7 @@ class Host:
     """What the mesh needs from the rest of the agent. Every hub call may raise."""
 
     def mesh_caps(self) -> list[str]: return []
+    def shows_notifications(self) -> bool: return True
     def device_name(self) -> str: return socket.gethostname().split(".")[0]
     def hub_device_id(self) -> str | None: return None
     def hub_id(self) -> str | None: return None
@@ -531,6 +532,8 @@ class MeshNode:
         elif t == "ring-stop":
             self.desktop.stop_ring()
         elif t == "notify":
+            if not self.host.shows_notifications():
+                return
             key = msg.get("key")
             app = str(msg.get("app") or entry["name"])[:40]
             title = str(msg.get("title") or app)

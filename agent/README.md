@@ -286,7 +286,8 @@ acceleration to the virtual mouse.
   "lock_command": null,
   "screenshot_command": null,
   "clipboard_max_bytes": 262144,
-  "mesh": {"enabled": true, "port": null, "downloads": null, "max_rate": 0, "announce": true}
+  "mesh": {"enabled": true, "port": null, "downloads": null, "max_rate": 0, "announce": true,
+           "phone_notifications": true}
 }
 ```
 
@@ -306,6 +307,8 @@ acceleration to the virtual mouse.
   (`null`: `~/Downloads/droplet`, following your desktop's download folder).
   `max_rate`: bytes a second when sending files directly (0: no limit).
   `announce: false` stops announcing over mDNS (peers then need its address).
+  `phone_notifications: false` stops showing a paired phone's notifications
+  here, and tells the phone not to send them (the `notify` cap goes).
 
 Restart the service after editing: `systemctl --user restart droplet-agent`.
 

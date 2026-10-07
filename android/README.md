@@ -15,8 +15,9 @@ can't do as a browser tab or PWA:
   alarm sound at full volume on the alarm stream, which silent mode doesn't
   mute. It also vibrates and shows a full-screen Stop button over the lock
   screen.
-- **Notification mirroring.** The phone's notifications show up in a Phone
-  card on your other devices, with the battery level.
+- **Notification mirroring.** The phone's notifications pop up on your
+  paired Windows and Linux computers, straight from the phone, and with a
+  hub also in a Phone card on your other devices, with the battery level.
 - **Notifications for files and messages** sent to the phone. Push doesn't
   work inside an app WebView, so the app checks for these itself.
 - **Remote control, both ways.** Your other devices can control the phone's
@@ -172,10 +173,14 @@ pairs.
 share sheet), messages, ringing either way (the loud alarm), the clipboard
 both ways (and the Send clipboard tile), the presentation remote, your
 computers controlling the phone's media, SMS and files, notifications for
-what arrives, the TV remote and the Bluetooth mouse and keyboard.
+what arrives, the phone's notifications showing up on your computers
+(Settings → Notification mirroring: Notification access, and **Show phone
+notifications on my computers**; needs Stay connected), the TV remote and
+the Bluetooth mouse and keyboard.
 
-**What needs a hub:** the web app for browsers, notification mirroring (the
-Phone card lives on the hub), the hub's mailbox for a device that's off
+**What needs a hub:** the web app for browsers, the Phone card (the list of
+the phone's notifications and its battery, on the hub's page), the hub's
+mailbox for a device that's off
 (without one, things you send wait on the phone and go when the device is
 back), Link with code, and reaching devices on another network without
 Tailscale.

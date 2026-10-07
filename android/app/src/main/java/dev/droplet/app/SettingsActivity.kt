@@ -92,6 +92,7 @@ class SettingsActivity : AppCompatActivity() {
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }
         }
+        b.mirrorComputers.setOnCheckedChangeListener { _, on -> Prefs.mirrorToComputers = on }
         b.excludedRow.setOnClickListener { startActivity(Intent(this, ExcludedAppsActivity::class.java)) }
 
         b.batterySteps.text = getString(if (xiaomi) R.string.s_battery_miui else R.string.s_battery_other)
@@ -349,6 +350,7 @@ class SettingsActivity : AppCompatActivity() {
         val mirroring = MirrorService.isEnabled(this)
         b.mirrorState.setText(if (mirroring) R.string.s_mirror_on else R.string.s_mirror_off)
         b.mirrorDot.setBackgroundResource(if (mirroring) R.drawable.dot_online else R.drawable.dot)
+        b.mirrorComputers.isChecked = Prefs.mirrorToComputers
         val n = Prefs.excluded.size
         b.excludedCount.text = if (n == 0) getString(R.string.s_excluded_none) else getString(R.string.s_excluded_some, n)
 

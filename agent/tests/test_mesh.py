@@ -656,3 +656,68 @@ def test_a_paired_phone_serving_the_hotspot_is_found_at_the_gateway(nodes):
     assert ("127.0.0.1", phone.identity.fp) not in laptop._gateway_misses
     misses = set(laptop._gateway_misses)
     assert laptop.probe_gateways() is None and laptop._gateway_misses >= misses
+
+
+# --- notification mirroring ------------------------------------------------------------------
+
+class FakeDesktop:
+    def __init__(self):
+        self.shown, self.closed = [], []
+
+    def notify(self, title, body, key=None, app="droplet"):
+        self.shown.append((title, body, key, app))
+
+    def close_notification(self, key):
+        self.closed.append(key)
+
+
+def test_a_phones_notifications_are_shown_replaced_and_taken_away(nodes):
+    phone, laptop = nodes("phone"), nodes("laptop")
+    trust_each_other(phone, laptop)
+    laptop.desktop = FakeDesktop()
+    link = phone.direct(laptop.identity.fp)
+    link.send({"t": "notify", "key": "0|com.chat|1|null|10123", "app": "Chat", "title": "Mum", "text": "Dinner at 7"})
+    assert wait_for(lambda: len(laptop.desktop.shown) == 1)
+    title, body, key, app = laptop.desktop.shown[0]
+    assert (title, body, app) == ("Mum (phone)", "Dinner at 7", "Chat")
+    assert key == f"{phone.identity.fp}:0|com.chat|1|null|10123"
+    # an update to it replaces it: the same key
+    link.send({"t": "notify", "key": "0|com.chat|1|null|10123", "app": "Chat", "title": "Mum", "text": "Make it 8"})
+    assert wait_for(lambda: len(laptop.desktop.shown) == 2)
+    assert laptop.desktop.shown[1][2] == key
+    # gone from the phone: gone from here
+    link.send({"t": "notify-removed", "key": "0|com.chat|1|null|10123"})
+    assert wait_for(lambda: laptop.desktop.closed == [key])
+    # nonsense is ignored
+    link.send({"t": "notify-removed", "key": 5})
+    link.send({"t": "notify", "app": "Chat", "title": "no key", "text": "x"})
+    assert wait_for(lambda: len(laptop.desktop.shown) == 3)
+    assert laptop.desktop.shown[2][2] is None and laptop.desktop.closed == [key]
+
+
+def test_notifications_from_the_phone_can_be_switched_off(nodes):
+    class Off(FakeHost):
+        def shows_notifications(self): return False
+    phone, laptop = nodes("phone"), nodes("laptop", host=Off("laptop"))
+    trust_each_other(phone, laptop)
+    laptop.desktop = FakeDesktop()
+    link = phone.direct(laptop.identity.fp)
+    link.send({"t": "notify", "key": "k", "app": "Chat", "title": "Mum", "text": "hi"})
+    time.sleep(0.3)
+    assert laptop.desktop.shown == []
+
+
+def test_the_notify_cap_follows_the_setting():
+    from droplet_agent import config
+    from droplet_agent.mesh_host import AgentHost
+
+    class Agent:
+        advertised = {"input", "media"}
+    cfg = json.loads(json.dumps(config.DEFAULTS))
+    host = AgentHost(Agent(), cfg)
+    assert host.mesh_caps() == ["input", "media", "notify"] and host.shows_notifications()
+    cfg["mesh"]["phone_notifications"] = False
+    assert host.mesh_caps() == ["input", "media"] and not host.shows_notifications()
+    # an older config without the setting: on
+    del cfg["mesh"]["phone_notifications"]
+    assert "notify" in host.mesh_caps()
