@@ -82,7 +82,7 @@ public sealed class PhoneNotificationTests : IAsyncLifetime
         var toasts = shown.ToArray();
         var tag = PhoneNotifications.Tag(phone.Node.Identity.Fingerprint, Key);
         Assert.All(toasts, t => Assert.Equal(tag, t.Tag)); // the same tag: the update replaces the toast
-        Assert.Equal(("Mum (pixel)", "Make it 8"), (toasts[1].Title, toasts[1].Body));
+        Assert.Equal(("Mum (phone)", "Make it 8"), (toasts[1].Title, toasts[1].Body)); // a paired peer's name is the one it gives itself
 
         Assert.True(await link.SendAsync(new JsonObject { ["t"] = "notify-removed", ["key"] = Key }));
         await Wait.For(() => pc.Fakes.Notifications.Cleared.Contains(tag), 10, "the toast taken away");
