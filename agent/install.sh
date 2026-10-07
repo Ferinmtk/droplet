@@ -20,6 +20,7 @@
 #   --pin PIN       join with the hub's PIN instead of waiting to be allowed
 #   --hub URL       the hub, if this copy of the script didn't come from it
 #   --no-service    don't install the systemd user service
+#   --no-tray       don't put droplet in the system tray
 #
 # Re-running it upgrades the agent and keeps the settings.
 
@@ -30,12 +31,13 @@ DROPLET_WHEEL=''  # likewise
 
 say() { printf '%s\n' "$*"; }
 usage() {
-    say "usage: install.sh [--code 123456 | --name NAME] [--pin PIN] [--hub URL] [--no-service]"
+    say "usage: install.sh [--code 123456 | --name NAME] [--pin PIN] [--hub URL] [--no-service] [--no-tray]"
     say "  --code     link to this computer's droplet device (browser: Devices, Link an app)"
     say "  --name     or join as a new device (default: this computer's name)"
     say "  --pin      join with the hub's PIN instead of waiting to be allowed"
     say "  --hub      the hub, when this script didn't come from it"
     say "  --no-service   don't install the systemd user service"
+    say "  --no-tray      don't put droplet in the system tray"
 }
 die() { printf 'droplet-agent install: %s\n' "$*" >&2; exit 1; }
 
@@ -50,7 +52,7 @@ fetch() {  # fetch URL FILE
 }
 
 main() {
-    hub="$DROPLET_HUB" code="" name="" pin="" service=1
+    hub="$DROPLET_HUB" code="" name="" pin="" service=1 tray=1
     # a copy that wasn't served by a hub gets the hub's own copy and runs that
     prev=""
     for a in "$@"; do
@@ -76,6 +78,7 @@ main() {
             --name) [ $# -ge 2 ] || die "--name needs a name"; name="$2"; shift 2 ;;
             --pin) [ $# -ge 2 ] || die "--pin needs the PIN"; pin="$2"; shift 2 ;;
             --no-service) service=0; shift ;;
+            --no-tray) tray=0; shift ;;
             -h|--help) usage; exit 0 ;;
             *) die "unknown option $1" ;;
         esac
@@ -132,6 +135,24 @@ Icon=input-mouse
 NoDisplay=true
 EOF
 
+    # the tray icon starts with the desktop session (the service can't show one)
+    autostart="$config/autostart/io.github.ferinmtk.DropletAgent.Tray.desktop"
+    if [ "$tray" = 1 ]; then
+        mkdir -p "$config/autostart"
+        cat >"$autostart" <<EOF
+[Desktop Entry]
+Type=Application
+Name=droplet
+Comment=droplet in the system tray: send to your devices, answer pairing requests
+Exec="$agent" tray
+Icon=input-mouse
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+    else
+        rm -f "$autostart"
+    fi
+
     # --- link to the hub -----------------------------------------------------
     # a plain http:// LAN hub is fine here: setup reads the hub's certificate
     # fingerprint from it and carries on over the pinned LAN HTTPS
@@ -184,6 +205,12 @@ EOF
         fi
     else
         say "Service not installed. Start the agent with: $agent run"
+    fi
+
+    # start (or restart, after an upgrade) the tray in this desktop session
+    if [ "$tray" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+        nohup "$agent" tray >/dev/null 2>&1 </dev/null &
+        say "droplet is in the system tray, and starts there with your desktop."
     fi
 
     say ""

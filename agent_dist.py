@@ -54,11 +54,15 @@ def _requires_python() -> str:
     return m.group(1) if m else ">=3.9"
 
 
+PACKAGE_DATA = ("tray_icon.bin",)  # matches [tool.setuptools.package-data] in agent/pyproject.toml
+
+
 def package_files() -> list[tuple[str, Path]]:
-    """(path inside the package, file on disk) for every module. Symlinks (mediactl.py) are followed."""
+    """(path inside the package, file on disk) for every module and data file.
+    Symlinks (mediactl.py) are followed."""
     out = []
-    for p in sorted(PACKAGE.rglob("*.py")):
-        if "__pycache__" in p.parts:
+    for p in sorted([*PACKAGE.rglob("*.py"), *(PACKAGE / n for n in PACKAGE_DATA)]):
+        if "__pycache__" in p.parts or not p.exists():
             continue
         out.append((p.relative_to(AGENT_DIR).as_posix(), p))
     return out
