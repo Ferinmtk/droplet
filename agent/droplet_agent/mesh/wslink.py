@@ -10,9 +10,11 @@ silence, and gives up after 60 s without hearing anything.
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import socket
+import ssl
 import threading
 import time
 
@@ -43,6 +45,9 @@ def _flush(sock, proto) -> bool:
         else:
             return False
     return True
+
+
+_TRY_AGAIN = (BlockingIOError, InterruptedError, ssl.SSLWantReadError, ssl.SSLWantWriteError)
 
 
 def client_handshake(sock, host: str, port: int, user_agent: str, timeout: float = HANDSHAKE_TIMEOUT):
@@ -197,6 +202,12 @@ class Link:
             while not self.closed:
                 try:
                     data = self.sock.recv(65536)
+                except _TRY_AGAIN:
+                    # the TLS socket is shared with the senders' threads, and a read
+                    # that overlaps a write can come back "try again" (EAGAIN, or
+                    # WANT_READ/WANT_WRITE): nothing is wrong with the link
+                    time.sleep(0.005)
+                    continue
                 except (socket.timeout, TimeoutError):
                     if time.monotonic() - self._last_rx > DEAD_AFTER:
                         log.info("link with %s went quiet; closing it", self.address)
@@ -204,6 +215,11 @@ class Link:
                     with self._lock:
                         self.proto.send_ping(str(int(time.time())).encode())
                         _flush(self.sock, self.proto)
+                    continue
+                except OSError as e:
+                    if e.errno not in (errno.EAGAIN, errno.EWOULDBLOCK):
+                        raise
+                    time.sleep(0.005)
                     continue
                 self._last_rx = time.monotonic()
                 with self._lock:
