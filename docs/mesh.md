@@ -313,6 +313,13 @@ lowercase hex characters.
    **and** I's own owner confirmed the codes match: an impostor answering
    for R could say `accepted`, but can't make the codes match.
 
+   So for a while R trusts I but I doesn't trust R yet: I's TLS refuses
+   R's certificate ("unknown CA") until its owner has confirmed and its next
+   poll has seen `accepted`, seconds or minutes later. For 2 minutes after
+   accepting, R tries I again every 2 seconds when it can't reach it
+   directly, instead of waiting for the outbox's usual round (15 s), so a
+   message sent right after pairing goes out as soon as I trusts back.
+
 The same HTTPS connection may carry several of these requests
 (keep-alive). Each body is JSON, at most 64 KB.
 

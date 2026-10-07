@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from droplet_agent.mesh import discovery, files, identity, pairing, tlsctx
+from droplet_agent.mesh import node as mesh_node
 from droplet_agent.mesh.node import Host, MeshNode, NoRoute
 from droplet_agent.mesh.outbox import DONE, QUEUED, Outbox
 from droplet_agent.mesh.trust import TrustList, make_entry
@@ -64,11 +65,11 @@ class FakeHost(Host):
         self.hub_calls.append(("ring", device_id, stop))
 
 
-def make_node(tmp_path, name, port=0, host=None):
+def make_node(tmp_path, name, port=0, host=None, retry_every=0.3):
     host = host or FakeHost(name)
     base = tmp_path / name
     n = MeshNode(host, config_dir=base / "cfg", data_dir=base / "data", downloads=base / "dl", port=port,
-                 announce=False, control=False, retry_every=0.3, local_addresses=lambda: ["127.0.0.1"],
+                 announce=False, control=False, retry_every=retry_every, local_addresses=lambda: ["127.0.0.1"],
                  dry_run=True)
     n.start()
     return n
@@ -350,6 +351,38 @@ def test_pairing_code_is_the_same_on_both_sides(nodes):
     b.pair_answer(waiting[0]["request"], True)
     assert og.poll() == "accepted"
     assert b.trust.get(a.identity.fp)["source"] == "paired"
+
+
+def test_accepting_side_reaches_the_initiator_as_soon_as_it_trusts_back(nodes):
+    """The accepting side trusts at once; the initiator only once its owner confirms and it
+    polls. A message sent in between must go out within seconds of that, not at the next
+    outbox round (RETRY_EVERY)."""
+    a, b = nodes("a", retry_every=60), nodes("b", retry_every=60)
+    start = a.pair_start(f"127.0.0.1:{b.port}")
+    rid = b.incoming.waiting()[0]["request"]
+    b.pair_answer(rid, True)
+    b.trust.learn(a.identity.fp, address="127.0.0.1", port=a.port)   # mDNS tells it in real life
+    job = b.send_text(a.identity.fp, "hello, new friend")
+    # a doesn't trust b yet: its TLS refuses b's certificate, and the message waits
+    got = b.outbox.wait(job["id"], lambda j: j["attempts"] > 0 and j["state"] != "sending", 5)
+    assert got["state"] == QUEUED and a.trust.get(b.identity.fp) is None
+    time.sleep(0.5)
+    t0 = time.monotonic()
+    a.pair_confirm(start["request"], True)      # a's owner says the codes match
+    done = b.outbox.wait(job["id"], lambda j: j["state"] == DONE, 10)
+    assert done["state"] == DONE and done["route"] == "lan"
+    assert time.monotonic() - t0 < mesh_node.PAIR_RETRY + 3
+    assert [m["body"] for m in a.chat.recent() if m["dir"] == "in"] == ["hello, new friend"]
+
+
+def test_quick_retries_stop_after_the_grace(nodes):
+    b = nodes("b", retry_every=60)
+    fp = "ab" * 32
+    with b._lock:
+        b._accepted[fp] = time.monotonic() - mesh_node.PAIR_GRACE - 1
+    assert not b._just_accepted(fp) and fp not in b._accepted
+    b._accepted[fp] = time.monotonic()
+    assert b._just_accepted(fp)
 
 
 def test_code_derivation_is_order_sensitive():

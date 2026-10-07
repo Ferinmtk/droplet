@@ -113,6 +113,7 @@ class MeshNode(
     private val acks = ConcurrentHashMap<String, Waiter>()
     private val downloading = ConcurrentHashMap.newKeySet<String>()
     private val workers = ConcurrentHashMap.newKeySet<String>()
+    private val accepted = ConcurrentHashMap<String, Long>()   // fp → when this phone accepted its pairing request (System.nanoTime)
     private val kick = java.util.concurrent.Semaphore(0)
     @Volatile var stopped = false; private set
     private var server: MeshServer? = null
@@ -395,6 +396,7 @@ class MeshNode(
             return null
         }
         trust.learn(entry.fp, address = address, port = port, tailnet = kind == "tailnet")
+        accepted.remove(entry.fp)
         return link
     }
 
@@ -727,6 +729,10 @@ class MeshNode(
         }
         outbox.update(id, "state" to Outbox.SENDING, "attempts" to job.optInt("attempts") + 1)
         val link = direct(e.fp)
+        if (link == null && justAccepted(e.fp)) {
+            // it may not have heard our yes yet: look again soon rather than in retryEveryMs
+            thread(isDaemon = true) { Thread.sleep(PAIR_RETRY_MS); kick() }
+        }
         if (link != null) {
             val got = if (job.getString("kind") == "text") directText(link, job) else directFile(link, job)
             if (got == "ok") {
@@ -873,11 +879,20 @@ class MeshNode(
         }
     }
 
+    /** Whether this phone accepted the peer's pairing request less than [PAIR_GRACE_MS] ago. */
+    internal fun justAccepted(fp: String): Boolean {
+        val at = accepted[fp] ?: return false
+        if ((System.nanoTime() - at) / 1_000_000 <= PAIR_GRACE_MS) return true
+        accepted.remove(fp, at)
+        return false
+    }
+
     fun pairAnswer(rid: String, accept: Boolean): MeshPairing.Request {
         val r = incoming.answer(rid, accept) ?: throw IllegalArgumentException("no such pairing request waiting (it may have expired)")
         if (accept) {
             trust.addPaired(TrustList.makeEntry(peerId = r.id, name = r.name, certPem = MeshIdentity.toPem(r.der!!),
                 source = TrustList.SOURCE_PAIRED, os = r.os))
+            accepted[r.fp] = System.nanoTime()
             host.log("mesh: paired with ${r.name} (${r.fp})")
         }
         host.onPairGone(rid)
@@ -924,6 +939,15 @@ class MeshNode(
         const val IDLE_PING_MS = 20_000L
         const val DEAD_AFTER_MS = 60_000L
         const val MAX_TEXT = 64 * 1024
+        /**
+         * Accepting a pairing request trusts the other device at once, but it trusts this one
+         * only when its own owner has confirmed the code and it has polled for the answer:
+         * seconds, or minutes, later. Until then its TLS refuses this device's certificate. So
+         * for this long after accepting, a peer that can't be reached directly is tried again
+         * every [PAIR_RETRY_MS] instead of every retryEveryMs.
+         */
+        const val PAIR_GRACE_MS = 120_000L
+        const val PAIR_RETRY_MS = 2_000L
 
         fun strings(a: JSONArray?): List<String> = (0 until (a?.length() ?: 0)).mapNotNull { a!!.opt(it) as? String }
 

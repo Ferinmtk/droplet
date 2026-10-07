@@ -53,6 +53,13 @@ ACK_TIMEOUT = 10
 STALL = 60             # seconds a file transfer may make no progress
 IDLE_CLOSE = 300       # an outbound link unused this long is closed
 RETRY_EVERY = 15       # the outbox looks for routes this often (and at once when a peer or the hub appears)
+# Accepting a pairing request trusts the other device at once, but it trusts this one only
+# when its own owner has confirmed the code and it has polled for the answer: seconds, or
+# minutes, later. Until then its TLS refuses this device's certificate. So for a while after
+# accepting, a peer that can't be reached directly is tried again every PAIR_RETRY seconds
+# instead of every RETRY_EVERY.
+PAIR_GRACE = 120
+PAIR_RETRY = 2
 MAX_TEXT = 64 * 1024
 LIVE = ("input", "media", "cmd")
 TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
@@ -179,6 +186,7 @@ class MeshNode:
         self._workers: set[str] = set()
         self._wlock = threading.Lock()
         self._kick = threading.Event()
+        self._accepted: dict[str, float] = {}    # fp → when this device accepted its pairing request
         self.stop = threading.Event()
         self.server: Server | None = None
         self.directory: Directory | None = None
@@ -345,7 +353,9 @@ class MeshNode:
             tls = client_context(self.identity, fp).wrap_socket(raw)
             proto, frames = client_handshake(tls, address, port, USER_AGENT)
         except Exception as e:
-            log.info("mesh: couldn't open a link to %s at %s:%d: %s", entry["name"], address, port, e)
+            # a peer that just paired may not trust this device yet: that's expected, not news
+            level = logging.DEBUG if self._just_accepted(fp) else logging.INFO
+            log.log(level, "mesh: couldn't open a link to %s at %s:%d: %s", entry["name"], address, port, e)
             raw.close()
             return None
         link = Link(tls, proto, fp=fp, address=address, outbound=True, on_message=self._on_message,
@@ -358,6 +368,8 @@ class MeshNode:
             link.close(1008, "no welcome")
             return None
         self.trust.learn(fp, address=address, port=port, tailnet=kind == "tailnet")
+        with self._lock:
+            self._accepted.pop(fp, None)
         return link
 
     def _candidates(self, entry: dict) -> list[tuple[str, int, str]]:
@@ -682,6 +694,11 @@ class MeshNode:
                 return "done"
         self.outbox.update(job["id"], state=SENDING, attempts=job["attempts"] + 1)
         link = self.direct(job["fp"])
+        if link is None and self._just_accepted(job["fp"]):
+            # it may not have heard our yes yet: look again soon rather than in RETRY_EVERY
+            timer = threading.Timer(PAIR_RETRY, self._kick.set)
+            timer.daemon = True
+            timer.start()
         if link is not None:
             got = self._direct_text(link, job) if job["kind"] == "text" else self._direct_file(link, job)
             if got == "ok":
@@ -765,6 +782,14 @@ class MeshNode:
         if action == "/cancel" and method == "POST":
             return self.incoming.cancel(rid)
         return 405, {"error": "method not allowed"}
+
+    def _just_accepted(self, fp: str) -> bool:
+        with self._lock:
+            at = self._accepted.get(fp)
+            if at is not None and time.monotonic() - at > PAIR_GRACE:
+                del self._accepted[fp]
+                at = None
+        return at is not None
 
     def _pair_request(self, req: dict):
         log.warning("mesh: %s (%s) wants to pair, code %s. Answer with: droplet-agent pair --accept "
@@ -855,6 +880,8 @@ class MeshNode:
         if accept:
             self.trust.add_paired(make_entry(peer_id=r["id"], name=r["name"], cert_pem=der_to_pem(r["der"]),
                                              source="paired", os_name=r["os"]))
+            with self._lock:
+                self._accepted[r["fp"]] = time.monotonic()
             log.info("mesh: paired with %s (%s)", r["name"], r["fp"])
         else:
             log.info("mesh: refused to pair with %s", r["name"])

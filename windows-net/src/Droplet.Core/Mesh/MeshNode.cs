@@ -156,6 +156,16 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     static readonly TimeSpan AckTimeout = TimeSpan.FromSeconds(10);
     static readonly TimeSpan Stall = TimeSpan.FromSeconds(60);
     static readonly TimeSpan IdleClose = TimeSpan.FromSeconds(300);
+
+    /// <summary>
+    /// Accepting a pairing request trusts the other device at once, but it trusts this one only
+    /// when its own owner has confirmed the code and it has polled for the answer: seconds, or
+    /// minutes, later. Until then its TLS refuses this device's certificate. So for this long
+    /// after accepting, a peer that can't be reached directly is tried again every
+    /// <see cref="PairRetry"/> instead of every <see cref="MeshOptions.RetryEvery"/>.
+    /// </summary>
+    internal static readonly TimeSpan PairGrace = TimeSpan.FromSeconds(120);
+    internal static readonly TimeSpan PairRetry = TimeSpan.FromSeconds(2);
     static readonly string[] Live = ["input", "media", "cmd"];
 
     readonly IMeshHost host;
@@ -169,6 +179,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     readonly ConcurrentDictionary<string, (TaskCompletionSource<(bool Ok, string Error)> Waiter, string Fp)> acks = new();
     readonly ConcurrentDictionary<string, Offer> offers = new();
     readonly ConcurrentDictionary<string, OutgoingPairing> outgoing = new();
+    readonly ConcurrentDictionary<string, DateTimeOffset> accepted = new();   // fp → when this device accepted its pairing request
     readonly ConcurrentDictionary<string, ConcurrentDictionary<string, JsonNode?>> peerState = new();
     readonly HashSet<(string, string)> downloading = [];
     readonly HashSet<string> workers = [];
@@ -545,6 +556,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             return null;
         }
         Trust.Learn(entry.Fp, address, port, tailnet: kind == "tailnet");
+        accepted.TryRemove(entry.Fp, out _);
         return link;
     }
 
@@ -1129,7 +1141,13 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             return "done";
         }
         Outbox.Update(job.Id, j => j with { State = JobState.Sending, Attempts = j.Attempts + 1 });
-        if (await DirectAsync(job.Fp).ConfigureAwait(false) is { } link)
+        var direct = await DirectAsync(job.Fp).ConfigureAwait(false);
+        if (direct is null && JustAccepted(job.Fp))
+        {
+            // it may not have heard our yes yet: look again soon rather than in RetryEvery
+            _ = Task.Delay(PairRetry, stop.Token).ContinueWith(_ => Kick(), TaskScheduler.Default);
+        }
+        if (direct is { } link)
         {
             var got = job.Kind == "text" ? await DirectTextAsync(link, job).ConfigureAwait(false) : await DirectFileAsync(link, job).ConfigureAwait(false);
             if (got == "ok")
@@ -1426,6 +1444,21 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         og.State = PairState.Expired;
     }
 
+    /// <summary>Whether this device accepted the peer's pairing request less than <see cref="PairGrace"/> ago.</summary>
+    internal bool JustAccepted(string fp)
+    {
+        if (!accepted.TryGetValue(fp, out var at))
+        {
+            return false;
+        }
+        if (DateTimeOffset.UtcNow - at <= PairGrace)
+        {
+            return true;
+        }
+        accepted.TryRemove(fp, out _);
+        return false;
+    }
+
     /// <summary>The owner's answer to a request another device made. Returns the peer when accepted.</summary>
     public TrustEntry? PairAnswer(string request, bool accept)
     {
@@ -1438,6 +1471,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
         var entry = TrustEntry.Make(r.Info.Id, r.Info.Name, Certificates.ToPem(r.Der), TrustSource.Paired, os: r.Info.Os);
         Trust.AddPaired(entry);
+        accepted[entry.Fp] = DateTimeOffset.UtcNow;
         log.LogInformation("mesh: paired with {Who} ({Fp})", entry.Name, entry.Fp);
         Paired?.Invoke(entry);
         return entry;
