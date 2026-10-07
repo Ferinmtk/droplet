@@ -226,8 +226,8 @@ class MeshUnitTest {
         override fun spool(source: String, dest: File) { File(source).copyTo(dest, true) }
     }
 
-    private fun node(name: String, host: MeshHost = QuietHost()): MeshNode =
-        MeshNode(host, File(tmp, name), null, port = 0, bindAddress = InetAddress.getLoopbackAddress())
+    private fun node(name: String, host: MeshHost = QuietHost(), retryEveryMs: Long = 15_000): MeshNode =
+        MeshNode(host, File(tmp, name), null, port = 0, retryEveryMs = retryEveryMs, bindAddress = InetAddress.getLoopbackAddress())
             .also { it.start(); nodes += it }
 
     /** One request as [who] (null: no certificate); the status, or null if TLS refused it. */
@@ -320,6 +320,34 @@ class MeshUnitTest {
         val end = System.currentTimeMillis() + 5_000
         while (b.trust.get(a.identity.fp) != null && System.currentTimeMillis() < end) Thread.sleep(50)
         assertNull(b.trust.get(a.identity.fp))
+    }
+
+    /**
+     * The side that accepts trusts at once; the side that asked only once its owner has
+     * confirmed the code and it has polled. A message the accepting side sends in between is
+     * refused in the TLS handshake, and must go out within seconds of the asker trusting
+     * back, not at the next outbox round.
+     */
+    @Test
+    fun aMessageSentRightAfterAcceptingGoesOutOnceTheAskerTrustsBack() {
+        val a = node("a", retryEveryMs = 60_000)
+        val b = node("b", retryEveryMs = 60_000)
+        val og = a.pairStart("127.0.0.1", b.listeningPort, b.identity.fp)
+        val rid = b.incoming.waiting().single().request
+        b.pairAnswer(rid, true)
+        b.trust.learn(a.identity.fp, address = "127.0.0.1", port = a.listeningPort)   // mDNS tells it in real life
+        val job = b.sendText(a.identity.fp, "hello, new friend")
+        // a's owner hasn't confirmed yet: a refuses b's certificate, and the message waits
+        val first = b.awaitJob(job.getString("id"), 20_000)!!
+        assertEquals("queued", first.getString("state"))
+        assertNull(a.trust.get(b.identity.fp))
+        val confirmed = System.currentTimeMillis()
+        a.pairConfirm(og.request!!, true)
+        val done = b.outbox.await(job.getString("id"), 20_000) { it.optString("state") == "done" }
+        assertEquals("done", done?.getString("state"))
+        assertTrue("delivered at the next outbox round, not within seconds",
+            System.currentTimeMillis() - confirmed < MeshNode.PAIR_RETRY_MS + 6_000)
+        assertTrue(a.chat.recent(b.identity.fp).any { it.getString("body") == "hello, new friend" && it.getString("dir") == "in" })
     }
 
     /**

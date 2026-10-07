@@ -64,7 +64,7 @@ public sealed class DotNetPeer : IAsyncDisposable
     public static readonly IReadOnlySet<string> AllCaps = new HashSet<string>(Caps.All);
 
     public static async Task<DotNetPeer> StartAsync(string root, string name, FakePlatform? fakes = null, int? port = null, long maxRate = 0,
-        IMeshHost? host = null, TestLog? log = null)
+        IMeshHost? host = null, TestLog? log = null, TimeSpan? retryEvery = null)
     {
         fakes ??= new FakePlatform();
         log ??= new TestLog();
@@ -76,7 +76,7 @@ public sealed class DotNetPeer : IAsyncDisposable
             Downloads = Path.Combine(root, "Downloads"),
             Port = port,
             MaxRate = maxRate,
-            RetryEvery = TimeSpan.FromSeconds(2),
+            RetryEvery = retryEvery ?? TimeSpan.FromSeconds(2),
             LoggerFactory = log,
         }, dispatcher, fakes.Services);
         await node.StartAsync();
