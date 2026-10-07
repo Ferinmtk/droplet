@@ -487,8 +487,10 @@ It also adds what a web app can't do on a phone:
   file names (Xiaomi Gallery otherwise hands over bare numbers).
 - **A loud "find my phone" ring.** It plays on the alarm channel at full
   volume, so silent mode doesn't mute it, then puts the volume back.
-- **Notification mirroring:** the phone's notifications appear on a **Phone**
-  card in the Hub tab on your other devices, with its battery level.
+- **Notification mirroring:** the phone's notifications pop up on your
+  paired Windows and Linux computers, straight from the phone, no hub
+  needed. With a hub they also appear on a **Phone** card in the Hub tab on
+  your other devices, with its battery level.
 - **Notifications for files and messages** sent to the phone, even with the
   app closed.
 
@@ -503,7 +505,9 @@ directly** or **I have a droplet hub**. Settings live behind ⚙ (top right):
 - **Stay connected** lets other devices ring the phone and notifies you about
   files and messages. It shows a quiet "droplet connected" notification.
 - **Notification access** turns on mirroring. Leave apps out under **Apps not
-  to mirror**.
+  to mirror**; **Show phone notifications on my computers** switches off the
+  direct copy to your computers (each computer can also refuse them in its
+  own settings).
 
 Permissions: notifications, notification access (you grant it), a
 foreground service, exact alarms, and run at startup. No Google services,
