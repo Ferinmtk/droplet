@@ -300,6 +300,11 @@ EOF
         say "Service not installed. Start the agent with: $agent run"
     fi
 
+    # Droplet in the app menu: starts the tray, and says where its icon is
+    if [ "$tray" = 1 ]; then
+        "$agent" open --install >/dev/null 2>&1 </dev/null || true
+    fi
+
     # start (or restart, after an upgrade) the tray in this desktop session
     if [ "$tray" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
         nohup "$agent" tray >/dev/null 2>&1 </dev/null &
