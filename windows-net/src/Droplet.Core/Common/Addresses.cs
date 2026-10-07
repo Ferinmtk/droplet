@@ -187,6 +187,45 @@ public static class Addresses
             .ToList();
     }
 
+    /// <summary>
+    /// This machine's IPv4 default gateways, from up, non-virtual interfaces (no VMs,
+    /// containers or VPNs). On a phone's hotspot, that's the phone. Windows' own Mobile
+    /// hotspot (192.168.137.1) is this PC's address, not a gateway, so it isn't here.
+    /// </summary>
+    public static List<string> Gateways()
+    {
+        var output = new List<string>();
+        try
+        {
+            foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.OperationalStatus != OperationalStatus.Up || IsVirtual(nic))
+                {
+                    continue;
+                }
+                foreach (var g in nic.GetIPProperties().GatewayAddresses)
+                {
+                    var ip = g.Address;
+                    if (ip.AddressFamily != AddressFamily.InterNetwork || IPAddress.IsLoopback(ip) || IsUnspecified(ip) || IsMulticast(ip) ||
+                        IsTailnet(ip))
+                    {
+                        continue;
+                    }
+                    var s = ip.ToString();
+                    if (!output.Contains(s))
+                    {
+                        output.Add(s);
+                    }
+                }
+            }
+        }
+        catch (NetworkInformationException)
+        {
+            // no interface list: no gateway
+        }
+        return output;
+    }
+
     /// <summary>The address this machine would use to reach the internet: its main LAN address.</summary>
     public static string? PrimaryIPv4()
     {
