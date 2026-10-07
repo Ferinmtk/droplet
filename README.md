@@ -644,6 +644,10 @@ and the agent itself. For a machine with no browser (like the hub), use
   `loginctl lock-session` or your locker (gtklock, swaylock).
 - **Screenshots** use the portal, then niri, spectacle, gnome-screenshot or
   grim, whichever works. **Clipboard** uses wl-clipboard (xclip on X11).
+- **The tray.** droplet sits in the system tray (KDE Plasma, Wayland bars,
+  GNOME with the AppIndicator extension): send files, the clipboard or a
+  ring to a device, and accept or decline pairing requests. The installer
+  starts it with your desktop; on older installs, `droplet-agent tray --autostart`.
 - `droplet-agent status` shows what works and why the rest doesn't. Switch
   abilities off in `~/.config/droplet-agent/config.json`. Details:
   [agent/README.md](agent/README.md).

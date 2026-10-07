@@ -27,5 +27,9 @@ droplet-agent = "droplet_agent.cli:main"
 [tool.setuptools]
 packages = ["droplet_agent", "droplet_agent.inject", "droplet_agent.mesh"]
 
+[tool.setuptools.package-data]
+# the tray icon's pixels, made by tools/make_tray_icon.py (agent_dist.py ships it too)
+droplet_agent = ["tray_icon.bin"]
+
 [tool.setuptools.dynamic]
 version = { attr = "droplet_agent.__version__" }
