@@ -97,6 +97,11 @@ object Prefs {
         get() = sp.getStringSet("excluded", emptySet())!!.toSet()
         set(v) = sp.edit { putStringSet("excluded", v) }
 
+    /** Notification mirroring straight to paired computers (the mesh), hub or not. */
+    var mirrorToComputers: Boolean
+        get() = sp.getBoolean("mirror_to_computers", true)
+        set(v) = sp.edit { putBoolean("mirror_to_computers", v) }
+
     /** Packages seen posting notifications, so the exclude list can offer apps with no launcher icon. */
     var seenPackages: Set<String>
         get() = sp.getStringSet("seen_packages", emptySet())!!.toSet()

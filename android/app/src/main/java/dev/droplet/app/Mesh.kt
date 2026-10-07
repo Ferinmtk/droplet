@@ -281,6 +281,48 @@ object Mesh {
 
     fun broadcast(msg: JSONObject): Boolean = node?.broadcast(msg) ?: false
 
+    // --- notification mirroring, straight to your computers ---------------------------
+
+    /** This phone's notifications to paired computers that show them (docs/mesh.md §9.4). */
+    val notifyMirror = NotifyMirror(
+        node = { node },
+        enabled = { Prefs.mirrorToComputers },
+        excluded = { Prefs.excluded },
+        background = { block -> scope.launch { block() } },
+        log = { log(it) },
+    )
+    private val mirrorLock = Any()
+    private var mirrorFlush: kotlinx.coroutines.Job? = null
+
+    /** A notification was posted (see [NotifyMirror.posted]); it goes out shortly, with any that follow it. */
+    fun mirrorPosted(item: JSONObject, alerting: Boolean) {
+        notifyMirror.posted(item, alerting)
+        mirrorSoon()
+    }
+
+    fun mirrorRemoved(key: String) {
+        notifyMirror.removed(key)
+        mirrorSoon()
+    }
+
+    private fun mirrorSoon() {
+        synchronized(mirrorLock) {
+            if (mirrorFlush != null || !notifyMirror.hasWork()) return
+            mirrorFlush = scope.launch {
+                while (true) {
+                    delay(NotifyMirror.FLUSH_DELAY_MS)
+                    runCatching { notifyMirror.flush() }.onFailure { log("mesh: mirroring notifications: $it") }
+                    synchronized(mirrorLock) {
+                        if (!notifyMirror.hasWork()) {
+                            mirrorFlush = null
+                            return@launch
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * This phone's clipboard to your devices that take one, directly. When
      * the hub already took it to all of them ([viaHub]), only peers with an
