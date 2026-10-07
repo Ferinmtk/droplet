@@ -15,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.net.InetSocketAddress
+import java.net.Socket
 import javax.net.ssl.SSLSocket
 import kotlin.concurrent.thread
 
@@ -41,6 +43,12 @@ interface MeshHost {
     fun caps(): List<String>
     fun lastStates(): Map<String, Any?>
     fun localAddresses(): List<String>
+    /**
+     * The default gateways of the Wi-Fi this phone is on (IPv4, not VPNs or
+     * mobile data). On a laptop's or another phone's hotspot, that's the
+     * device serving it.
+     */
+    fun gateways(): List<String> = emptyList()
 
     fun onText(entry: TrustList.Entry, body: String, ts: Double)
     fun onRing(entry: TrustList.Entry)
@@ -119,6 +127,13 @@ class MeshNode(
     val listeningPort: Int get() = server?.port ?: 0
     val refused: Int get() = server?.refused?.get() ?: 0
     @Volatile private var announced: Map<String, String> = emptyMap()
+    /** (gateway, fingerprint): that gateway turned out not to be that peer, on this network. */
+    private val gatewayMisses = ConcurrentHashMap.newKeySet<Pair<String, String>>()
+    /** A gateway with nothing listening: when to look again, and the wait after that. */
+    private val gatewayQuiet = ConcurrentHashMap<String, Pair<Long, Long>>()
+    private val gatewayProbing = AtomicBoolean(false)
+    /** The network moved: look at the gateway on the next housekeeping round, not 30 s later. */
+    private val networkMoved = AtomicBoolean(true)
 
     private class Waiter(val fp: String) {
         val done = CountDownLatch(1)
@@ -191,10 +206,100 @@ class MeshNode(
             val now = System.currentTimeMillis()
             for (link in links.values.flatten()) {
                 if (link is InboundLink) link.watch(now)
-                if (link.outbound && now - link.lastUsed > IDLE_CLOSE_MS) link.close(1000, "idle")
+                if (link.outbound && !link.keep && now - link.lastUsed > IDLE_CLOSE_MS) link.close(1000, "idle")
             }
-            if (++n % 6 == 0) runCatching { refreshAnnouncement() }
+            val round = ++n % 6 == 0
+            if (round) runCatching { refreshAnnouncement() }
+            if ((networkMoved.getAndSet(false) || round) && gatewayProbing.compareAndSet(false, true)) {
+                // its own thread: a dial can take a while, and the links above still need watching
+                thread(name = "mesh-gateway", isDaemon = true) {
+                    try {
+                        probeGateways()
+                    } catch (e: Exception) {
+                        host.log("mesh: looking for a paired device at the gateway: $e")
+                    } finally {
+                        gatewayProbing.set(false)
+                    }
+                }
+            }
         }
+    }
+
+    /**
+     * The Wi-Fi changed (joined, left, or its addresses or routes moved).
+     * [newNetwork]: a different network, so what was learnt about its
+     * gateway no longer holds (hotspots often reuse the same address).
+     */
+    fun networkChanged(newNetwork: Boolean) {
+        if (newNetwork) gatewayMisses.clear()
+        gatewayQuiet.clear()
+        networkMoved.set(true)
+    }
+
+    private fun currentGateways(): List<String> = runCatching { host.gateways() }.getOrDefault(emptyList())
+
+    /**
+     * Links with a paired device that is this Wi-Fi's gateway: a laptop or
+     * a phone serving the hotspot this phone joined. Android doesn't announce
+     * on a hotspot it serves, and laptops' hotspots may not pass mDNS on, so
+     * neither side would find the other; the device serving it is always the
+     * gateway, though. Only the device whose certificate is pinned for that
+     * peer gets a link, and it stays open (it's how the other side knows this
+     * phone is there). A gateway that turned out not to be a peer isn't tried
+     * for it again until the network changes; one with nothing listening is
+     * looked at less and less often (up to every 5 minutes), for the battery.
+     */
+    fun probeGateways(): Link? {
+        val gateways = currentGateways()
+        gatewayMisses.removeAll { it.first !in gateways }
+        gatewayQuiet.keys.retainAll(gateways.toSet())
+        val now = System.currentTimeMillis()
+        for (gw in gateways) {
+            if (stopped) return null
+            if ((gatewayQuiet[gw]?.first ?: 0L) > now) continue
+            if (links.values.any { l -> synchronized(l) { l.any { it.address == gw && !it.closed } } }) continue
+            val closedPorts = HashSet<Int>()
+            var listening = false
+            for (entry in trust.all()) {
+                if (stopped) return null
+                val port = entry.port ?: DEFAULT_PORT
+                if (openLink(entry.fp) != null || (gw to entry.fp) in gatewayMisses || port in closedPorts) continue
+                if (!answers(gw, port)) {
+                    closedPorts += port
+                    continue
+                }
+                listening = true
+                var linked = false
+                val link = synchronized(dialLocks.getOrPut(entry.fp) { Any() }) {
+                    if (openLink(entry.fp) != null) { linked = true; null } else dial(entry, gw, port, "lan")
+                }
+                if (linked) continue
+                if (link == null) {
+                    gatewayMisses += gw to entry.fp
+                    continue
+                }
+                link.keep = true
+                gatewayQuiet.remove(gw)
+                host.log("mesh: link open with ${entry.name} at the gateway ($gw): its hotspot")
+                return link
+            }
+            if (listening || closedPorts.isEmpty()) gatewayQuiet.remove(gw)
+            else {
+                val wait = ((gatewayQuiet[gw]?.second ?: (GATEWAY_EVERY_MS / 2)) * 2).coerceAtMost(GATEWAY_QUIET_MAX_MS)
+                gatewayQuiet[gw] = (now + wait) to wait
+            }
+        }
+        return null
+    }
+
+    /** Tests: whether [gateway] turned out not to be the peer [fp] on this network. */
+    internal fun missedAtGateway(gateway: String, fp: String): Boolean = (gateway to fp) in gatewayMisses
+
+    private fun answers(address: String, port: Int): Boolean = try {
+        Socket().use { it.connect(InetSocketAddress(address, port), LAN_TIMEOUT_MS.toInt()) }
+        true
+    } catch (e: java.io.IOException) {
+        false
     }
 
     // --- trust ------------------------------------------------------------------
@@ -242,6 +347,8 @@ class MeshNode(
         @Volatile var port: Int? = null
         val opened = System.currentTimeMillis()
         @Volatile var lastUsed = System.currentTimeMillis()
+        /** Not closed when idle: a link with the device serving this hotspot. */
+        @Volatile var keep = false
         private val finished = AtomicBoolean(false)
         val isReady get() = ready.count == 0L
         abstract val closed: Boolean
@@ -405,6 +512,8 @@ class MeshNode(
             s.addresses.forEach { a -> out += Triple(a, s.port, if (isTailnet(a)) "tailnet" else "lan") }
         }
         entry.lan.forEach { a -> out += Triple(a, port, if (isTailnet(a)) "tailnet" else "lan") }
+        // a device serving the hotspot may not announce itself on it, but it's the hotspot's gateway
+        currentGateways().filter { (it to entry.fp) !in gatewayMisses }.forEach { out += Triple(it, port, "lan") }
         entry.tailnetIp?.let { out += Triple(it, port, "tailnet") }
         return out.sortedBy { it.third == "tailnet" }.distinctBy { it.first to it.second }
     }
@@ -422,6 +531,7 @@ class MeshNode(
             for ((address, port, kind) in candidates(entry)) {
                 val link = dial(entry, address, port, kind)
                 if (link != null) {
+                    if (kind == "lan" && address in currentGateways()) link.keep = true
                     host.log("mesh: link open with ${entry.name} over $kind ($address:$port)")
                     return link
                 }
@@ -921,6 +1031,8 @@ class MeshNode(
         const val ACK_TIMEOUT_MS = 10_000L
         const val STALL_MS = 60_000L
         const val IDLE_CLOSE_MS = 300_000L
+        const val GATEWAY_EVERY_MS = 30_000L
+        const val GATEWAY_QUIET_MAX_MS = 300_000L
         const val IDLE_PING_MS = 20_000L
         const val DEAD_AFTER_MS = 60_000L
         const val MAX_TEXT = 64 * 1024
