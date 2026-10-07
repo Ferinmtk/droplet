@@ -2,21 +2,57 @@
 
 Lets your phone and other devices control a Linux computer through droplet:
 mouse and keyboard, the presentation remote, media playback and volume,
-locking, screenshots and clipboard sync. It keeps a WebSocket open to the hub
-and acts on what arrives. The protocol is [docs/remote.md](../docs/remote.md).
+locking, screenshots and clipboard sync. The protocol is
+[docs/remote.md](../docs/remote.md).
 
-It's also a **mesh peer** ([docs/mesh.md](../docs/mesh.md)): your devices
-talk to it directly, like KDE Connect, and it keeps working when the hub is
-down. Chat, files, ringing, clipboard and remote control all go device to
-device, and fall back to the hub only when the other device can't be
-reached directly.
+It doesn't need a hub. It's a **mesh peer** ([docs/mesh.md](../docs/mesh.md)):
+your devices pair with it and talk to it directly, like KDE Connect. Chat,
+files, ringing, clipboard and remote control all go device to device. A
+droplet hub is an optional extra: with one, the agent also keeps a WebSocket
+open to it, and falls back to it when the other device can't be reached
+directly.
 
 ## Install
 
-On the computer you want to control, open droplet in its browser, go to
-**Devices → Link an app**, and run the command it shows, with the hub's
-address in it. On the home Wi-Fi that's its LAN address, and no Tailscale is
-needed:
+No hub needed. On the computer, run:
+
+```sh
+curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
+```
+
+Then pair it with your phone: open droplet on the phone, tap **Pair a
+device** and pick this computer. Both screens show the same four digits;
+accept on the computer from the tray (or run `droplet-agent pair`). Other
+computers pair with `droplet-agent pair <name>` (see [the mesh](#the-mesh-talking-to-your-devices-directly)).
+
+The installer needs no sudo. It:
+
+- downloads the agent from droplet's latest GitHub release and checks it
+  against the release's `SHA256SUMS.txt` (only its dependencies,
+  `websockets`, `jeepney`, `zeroconf` and `cryptography`, come from PyPI),
+- creates a Python virtual environment in `~/.local/share/droplet-agent`,
+  and links `droplet-agent` into `~/.local/bin`,
+- installs and starts a systemd user service, `droplet-agent.service`, which
+  starts with your desktop session (`--no-service` leaves it out),
+- puts droplet in the system tray, now and with every desktop session
+  (`--no-tray` leaves it out),
+- prints `droplet-agent doctor`'s advice.
+
+Running it again upgrades the agent and keeps your settings and pairings.
+`--release v1.2.0` installs a given release instead of the latest, and
+`--wheel FILE` (a path or URL) a wheel you have.
+
+Needs Python 3.9 or newer, with `venv` (on Debian and Ubuntu:
+`sudo apt install python3-venv`), and curl or wget.
+
+### With a droplet hub (optional)
+
+A [hub](../README.md) adds a web app, a mailbox for devices that are off,
+and remote access over Tailscale. If you run one, it serves the installer
+and the agent itself, and links the computer to it. On the computer you
+want to control, open droplet in its browser, go to **Devices → Link an
+app**, and run the command it shows, with the hub's address in it. On the
+home Wi-Fi that's its LAN address, and no Tailscale is needed:
 
 ```sh
 curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 123456
@@ -28,19 +64,11 @@ or, from anywhere on your tailnet:
 curl -fsSL https://<hub's tailnet name>/agent/install.sh | sh -s -- --code 123456
 ```
 
-The installer needs no sudo. It:
-
-- creates a Python virtual environment in `~/.local/share/droplet-agent`,
-- installs the agent, downloaded from the hub itself (only its
-  dependencies, `websockets`, `jeepney`, `zeroconf` and `cryptography`,
-  come from PyPI),
-- links to the hub, and saves the token and the hub's identity in
-  `~/.config/droplet-agent/config.json` (mode 600),
-- installs and starts a systemd user service, `droplet-agent.service`, which
-  starts with your desktop session,
-- prints `droplet-agent doctor`'s advice.
-
-Running it again upgrades the agent and keeps the link.
+That installs the agent the hub serves (the same version as the hub), and
+links to the hub: the token and the hub's identity go in
+`~/.config/droplet-agent/config.json` (mode 600). The release's installer
+does the same with `--hub URL`. An agent installed without a hub links to
+one later with `droplet-agent setup`.
 
 **Without a link code** (a computer with no browser, like the hub), leave
 `--code` out. The computer joins as a new device named after itself (or
@@ -48,9 +76,6 @@ Running it again upgrades the agent and keeps the link.
 waits: it prints a four-digit code, and one of your devices gets "slim wants
 to join, code 1234: Allow / Deny". Check the codes match and allow it. Or
 give the hub's PIN with `--pin 1234`, if it has one.
-
-Needs Python 3.9 or newer, with `venv` (on Debian and Ubuntu:
-`sudo apt install python3-venv`).
 
 ## How it finds the hub
 

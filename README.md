@@ -617,8 +617,23 @@ says so. Details: [android/README.md](android/README.md#bluetooth-mouse--keyboar
 
 ### Linux computers (droplet agent)
 
-On the computer, run the command **Set up remote control** shows. At home,
-use the hub's LAN address; no Tailscale needed:
+No hub needed. On the computer, run:
+
+```sh
+curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
+```
+
+then pair it with your phone (droplet on the phone → **Pair a device**, and
+accept on the computer from the tray or with `droplet-agent pair`).
+Computers pair with each other with `droplet-agent pair <name>`.
+
+No sudo: it installs into `~/.local/share/droplet-agent` and runs as a
+`systemd --user` service with your desktop. The agent comes from the latest
+GitHub release, checked against its `SHA256SUMS.txt`.
+
+**With a hub** (optional), run the command **Set up remote control** shows
+instead: the hub serves the script and the agent itself, and links the
+computer to it. At home, use the hub's LAN address; no Tailscale needed:
 
 ```sh
 curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 123456
@@ -627,14 +642,11 @@ curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 12
 (or `https://<hub's tailnet name>/agent/install.sh` from anywhere on your
 tailnet). Without a link code, leave `--code` out: over the LAN it shows a
 four-digit code and waits for you to allow it (or give the PIN with `--pin`).
-`droplet-agent setup` on its own finds hubs on the network. Like the other
-apps, the agent is local-first. On the hub machine itself it uses loopback,
-and `droplet-agent status` shows the route.
-
-No sudo: it installs into `~/.local/share/droplet-agent` and runs as a
-`systemd --user` service with your desktop. The hub serves both the script
-and the agent itself. For a machine with no browser (like the hub), use
-`--name NAME` instead of `--code`.
+For a machine with no browser (like the hub), use `--name NAME` instead of
+`--code`. `droplet-agent setup` on its own finds hubs on the network, also
+on an agent installed without one. Like the other apps, the agent is
+local-first. On the hub machine itself it uses loopback, and
+`droplet-agent status` shows the route.
 
 - **Input.** On KDE and GNOME it goes through the desktop's remote-control
   portal, which asks you once to allow it. On niri, sway and other

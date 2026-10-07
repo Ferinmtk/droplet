@@ -27,7 +27,8 @@ buttons never need editing:
 |---|---|
 | `/android` | `releases/latest/download/droplet-android.apk` |
 | `/windows` | `releases/latest/download/droplet-windows.exe` |
-| `/linux` | the agent's README |
+| `/linux` | the agent's README, at Install (a page to read: the install is a command) |
+| `/linux.sh` | `releases/latest/download/install-agent.sh`, for `curl -fsSL <site>/linux.sh \| sh` |
 | `/releases`, `/source` | GitHub |
 
 **This only works if every release keeps those exact asset names.** A release with

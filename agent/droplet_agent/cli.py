@@ -737,7 +737,13 @@ def cmd_doctor(args) -> int:
     caps = _probe_caps(cfg)
     problems = 0
     print("droplet-agent doctor\n")
-    if not config.is_set_up(cfg):
+    mesh_on = (cfg.get("mesh") or {}).get("enabled", True) is not False
+    if not config.is_set_up(cfg) and mesh_on and not cfg.get("pending"):
+        # a hub is optional: the mesh works without one
+        print("• No hub: your devices pair with this computer directly (droplet-agent pair, or")
+        print("  Pair a device in droplet on the phone). To link a droplet hub as well, if you")
+        print("  have one: droplet-agent setup\n")
+    elif not config.is_set_up(cfg):
         problems += 1
         print("• Not linked to a hub. Run droplet-agent setup: it finds the hub on this network")
         print("  and asks one of your devices to let this computer in. Or, from droplet in this")
