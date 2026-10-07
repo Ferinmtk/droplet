@@ -624,3 +624,35 @@ def test_file_over_a_direct_link(nodes, tmp_path):
     link.send(offer.message())
     assert offer.done.wait(5) and offer.result == (True, "")
     assert len(list((tmp_path / "b" / "dl").iterdir())) == 1
+
+
+# --- a phone's hotspot: the peer is the gateway -------------------------------------------
+
+def test_default_gateways_reads_the_route_table(tmp_path):
+    table = tmp_path / "route"
+    table.write_text(
+        "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+        "wlp3s0\t00000000\tB129A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\n"      # default via 192.168.41.177
+        "wlp3s0\t0029A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\t0\t0\t0\n"      # the subnet, no gateway
+        "docker0\t00000000\t010011AC\t0003\t0\t0\t0\t00000000\t0\t0\t0\n")       # a container's default
+    from droplet_agent.mesh.node import default_gateways
+    assert default_gateways(str(table)) == ["192.168.41.177"]
+    assert default_gateways(str(tmp_path / "missing")) == []
+
+
+def test_a_paired_phone_serving_the_hotspot_is_found_at_the_gateway(nodes):
+    laptop, phone, other = nodes("laptop"), nodes("phone"), nodes("other")
+    for peer in (phone, other):
+        # the laptop knows them only by an address from another network
+        laptop.trust.add_paired(make_entry(peer_id=peer.peer_id, name=peer.name, cert_pem=peer.identity.cert_pem,
+                                           source="paired", lan=["10.255.255.1"], port=phone.port))
+        peer.trust.add_paired(make_entry(peer_id=laptop.peer_id, name=laptop.name,
+                                         cert_pem=laptop.identity.cert_pem, source="paired", port=laptop.port))
+    laptop.gateways = lambda: ["127.0.0.1"]          # the phone is the gateway (its port, above)
+    link = laptop.probe_gateways()
+    assert link is not None and link.fp == phone.identity.fp and link.keep
+    assert wait_for(lambda: phone.open_link(laptop.identity.fp) is not None)   # the phone sees the laptop
+    # "other" isn't at the gateway: tried at most once, then left alone on this network
+    assert ("127.0.0.1", phone.identity.fp) not in laptop._gateway_misses
+    misses = set(laptop._gateway_misses)
+    assert laptop.probe_gateways() is None and laptop._gateway_misses >= misses

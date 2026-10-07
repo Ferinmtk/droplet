@@ -226,8 +226,8 @@ class MeshUnitTest {
         override fun spool(source: String, dest: File) { File(source).copyTo(dest, true) }
     }
 
-    private fun node(name: String, retryEveryMs: Long = 15_000): MeshNode =
-        MeshNode(QuietHost(), File(tmp, name), null, port = 0, retryEveryMs = retryEveryMs, bindAddress = InetAddress.getLoopbackAddress())
+    private fun node(name: String, host: MeshHost = QuietHost(), retryEveryMs: Long = 15_000): MeshNode =
+        MeshNode(host, File(tmp, name), null, port = 0, retryEveryMs = retryEveryMs, bindAddress = InetAddress.getLoopbackAddress())
             .also { it.start(); nodes += it }
 
     /** One request as [who] (null: no certificate); the status, or null if TLS refused it. */
@@ -405,5 +405,70 @@ class MeshUnitTest {
             "caps" to "media,input".toByteArray(), "hub" to "".toByteArray(), "v" to "1".toByteArray()))!!
         assertEquals(listOf("input", "media"), seen.caps)
         assertNull(NsdPeerDirectory.parse("192.168.1.9", 1739, mapOf("id" to "zz".toByteArray())))
+    }
+
+    // --- a hotspot: the peer is the gateway ----------------------------------------------------
+
+    @Test
+    fun gatewaysAreIpv4AndNotTheTailnet() {
+        fun ip(s: String) = InetAddress.getByName(s)
+        assertEquals(listOf("192.168.41.177", "10.42.0.1"), Mesh.gatewayAddresses(listOf(ip("192.168.41.177"), null,
+            ip("fe80::1"), ip("2001:db8::1"), ip("100.100.100.100"), ip("127.0.0.1"), ip("0.0.0.0"), ip("10.42.0.1"),
+            ip("192.168.41.177"))))
+        assertEquals(listOf<String>(), Mesh.gatewayAddresses(listOf()))
+    }
+
+    @Test
+    fun aPairedLaptopServingTheHotspotIsFoundAtTheGateway() {
+        var gateways = listOf("127.0.0.1")
+        val phone = node("phone", object : QuietHost() {
+            override fun gateways() = gateways
+        })
+        val laptop = node("laptop")
+        val another = node("another")
+        for (peer in listOf(laptop, another)) {
+            // the phone knows them only by an address from another network, and both at the laptop's port:
+            // something answers at the gateway for each, but only the laptop's certificate is pinned for it
+            phone.trust.addPaired(TrustList.makeEntry(peerId = peer.peerId, name = if (peer === laptop) "laptop" else "another",
+                certPem = peer.identity.pem, source = TrustList.SOURCE_PAIRED, lan = listOf("10.255.255.1"),
+                port = laptop.listeningPort))
+            peer.trust.addPaired(TrustList.makeEntry(peerId = phone.peerId, name = "phone", certPem = phone.identity.pem,
+                source = TrustList.SOURCE_PAIRED, port = phone.listeningPort))
+        }
+        // "another" comes first by name: tried, isn't there, and remembered as not there
+        val link = phone.probeGateways()
+        assertNotNull(link)
+        assertEquals(laptop.identity.fp, link!!.fp)
+        assertTrue(link.keep)   // not closed when idle: it's how the laptop knows the phone is there
+        assertTrue(phone.missedAtGateway("127.0.0.1", another.identity.fp))
+        assertFalse(phone.missedAtGateway("127.0.0.1", laptop.identity.fp))
+        val end = System.currentTimeMillis() + 5_000
+        while (laptop.openLink(phone.identity.fp) == null && System.currentTimeMillis() < end) Thread.sleep(50)
+        assertNotNull(laptop.openLink(phone.identity.fp))   // the laptop sees the phone
+
+        // a link to the gateway already: nothing more to do
+        assertNull(phone.probeGateways())
+        // on another network (a gateway at another address), what was learnt about the old one goes
+        gateways = listOf("127.0.0.2")
+        assertNull(phone.probeGateways())   // nothing listens there: no link, and nobody marked as not there
+        assertFalse(phone.missedAtGateway("127.0.0.1", another.identity.fp))
+        assertFalse(phone.missedAtGateway("127.0.0.2", another.identity.fp))
+    }
+
+    @Test
+    fun theGatewayIsADialCandidateAfterKnownAddresses() {
+        val laptop = node("laptop")
+        val phone = node("phone", object : QuietHost() {
+            override fun gateways() = listOf("127.0.0.1")
+        })
+        phone.trust.addPaired(TrustList.makeEntry(peerId = laptop.peerId, name = "laptop", certPem = laptop.identity.pem,
+            source = TrustList.SOURCE_PAIRED, lan = listOf("127.0.0.2"), port = laptop.listeningPort))
+        laptop.trust.addPaired(TrustList.makeEntry(peerId = phone.peerId, name = "phone", certPem = phone.identity.pem,
+            source = TrustList.SOURCE_PAIRED, port = phone.listeningPort))
+        // the old address doesn't answer; the gateway does, and the link stays open
+        val link = phone.direct(laptop.identity.fp)
+        assertNotNull(link)
+        assertEquals("127.0.0.1", link!!.address)
+        assertTrue(link.keep)
     }
 }
