@@ -70,7 +70,8 @@ def make_node(tmp_path, name, port=0, host=None, retry_every=0.3):
     base = tmp_path / name
     n = MeshNode(host, config_dir=base / "cfg", data_dir=base / "data", downloads=base / "dl", port=port,
                  announce=False, control=False, retry_every=retry_every, local_addresses=lambda: ["127.0.0.1"],
-                 dry_run=True)
+                 dry_run=True, gateways=lambda: [])   # never the test machine's own router
+
     n.start()
     return n
 
@@ -721,3 +722,26 @@ def test_the_notify_cap_follows_the_setting():
     # an older config without the setting: on
     del cfg["mesh"]["phone_notifications"]
     assert "notify" in host.mesh_caps()
+
+
+def test_a_link_survives_reads_and_writes_overlapping_from_both_sides(nodes):
+    """The reader and the senders share one TLS socket; an overlapping read can come back
+    "try again" (EAGAIN). That isn't the end of the link (it was, under load in CI)."""
+    a, b = nodes("a"), nodes("b")
+    trust_each_other(a, b)
+    la = a.direct(b.identity.fp)
+    assert la is not None and wait_for(lambda: b.open_link(a.identity.fp) is not None)
+    lb = b.open_link(a.identity.fp)
+    stop = time.monotonic() + 3
+
+    def pump(link, pad):
+        while time.monotonic() < stop and not link.closed:
+            link.send({"t": "ping", "pad": pad * 2000})
+            time.sleep(0.002)
+    threads = [threading.Thread(target=pump, args=(link, pad))
+               for link, pad in ((la, "x"), (lb, "y"), (la, "z"), (lb, "w"))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not la.closed and not lb.closed
