@@ -532,6 +532,25 @@ def cmd_send(args) -> int:
     return 0
 
 
+# --- the tray ----------------------------------------------------------------
+
+def cmd_tray(args) -> int:
+    from . import tray
+    if args.autostart:
+        path = tray.enable_autostart()
+        tray.start_detached()
+        print(f"The tray is starting, and starts with your desktop from now on ({path}).")
+        return 0
+    if args.no_autostart:
+        removed = tray.disable_autostart()
+        closed = tray.stop_running()
+        print(("The tray no longer starts with your desktop" if removed else "The tray wasn't set to start")
+              + (", and it's closed." if closed else "."))
+        return 0
+    _setup_logging(args.verbose)
+    return tray.run()
+
+
 # --- status ------------------------------------------------------------------
 
 def _probe_caps(cfg: dict) -> dict[str, tuple[bool, str]]:
@@ -792,7 +811,8 @@ def cmd_doctor(args) -> int:
 # --- uninstall ---------------------------------------------------------------
 
 def cmd_uninstall(args) -> int:
-    targets = [unit_path(), desktop_file_path(), Path.home() / ".local/bin/droplet-agent",
+    from . import tray
+    targets = [unit_path(), desktop_file_path(), tray.autostart_path(), Path.home() / ".local/bin/droplet-agent",
                config.config_dir(), data_dir()]
     if not args.yes:
         print("This stops the agent and removes:")
@@ -802,6 +822,7 @@ def cmd_uninstall(args) -> int:
             return 1
     if env.which("systemctl"):
         env.run(["systemctl", "--user", "disable", "--now", SERVICE], timeout=30)
+    tray.stop_running()
     for t in targets:
         try:
             if t.is_symlink() or t.is_file():
@@ -884,6 +905,18 @@ def main(argv=None) -> int:
     sn.add_argument("peer")
     sn.add_argument("message", help='JSON, e.g. \'{"t":"input","ev":[{"k":"key","key":"ArrowRight"}]}\'')
     sn.set_defaults(func=cmd_send)
+    ty = sub.add_parser("tray", help="show droplet in the system tray",
+                        description="Show droplet in the system tray (KDE Plasma, and other desktops that show "
+                                    "StatusNotifierItem icons): send files, the clipboard or a ring to your "
+                                    "devices, and answer pairing requests. Starting it again replaces the one "
+                                    "running.")
+    g = ty.add_mutually_exclusive_group()
+    g.add_argument("--autostart", action="store_true",
+                   help="start the tray with your desktop from now on, and start it now")
+    g.add_argument("--no-autostart", action="store_true",
+                   help="stop starting the tray with your desktop, and close it")
+    ty.add_argument("-v", "--verbose", action="store_true")
+    ty.set_defaults(func=cmd_tray)
     sub.add_parser("doctor", help="explain how to fix what's missing").set_defaults(func=cmd_doctor)
     u = sub.add_parser("uninstall", help="stop the service and remove the agent")
     u.add_argument("-y", "--yes", action="store_true", help="don't ask")

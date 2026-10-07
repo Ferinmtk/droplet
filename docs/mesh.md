@@ -59,7 +59,7 @@ directly. The mesh brings that to droplet:
   | `fp` | certificate fingerprint |
   | `name` | device name |
   | `os` | `android`, `windows` or `linux` |
-  | `caps` | comma-separated, same names as `docs/remote.md` |
+  | `caps` | comma-separated, same names as `docs/remote.md`, plus `notify` (§9.4) |
   | `hub` | the id of the hub it belongs to, or empty |
   | `v` | protocol version, `1` |
 
@@ -313,6 +313,13 @@ lowercase hex characters.
    **and** I's own owner confirmed the codes match: an impostor answering
    for R could say `accepted`, but can't make the codes match.
 
+   So for a while R trusts I but I doesn't trust R yet: I's TLS refuses
+   R's certificate ("unknown CA") until its owner has confirmed and its next
+   poll has seen `accepted`, seconds or minutes later. For 2 minutes after
+   accepting, R tries I again every 2 seconds when it can't reach it
+   directly, instead of waiting for the outbox's usual round (15 s), so a
+   message sent right after pairing goes out as soon as I trusts back.
+
 The same HTTPS connection may carry several of these requests
 (keep-alive). Each body is JSON, at most 64 KB.
 
@@ -348,12 +355,45 @@ TLS. `from` in a message is ignored and replaced; `to` isn't needed.
 | `{"t":"nack","id","error"}` | refused for good (too long, no space, a bad offer); the sender doesn't retry (*added*) |
 | `{"t":"offer","id","name","size","mime"}` | a file; `id` 16–64 hex. See §9.5 |
 | `{"t":"ring"}` / `{"t":"ring-stop"}` | play a sound to find the device |
-| `{"t":"notify","app","title","text","key"}` / `{"t":"notify-removed","key"}` | notification mirroring |
+| `{"t":"notify","app","title","text","key"}` / `{"t":"notify-removed","key"}` | notification mirroring: a phone's notification, shown as a desktop notification and replaced by the next with the same `key`; `notify-removed` takes it away. See below |
 | `{"t":"unpair"}` | "I unpaired you": a `paired` peer removes the sender; a `roster` one is kept (the hub vouches) (*added*) |
 | `{"t":"ping"}` → `{"t":"pong"}` | app-level liveness, as with the hub |
 
 A `cmd` `screenshot` over a link goes back to the requester as an `offer`
 over the mesh, not an upload to the hub.
+
+**Notification mirroring** (*added*) needs no hub. A computer that shows a
+phone's notifications says so with the cap **`notify`** in its hello (and
+mDNS and the roster); it drops it when its owner turns that off (Linux
+`mesh.phone_notifications`, Windows Settings → Notifications → Show my
+phone's notifications), so the text never leaves the phone for it. The
+phone sends `notify` only to peers whose `os` is `linux`, `windows` or
+`macos` and whose caps include `notify`:
+
+- `key` is the phone's own key for the notification (Android's
+  `StatusBarNotification.getKey()`, at most 200 characters), the same for
+  each update of it; `app` is the app's name (at most 80), `title` at most
+  200, `text` at most 1000. The receiver shows "`title` (phone name)" with
+  `text`, under `app`, keyed by the sender's fingerprint and `key`, so an
+  update replaces the last one; `notify-removed` closes it. Neither is
+  acknowledged.
+- The phone sends what its Notification access sees, minus what it never
+  mirrors: apps under **Apps not to mirror**, ongoing ones, foreground
+  services, group summaries, local-only ones, progress, transport, service
+  and system ones; and for the mesh, also ones the phone itself shows
+  silently or holds back for Do Not Disturb, and a repost with the same
+  app, title and text as the one already sent.
+- Bursts are capped: notifications posted within a second go together, at
+  most 10 at once and 20 a minute (the newest go; the rest are dropped, not
+  queued).
+- Over a link that's already open. With none, the phone dials the computer
+  when a notification arrives, at most once a minute per computer; never
+  on a timer, and not for a removal alone. A link it opened closes after 5
+  idle minutes, as usual.
+- With a hub too, the phone also posts to the hub's Phone card
+  (`/api/phone/notifications`), which is a list on the hub's page and pops
+  nothing up, so nothing is shown twice. The mesh copy goes whether or not
+  there's a hub.
 
 ### 9.5 Files
 
@@ -440,6 +480,11 @@ this is it.
   same bridges as through the hub; `input` and `cmd` are answered with
   `{"t":"error","re":…}` (the phone takes neither, and doesn't announce
   them).
+- **What it sends by itself:** its notifications, as `notify` and
+  `notify-removed`, to paired computers that announce `notify` (above),
+  while the mesh runs (Stay connected), with Notification access, and
+  unless **Show phone notifications on my computers** is off
+  (`NotifyMirror.kt`).
 - **Tests** (`android/app/src/test`): `MeshUnitTest` (the certificate
   profile, pairing vectors from the reference, Range, the server's access
   rules over real sockets, two JVM peers pairing and talking) and

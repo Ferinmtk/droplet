@@ -1,6 +1,7 @@
 package dev.droplet.app
 
 import android.app.Notification
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.ApplicationInfo
@@ -21,8 +22,9 @@ import org.json.JSONObject
 
 /**
  * Notification mirroring: forwards this phone's notifications (and their
- * removal) to the hub, where other devices show them in the Phone card.
- * The system runs this once the user grants Notification access.
+ * removal) straight to your paired computers over the mesh ([NotifyMirror]),
+ * and, with a hub, to the hub, where other devices show them in the Phone
+ * card. The system runs this once the user grants Notification access.
  */
 class MirrorService : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -64,6 +66,8 @@ class MirrorService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val item = describe(sbn) ?: return
+        // straight to your computers too, hub or not: they pop it up, while the hub keeps a list
+        Mesh.mirrorPosted(item, alerting(sbn))
         synchronized(lock) {
             removed.remove(sbn.key)
             posted.remove(sbn.key)  // re-insert so the newest is last
@@ -75,11 +79,22 @@ class MirrorService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        Mesh.mirrorRemoved(sbn.key)
         synchronized(lock) {
             if (posted.remove(sbn.key) == null && sbn.key !in forwarded) return
             removed += sbn.key
         }
         scheduleFlush(FLUSH_DELAY_MS)
+    }
+
+    /**
+     * Whether the phone itself alerts for it (sound, vibration or a pop-up):
+     * a computer shouldn't pop up for what the phone shows quietly.
+     */
+    private fun alerting(sbn: StatusBarNotification): Boolean {
+        val r = Ranking()
+        if (runCatching { currentRanking?.getRanking(sbn.key, r) }.getOrNull() != true) return true
+        return quiet(r.importance, r.matchesInterruptionFilter()).not()
     }
 
     /** What the hub gets for a notification, or null if it shouldn't be mirrored. */
@@ -177,6 +192,10 @@ class MirrorService : NotificationListenerService() {
             Notification.CATEGORY_PROGRESS, Notification.CATEGORY_TRANSPORT,
             Notification.CATEGORY_SERVICE, Notification.CATEGORY_SYSTEM,
         )
+
+        /** Silent or minimised on the phone, or held back by Do Not Disturb. */
+        fun quiet(importance: Int, passesDnd: Boolean): Boolean =
+            !passesDnd || (importance != NotificationManager.IMPORTANCE_UNSPECIFIED && importance < NotificationManager.IMPORTANCE_DEFAULT)
 
         fun isEnabled(context: Context): Boolean {
             val me = ComponentName(context, MirrorService::class.java).flattenToString()

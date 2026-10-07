@@ -162,6 +162,39 @@ sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --re
 
 **Without a hub**, `droplet-agent run` (and the service) runs the mesh alone.
 
+## The tray
+
+`droplet-agent tray` puts droplet in the system tray. Its menu lists:
+
+- this computer's name, then each trusted device with how it can be reached
+  (*connected*, *nearby* on the LAN, or *not reachable*). Each has **Send
+  files…** (the desktop's file picker; a notification says when they've
+  arrived, failed, or are waiting in the outbox), **Send clipboard** and
+  **Ring**;
+- each device **asking to pair**, with its code, and **Accept** / **Decline**.
+  While one is waiting the icon gets an orange dot and asks for attention;
+- **Open received files**.
+
+The tooltip says how many devices are connected. When the agent isn't
+running the icon greys out and the menu says so; it picks up again when
+the agent starts.
+
+It speaks the StatusNotifierItem protocol, so it shows on KDE Plasma, most
+Wayland bars (waybar, and others with a tray), and on GNOME with the
+AppIndicator extension (Ubuntu has it already). It's a small separate
+process that talks to the agent the way the CLI does; the systemd service
+can't show icons, so the tray starts with your desktop session instead:
+the installer adds `~/.config/autostart/io.github.ferinmtk.DropletAgent.Tray.desktop`
+and starts it (`--no-tray` leaves it out). On a computer installed before
+the tray existed:
+
+```sh
+droplet-agent tray --autostart      # start it now, and with the desktop from now on
+droplet-agent tray --no-autostart   # stop that, and close it
+```
+
+Starting it again replaces the one running, so there's only ever one.
+
 ## Commands
 
 | command | what it does |
@@ -175,7 +208,8 @@ sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --re
 | `droplet-agent pair [PEER]` | pair directly with a device; with nothing, answer the devices asking (`--accept`, `--deny`) |
 | `droplet-agent unpair PEER` | stop trusting a directly paired device |
 | `droplet-agent text`, `send-file`, `ring`, `clip`, `send` | send to a device: see [the mesh](#the-mesh-talking-to-your-devices-directly) |
-| `droplet-agent uninstall` | stop the service and remove the agent, its settings and the service file |
+| `droplet-agent tray` | droplet in the system tray: see [the tray](#the-tray). `--autostart` / `--no-autostart` |
+| `droplet-agent uninstall` | stop the service and the tray, and remove the agent, its settings, the service file and the tray's autostart entry |
 
 Logs: `journalctl --user -u droplet-agent -f`.
 
@@ -252,7 +286,8 @@ acceleration to the virtual mouse.
   "lock_command": null,
   "screenshot_command": null,
   "clipboard_max_bytes": 262144,
-  "mesh": {"enabled": true, "port": null, "downloads": null, "max_rate": 0, "announce": true}
+  "mesh": {"enabled": true, "port": null, "downloads": null, "max_rate": 0, "announce": true,
+           "phone_notifications": true}
 }
 ```
 
@@ -272,6 +307,8 @@ acceleration to the virtual mouse.
   (`null`: `~/Downloads/droplet`, following your desktop's download folder).
   `max_rate`: bytes a second when sending files directly (0: no limit).
   `announce: false` stops announcing over mDNS (peers then need its address).
+  `phone_notifications: false` stops showing a paired phone's notifications
+  here, and tells the phone not to send them (the `notify` cap goes).
 
 Restart the service after editing: `systemctl --user restart droplet-agent`.
 

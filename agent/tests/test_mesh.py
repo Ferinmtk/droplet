@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from droplet_agent.mesh import discovery, files, identity, pairing, tlsctx
+from droplet_agent.mesh import node as mesh_node
 from droplet_agent.mesh.node import Host, MeshNode, NoRoute
 from droplet_agent.mesh.outbox import DONE, QUEUED, Outbox
 from droplet_agent.mesh.trust import TrustList, make_entry
@@ -64,11 +65,11 @@ class FakeHost(Host):
         self.hub_calls.append(("ring", device_id, stop))
 
 
-def make_node(tmp_path, name, port=0, host=None):
+def make_node(tmp_path, name, port=0, host=None, retry_every=0.3):
     host = host or FakeHost(name)
     base = tmp_path / name
     n = MeshNode(host, config_dir=base / "cfg", data_dir=base / "data", downloads=base / "dl", port=port,
-                 announce=False, control=False, retry_every=0.3, local_addresses=lambda: ["127.0.0.1"],
+                 announce=False, control=False, retry_every=retry_every, local_addresses=lambda: ["127.0.0.1"],
                  dry_run=True)
     n.start()
     return n
@@ -352,6 +353,38 @@ def test_pairing_code_is_the_same_on_both_sides(nodes):
     assert b.trust.get(a.identity.fp)["source"] == "paired"
 
 
+def test_accepting_side_reaches_the_initiator_as_soon_as_it_trusts_back(nodes):
+    """The accepting side trusts at once; the initiator only once its owner confirms and it
+    polls. A message sent in between must go out within seconds of that, not at the next
+    outbox round (RETRY_EVERY)."""
+    a, b = nodes("a", retry_every=60), nodes("b", retry_every=60)
+    start = a.pair_start(f"127.0.0.1:{b.port}")
+    rid = b.incoming.waiting()[0]["request"]
+    b.pair_answer(rid, True)
+    b.trust.learn(a.identity.fp, address="127.0.0.1", port=a.port)   # mDNS tells it in real life
+    job = b.send_text(a.identity.fp, "hello, new friend")
+    # a doesn't trust b yet: its TLS refuses b's certificate, and the message waits
+    got = b.outbox.wait(job["id"], lambda j: j["attempts"] > 0 and j["state"] != "sending", 5)
+    assert got["state"] == QUEUED and a.trust.get(b.identity.fp) is None
+    time.sleep(0.5)
+    t0 = time.monotonic()
+    a.pair_confirm(start["request"], True)      # a's owner says the codes match
+    done = b.outbox.wait(job["id"], lambda j: j["state"] == DONE, 10)
+    assert done["state"] == DONE and done["route"] == "lan"
+    assert time.monotonic() - t0 < mesh_node.PAIR_RETRY + 3
+    assert [m["body"] for m in a.chat.recent() if m["dir"] == "in"] == ["hello, new friend"]
+
+
+def test_quick_retries_stop_after_the_grace(nodes):
+    b = nodes("b", retry_every=60)
+    fp = "ab" * 32
+    with b._lock:
+        b._accepted[fp] = time.monotonic() - mesh_node.PAIR_GRACE - 1
+    assert not b._just_accepted(fp) and fp not in b._accepted
+    b._accepted[fp] = time.monotonic()
+    assert b._just_accepted(fp)
+
+
 def test_code_derivation_is_order_sensitive():
     na, nb = pairing.new_nonce(), pairing.new_nonce()
     c = pairing.code("aa" * 32, "bb" * 32, na, nb)
@@ -591,3 +624,100 @@ def test_file_over_a_direct_link(nodes, tmp_path):
     link.send(offer.message())
     assert offer.done.wait(5) and offer.result == (True, "")
     assert len(list((tmp_path / "b" / "dl").iterdir())) == 1
+
+
+# --- a phone's hotspot: the peer is the gateway -------------------------------------------
+
+def test_default_gateways_reads_the_route_table(tmp_path):
+    table = tmp_path / "route"
+    table.write_text(
+        "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+        "wlp3s0\t00000000\tB129A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\n"      # default via 192.168.41.177
+        "wlp3s0\t0029A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\t0\t0\t0\n"      # the subnet, no gateway
+        "docker0\t00000000\t010011AC\t0003\t0\t0\t0\t00000000\t0\t0\t0\n")       # a container's default
+    from droplet_agent.mesh.node import default_gateways
+    assert default_gateways(str(table)) == ["192.168.41.177"]
+    assert default_gateways(str(tmp_path / "missing")) == []
+
+
+def test_a_paired_phone_serving_the_hotspot_is_found_at_the_gateway(nodes):
+    laptop, phone, other = nodes("laptop"), nodes("phone"), nodes("other")
+    for peer in (phone, other):
+        # the laptop knows them only by an address from another network
+        laptop.trust.add_paired(make_entry(peer_id=peer.peer_id, name=peer.name, cert_pem=peer.identity.cert_pem,
+                                           source="paired", lan=["10.255.255.1"], port=phone.port))
+        peer.trust.add_paired(make_entry(peer_id=laptop.peer_id, name=laptop.name,
+                                         cert_pem=laptop.identity.cert_pem, source="paired", port=laptop.port))
+    laptop.gateways = lambda: ["127.0.0.1"]          # the phone is the gateway (its port, above)
+    link = laptop.probe_gateways()
+    assert link is not None and link.fp == phone.identity.fp and link.keep
+    assert wait_for(lambda: phone.open_link(laptop.identity.fp) is not None)   # the phone sees the laptop
+    # "other" isn't at the gateway: tried at most once, then left alone on this network
+    assert ("127.0.0.1", phone.identity.fp) not in laptop._gateway_misses
+    misses = set(laptop._gateway_misses)
+    assert laptop.probe_gateways() is None and laptop._gateway_misses >= misses
+
+
+# --- notification mirroring ------------------------------------------------------------------
+
+class FakeDesktop:
+    def __init__(self):
+        self.shown, self.closed = [], []
+
+    def notify(self, title, body, key=None, app="droplet"):
+        self.shown.append((title, body, key, app))
+
+    def close_notification(self, key):
+        self.closed.append(key)
+
+
+def test_a_phones_notifications_are_shown_replaced_and_taken_away(nodes):
+    phone, laptop = nodes("phone"), nodes("laptop")
+    trust_each_other(phone, laptop)
+    laptop.desktop = FakeDesktop()
+    link = phone.direct(laptop.identity.fp)
+    link.send({"t": "notify", "key": "0|com.chat|1|null|10123", "app": "Chat", "title": "Mum", "text": "Dinner at 7"})
+    assert wait_for(lambda: len(laptop.desktop.shown) == 1)
+    title, body, key, app = laptop.desktop.shown[0]
+    assert (title, body, app) == ("Mum (phone)", "Dinner at 7", "Chat")
+    assert key == f"{phone.identity.fp}:0|com.chat|1|null|10123"
+    # an update to it replaces it: the same key
+    link.send({"t": "notify", "key": "0|com.chat|1|null|10123", "app": "Chat", "title": "Mum", "text": "Make it 8"})
+    assert wait_for(lambda: len(laptop.desktop.shown) == 2)
+    assert laptop.desktop.shown[1][2] == key
+    # gone from the phone: gone from here
+    link.send({"t": "notify-removed", "key": "0|com.chat|1|null|10123"})
+    assert wait_for(lambda: laptop.desktop.closed == [key])
+    # nonsense is ignored
+    link.send({"t": "notify-removed", "key": 5})
+    link.send({"t": "notify", "app": "Chat", "title": "no key", "text": "x"})
+    assert wait_for(lambda: len(laptop.desktop.shown) == 3)
+    assert laptop.desktop.shown[2][2] is None and laptop.desktop.closed == [key]
+
+
+def test_notifications_from_the_phone_can_be_switched_off(nodes):
+    class Off(FakeHost):
+        def shows_notifications(self): return False
+    phone, laptop = nodes("phone"), nodes("laptop", host=Off("laptop"))
+    trust_each_other(phone, laptop)
+    laptop.desktop = FakeDesktop()
+    link = phone.direct(laptop.identity.fp)
+    link.send({"t": "notify", "key": "k", "app": "Chat", "title": "Mum", "text": "hi"})
+    time.sleep(0.3)
+    assert laptop.desktop.shown == []
+
+
+def test_the_notify_cap_follows_the_setting():
+    from droplet_agent import config
+    from droplet_agent.mesh_host import AgentHost
+
+    class Agent:
+        advertised = {"input", "media"}
+    cfg = json.loads(json.dumps(config.DEFAULTS))
+    host = AgentHost(Agent(), cfg)
+    assert host.mesh_caps() == ["input", "media", "notify"] and host.shows_notifications()
+    cfg["mesh"]["phone_notifications"] = False
+    assert host.mesh_caps() == ["input", "media"] and not host.shows_notifications()
+    # an older config without the setting: on
+    del cfg["mesh"]["phone_notifications"]
+    assert "notify" in host.mesh_caps()

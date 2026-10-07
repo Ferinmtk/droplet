@@ -116,6 +116,9 @@ public sealed class AppConfig
     /// <summary>Notify about messages.</summary>
     [JsonPropertyName("notify_messages")] public bool NotifyMessages { get; set; } = true;
 
+    /// <summary>Show your phone's notifications here, sent straight from the phone over the mesh.</summary>
+    [JsonPropertyName("phone_notifications")] public bool PhoneNotifications { get; set; } = true;
+
     /// <summary>Play a sound when rung.</summary>
     [JsonPropertyName("ring_sound")] public bool RingSound { get; set; } = true;
 

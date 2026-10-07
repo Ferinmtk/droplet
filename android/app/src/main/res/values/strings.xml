@@ -170,10 +170,12 @@
     <string name="s_notif_perm_off">Notifications are off for droplet, so rings and transfers can\'t show.</string>
     <string name="s_allow">Allow</string>
     <string name="s_mirror">Notification mirroring</string>
-    <string name="s_mirror_desc">Show this phone\'s notifications on your other devices, in droplet\'s Phone card. Ongoing ones (music, navigation) are skipped.</string>
+    <string name="s_mirror_desc">Show this phone\'s notifications on your other devices: as notifications on your paired computers, and in the hub\'s Phone card if you have one. Ongoing ones (music, navigation) are skipped.</string>
     <string name="s_mirror_on">Notification access: allowed</string>
     <string name="s_mirror_off">Notification access: not allowed</string>
     <string name="s_mirror_button">Notification access</string>
+    <string name="s_mirror_computers">Show phone notifications on my computers</string>
+    <string name="s_mirror_computers_desc">Straight to your paired Windows and Linux computers, no hub needed. Needs Stay connected. Silent ones stay on the phone.</string>
     <string name="s_excluded">Apps not to mirror</string>
     <string name="s_excluded_none">None excluded</string>
     <string name="s_excluded_some">%1$d excluded</string>

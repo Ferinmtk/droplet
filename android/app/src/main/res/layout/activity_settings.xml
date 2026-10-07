@@ -418,6 +418,16 @@
                 <View android:layout_width="match_parent" android:layout_height="1dp"
                     android:layout_marginVertical="14dp" android:background="@color/line" />
 
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/mirror_computers"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_mirror_computers" android:textColor="@color/text" android:textSize="16sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_mirror_computers_desc" />
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
                 <LinearLayout android:id="@+id/excluded_row" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:background="?attr/selectableItemBackground"
                     android:gravity="center_vertical" android:minHeight="48dp" android:orientation="horizontal">

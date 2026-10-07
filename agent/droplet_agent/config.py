@@ -60,6 +60,9 @@ DEFAULTS: dict = {
         "max_rate": 0,
         # announce this computer over mDNS, so peers on the LAN find it
         "announce": True,
+        # show your phone's notifications here, sent straight from the phone
+        # (the "notify" cap tells the phone to send them)
+        "phone_notifications": True,
     },
 }
 

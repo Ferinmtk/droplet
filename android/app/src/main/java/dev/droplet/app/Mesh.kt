@@ -5,7 +5,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Build
 import android.os.Looper
@@ -102,6 +104,8 @@ object Mesh {
     @VisibleForTesting @Volatile var bindAddress: InetAddress? = null
     @VisibleForTesting @Volatile var retryMs = 15_000L
     @VisibleForTesting @Volatile var addresses: (() -> List<String>)? = null
+    /** The Wi-Fi's gateways; by default from ConnectivityManager ([wifiGateways]). */
+    @VisibleForTesting @Volatile var gatewayFinder: (() -> List<String>)? = null
     /** Where a received file goes; by default Downloads/droplet through MediaStore. */
     @VisibleForTesting @Volatile var saver: (Context, File, String, String) -> Saved = MeshDownloads::save
     @VisibleForTesting @Volatile var log: (String) -> Unit = { android.util.Log.i("droplet-mesh", it) }
@@ -168,6 +172,7 @@ object Mesh {
                 }
                 node = n
                 n.chat.onAdded = { bump() }
+                watchWifi(true)
             }
             publish()
             if (Live.state.value.connected) syncRoster()
@@ -178,11 +183,37 @@ object Mesh {
     @Synchronized
     private fun stop() {
         generation++
+        watchWifi(false)
         node?.close()
         node = null
         Presence.release("mesh")
         _state.value = Snapshot(Status.OFF)
         bump()
+    }
+
+    private var wifiCallback: ConnectivityManager.NetworkCallback? = null
+
+    /**
+     * While the node runs: Wi-Fi joined, left, or its routes changed, so the
+     * node looks at the gateway again (a hotspot this phone just joined).
+     */
+    @Synchronized
+    private fun watchWifi(on: Boolean) {
+        val cm = runCatching { app.getSystemService(ConnectivityManager::class.java) }.getOrNull() ?: return
+        wifiCallback?.let { runCatching { cm.unregisterNetworkCallback(it) } }
+        wifiCallback = null
+        if (!on) return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { node?.networkChanged(newNetwork = true) }
+            override fun onLost(network: Network) { node?.networkChanged(newNetwork = true) }
+            override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
+                node?.networkChanged(newNetwork = false)
+            }
+        }
+        runCatching {
+            cm.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(), cb)
+            wifiCallback = cb
+        }
     }
 
     private fun rosterLoop() = scope.launch {
@@ -249,6 +280,48 @@ object Mesh {
     }
 
     fun broadcast(msg: JSONObject): Boolean = node?.broadcast(msg) ?: false
+
+    // --- notification mirroring, straight to your computers ---------------------------
+
+    /** This phone's notifications to paired computers that show them (docs/mesh.md §9.4). */
+    val notifyMirror = NotifyMirror(
+        node = { node },
+        enabled = { Prefs.mirrorToComputers },
+        excluded = { Prefs.excluded },
+        background = { block -> scope.launch { block() } },
+        log = { log(it) },
+    )
+    private val mirrorLock = Any()
+    private var mirrorFlush: kotlinx.coroutines.Job? = null
+
+    /** A notification was posted (see [NotifyMirror.posted]); it goes out shortly, with any that follow it. */
+    fun mirrorPosted(item: JSONObject, alerting: Boolean) {
+        notifyMirror.posted(item, alerting)
+        mirrorSoon()
+    }
+
+    fun mirrorRemoved(key: String) {
+        notifyMirror.removed(key)
+        mirrorSoon()
+    }
+
+    private fun mirrorSoon() {
+        synchronized(mirrorLock) {
+            if (mirrorFlush != null || !notifyMirror.hasWork()) return
+            mirrorFlush = scope.launch {
+                while (true) {
+                    delay(NotifyMirror.FLUSH_DELAY_MS)
+                    runCatching { notifyMirror.flush() }.onFailure { log("mesh: mirroring notifications: $it") }
+                    synchronized(mirrorLock) {
+                        if (!notifyMirror.hasWork()) {
+                            mirrorFlush = null
+                            return@launch
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * This phone's clipboard to your devices that take one, directly. When
@@ -354,6 +427,7 @@ object Mesh {
         override fun caps(): List<String> = Caps.current(app).sorted()
         override fun lastStates(): Map<String, Any?> = HashMap(States.last)
         override fun localAddresses(): List<String> = addresses?.invoke() ?: lanAddresses()
+        override fun gateways(): List<String> = gatewayFinder?.invoke() ?: wifiGateways()
         override fun log(msg: String) = Mesh.log(msg)
         override fun onChanged() {
             publish()
@@ -596,6 +670,33 @@ object Mesh {
             .filter { !MeshNode.isTailnet(it) }
             .distinct()
     }
+
+    /**
+     * The default gateways of the Wi-Fi networks this phone is on: on a
+     * laptop's or another phone's hotspot, the device serving it. Not mobile
+     * data, VPNs or Tailscale. IPv4 only (an IPv6 gateway is link-local).
+     */
+    fun wifiGateways(): List<String> {
+        val found = ArrayList<InetAddress?>()
+        runCatching {
+            val cm = app.getSystemService(ConnectivityManager::class.java)
+            @Suppress("DEPRECATION")
+            for (net in cm.allNetworks) {
+                val nc = cm.getNetworkCapabilities(net) ?: continue
+                if (nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) || !nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue
+                cm.getLinkProperties(net)?.routes?.forEach { r -> if (r.isDefaultRoute && r.hasGateway()) found += r.gateway }
+            }
+        }
+        return gatewayAddresses(found)
+    }
+
+    /** The gateways worth dialling: IPv4, not this host, not a tailnet address; in order, once each. */
+    @VisibleForTesting
+    fun gatewayAddresses(found: List<InetAddress?>): List<String> = found.filterIsInstance<Inet4Address>()
+        .filter { !it.isLoopbackAddress && !it.isAnyLocalAddress && !it.isLinkLocalAddress && !it.isMulticastAddress }
+        .map { TrustList.text(it) }
+        .filter { !MeshNode.isTailnet(it) }
+        .distinct()
 
     private const val ROSTER_EVERY_MS = 10 * 60_000L
 }
