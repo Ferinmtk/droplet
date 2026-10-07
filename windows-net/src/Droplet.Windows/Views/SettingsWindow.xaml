@@ -96,8 +96,12 @@
                     <TextBlock Text="Notifications" Style="{StaticResource SectionTitle}" />
                     <CheckBox x:Name="NotifyFiles" Content="When a file arrives" Style="{StaticResource Switch}" Click="Switch_Click" />
                     <CheckBox x:Name="NotifyMessages" Content="When a message arrives" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="PhoneNotifications" Content="Show my phone's notifications" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="28,0,0,6">
+                        Sent straight from a paired phone running droplet, no hub needed. Turned off, phones stop sending them here.
+                    </TextBlock>
                     <CheckBox x:Name="RingSound" Content="Play a sound when a device rings this PC" Style="{StaticResource Switch}" Click="Switch_Click" />
-                    <CheckBox x:Name="Paused" Content="Pause file and message notifications" Style="{StaticResource Switch}" Click="Switch_Click" />
+                    <CheckBox x:Name="Paused" Content="Pause file, message and phone notifications" Style="{StaticResource Switch}" Click="Switch_Click" />
                 </StackPanel>
             </Border>
 

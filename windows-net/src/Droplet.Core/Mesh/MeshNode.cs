@@ -841,22 +841,14 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 Rung?.Invoke(null);
                 break;
             case "notify":
-                {
-                    var app = msg.Str("app") ?? entry.Name;
-                    app = app.Length > 40 ? app[..40] : app;
-                    var title = msg.Str("title") ?? app;
-                    var key = msg.Str("key");
-                    services.Notifications?.Show(new Notification
-                    {
-                        Title = Clip($"{title} ({entry.Name})", 200), Body = Clip(msg.Str("text") ?? "", 1000),
-                        Tag = key is null ? null : $"{link.Fp}:{key}", App = app,
-                    });
-                    break;
-                }
+                // a phone's notification: a toast, replaced by the next with the same key
+                // (the settings' switch and Pause decide whether it shows)
+                services.Notifications?.Show(PhoneNotifications.Toast(msg, entry.Name, link.Fp));
+                break;
             case "notify-removed":
-                if (msg.Str("key") is { } removed)
+                if (PhoneNotifications.RemovedTag(msg, link.Fp) is { } removed)
                 {
-                    services.Notifications?.Clear($"{link.Fp}:{removed}");
+                    services.Notifications?.Clear(removed);
                 }
                 break;
             case "unpair":
@@ -902,8 +894,6 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             // hello, welcome, pong, rpc-result and anything newer: nothing to do
         }
     }
-
-    static string Clip(string s, int n) => s.Length > n ? s[..n] : s;
 
     async Task ReceiveTextAsync(MeshLink link, TrustEntry entry, JsonObject msg)
     {
