@@ -53,6 +53,13 @@ ACK_TIMEOUT = 10
 STALL = 60             # seconds a file transfer may make no progress
 IDLE_CLOSE = 300       # an outbound link unused this long is closed
 RETRY_EVERY = 15       # the outbox looks for routes this often (and at once when a peer or the hub appears)
+# Accepting a pairing request trusts the other device at once, but it trusts this one only
+# when its own owner has confirmed the code and it has polled for the answer: seconds, or
+# minutes, later. Until then its TLS refuses this device's certificate. So for a while after
+# accepting, a peer that can't be reached directly is tried again every PAIR_RETRY seconds
+# instead of every RETRY_EVERY.
+PAIR_GRACE = 120
+PAIR_RETRY = 2
 MAX_TEXT = 64 * 1024
 LIVE = ("input", "media", "cmd")
 TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
@@ -75,6 +82,7 @@ class Host:
     """What the mesh needs from the rest of the agent. Every hub call may raise."""
 
     def mesh_caps(self) -> list[str]: return []
+    def shows_notifications(self) -> bool: return True
     def device_name(self) -> str: return socket.gethostname().split(".")[0]
     def hub_device_id(self) -> str | None: return None
     def hub_id(self) -> str | None: return None
@@ -147,17 +155,40 @@ class Chat:
         return out
 
 
+def default_gateways(route_table: str = "/proc/net/route") -> list[str]:
+    """This computer's IPv4 default gateways. On a phone's hotspot, that's the phone."""
+    out = []
+    try:
+        with open(route_table) as f:
+            next(f, None)
+            for line in f:
+                parts = line.split()
+                # a default route (destination 0) through a gateway (flag RTF_GATEWAY)
+                if len(parts) < 4 or parts[1] != "00000000" or not int(parts[3], 16) & 0x2:
+                    continue
+                if parts[0].startswith(("docker", "br-", "veth", "virbr", "tailscale", "tun", "wg")):
+                    continue
+                gw = str(ipaddress.IPv4Address(int.from_bytes(bytes.fromhex(parts[2]), "little")))
+                if gw not in out:
+                    out.append(gw)
+    except (OSError, ValueError):
+        pass
+    return out
+
+
 class MeshNode:
     def __init__(self, host: Host, *, config_dir: Path, data_dir: Path, downloads: Path,
                  port: int | None = None, max_rate: int = 0, dry_run: bool = False, announce: bool = True,
                  local_addresses=None, retry_every: float = RETRY_EVERY, control: bool = True,
-                 session_env=None):
+                 session_env=None, gateways=None):
         self.host = host
         self.config_dir, self.data_dir, self.downloads = config_dir, data_dir, downloads
         self.want_port, self.dry_run, self.announce = port, dry_run, announce
         self.retry_every = retry_every
         self.use_control = control
         self.local_addresses = local_addresses or (lambda: [])   # LAN addresses, the main one first
+        self.gateways = gateways or default_gateways
+        self._gateway_misses: set[tuple[str, str]] = set()        # (gateway, fp) that weren't that peer
         self.identity = load_or_create(config_dir)
         self.trust = TrustList(config_dir / "trust.json", self.identity.fp)
         self.contexts = ServerContexts(self.identity, self.trust.pems())
@@ -179,6 +210,7 @@ class MeshNode:
         self._workers: set[str] = set()
         self._wlock = threading.Lock()
         self._kick = threading.Event()
+        self._accepted: dict[str, float] = {}    # fp → when this device accepted its pairing request
         self.stop = threading.Event()
         self.server: Server | None = None
         self.directory: Directory | None = None
@@ -228,6 +260,7 @@ class MeshNode:
             self.directory.start(self.port, self._txt())
         for target in (self._deliver_loop, self._housekeeping):
             threading.Thread(target=target, name=f"mesh-{target.__name__.strip('_')}", daemon=True).start()
+        threading.Thread(target=self.probe_gateways, name="mesh-gateway", daemon=True).start()
         self._kick.set()
 
     def close(self):
@@ -252,12 +285,49 @@ class MeshNode:
             now = time.monotonic()
             for links in list(self.links.values()):
                 for link in list(links):
-                    if link.outbound and now - link.last_used > IDLE_CLOSE:
+                    if link.outbound and not getattr(link, "keep", False) and now - link.last_used > IDLE_CLOSE:
                         link.close(1000, "idle")
             try:
                 self.refresh_announcement()
             except Exception:
                 log.exception("mesh: announcing again")
+            try:
+                self.probe_gateways()
+            except Exception:
+                log.exception("mesh: looking for a paired device at the gateway")
+
+    def probe_gateways(self) -> Link | None:
+        """Link with a paired device that is this network's gateway: a phone serving a hotspot.
+
+        Android doesn't announce on a hotspot it serves, and can't see who joined
+        it, so neither side would find the other. The phone is always the
+        hotspot's gateway, though. The link stays open (it's how the phone
+        knows this computer is there), and only the device whose certificate
+        is pinned for that peer gets one. A gateway that turned out not to be
+        a peer isn't tried for it again until the network changes.
+        """
+        gateways = self.gateways()
+        self._gateway_misses = {m for m in self._gateway_misses if m[0] in gateways}
+        for gw in gateways:
+            with self._lock:
+                if any(link.address == gw and not link.closed for links in self.links.values() for link in links):
+                    continue
+            for entry in self.trust.all():
+                fp, port = entry["fp"], entry.get("port") or DEFAULT_PORT
+                if self.open_link(fp) is not None or (gw, fp) in self._gateway_misses:
+                    continue
+                try:
+                    socket.create_connection((gw, port), timeout=LAN_TIMEOUT).close()
+                except OSError:
+                    break   # nothing listening there: no peer at this gateway
+                link = self._dial(entry, gw, port, "lan")
+                if link is None:
+                    self._gateway_misses.add((gw, fp))
+                    continue
+                link.keep = True
+                log.info("mesh: link open with %s at the gateway (%s): its hotspot", entry["name"], gw)
+                return link
+        return None
 
     # --- trust ------------------------------------------------------------------
 
@@ -345,7 +415,9 @@ class MeshNode:
             tls = client_context(self.identity, fp).wrap_socket(raw)
             proto, frames = client_handshake(tls, address, port, USER_AGENT)
         except Exception as e:
-            log.info("mesh: couldn't open a link to %s at %s:%d: %s", entry["name"], address, port, e)
+            # a peer that just paired may not trust this device yet: that's expected, not news
+            level = logging.DEBUG if self._just_accepted(fp) else logging.INFO
+            log.log(level, "mesh: couldn't open a link to %s at %s:%d: %s", entry["name"], address, port, e)
             raw.close()
             return None
         link = Link(tls, proto, fp=fp, address=address, outbound=True, on_message=self._on_message,
@@ -358,6 +430,8 @@ class MeshNode:
             link.close(1008, "no welcome")
             return None
         self.trust.learn(fp, address=address, port=port, tailnet=kind == "tailnet")
+        with self._lock:
+            self._accepted.pop(fp, None)
         return link
 
     def _candidates(self, entry: dict) -> list[tuple[str, int, str]]:
@@ -367,6 +441,8 @@ class MeshNode:
             for s in self.directory.by_fp(entry["fp"]):
                 out += [(a, s.port, "tailnet" if is_tailnet(a) else "lan") for a in s.addresses]
         out += [(a, port, "tailnet" if is_tailnet(a) else "lan") for a in entry.get("lan") or []]
+        # a phone serving a hotspot doesn't announce itself on it, but it's the hotspot's gateway
+        out += [(gw, port, "lan") for gw in self.gateways() if (gw, entry["fp"]) not in self._gateway_misses]
         if entry.get("tailnet_ip"):
             out.append((entry["tailnet_ip"], port, "tailnet"))
         seen, ordered = set(), []
@@ -456,6 +532,8 @@ class MeshNode:
         elif t == "ring-stop":
             self.desktop.stop_ring()
         elif t == "notify":
+            if not self.host.shows_notifications():
+                return
             key = msg.get("key")
             app = str(msg.get("app") or entry["name"])[:40]
             title = str(msg.get("title") or app)
@@ -682,6 +760,11 @@ class MeshNode:
                 return "done"
         self.outbox.update(job["id"], state=SENDING, attempts=job["attempts"] + 1)
         link = self.direct(job["fp"])
+        if link is None and self._just_accepted(job["fp"]):
+            # it may not have heard our yes yet: look again soon rather than in RETRY_EVERY
+            timer = threading.Timer(PAIR_RETRY, self._kick.set)
+            timer.daemon = True
+            timer.start()
         if link is not None:
             got = self._direct_text(link, job) if job["kind"] == "text" else self._direct_file(link, job)
             if got == "ok":
@@ -765,6 +848,14 @@ class MeshNode:
         if action == "/cancel" and method == "POST":
             return self.incoming.cancel(rid)
         return 405, {"error": "method not allowed"}
+
+    def _just_accepted(self, fp: str) -> bool:
+        with self._lock:
+            at = self._accepted.get(fp)
+            if at is not None and time.monotonic() - at > PAIR_GRACE:
+                del self._accepted[fp]
+                at = None
+        return at is not None
 
     def _pair_request(self, req: dict):
         log.warning("mesh: %s (%s) wants to pair, code %s. Answer with: droplet-agent pair --accept "
@@ -855,6 +946,8 @@ class MeshNode:
         if accept:
             self.trust.add_paired(make_entry(peer_id=r["id"], name=r["name"], cert_pem=der_to_pem(r["der"]),
                                              source="paired", os_name=r["os"]))
+            with self._lock:
+                self._accepted[r["fp"]] = time.monotonic()
             log.info("mesh: paired with %s (%s)", r["name"], r["fp"])
         else:
             log.info("mesh: refused to pair with %s", r["name"])

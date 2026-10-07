@@ -34,7 +34,11 @@ class AgentHost(Host):
         return config.is_set_up(self.cfg)
 
     def mesh_caps(self) -> list[str]:
-        return sorted(self.agent.advertised)
+        # "notify": a phone sends its notifications here directly (docs/mesh.md §9.4)
+        return sorted(set(self.agent.advertised) | ({"notify"} if self.shows_notifications() else set()))
+
+    def shows_notifications(self) -> bool:
+        return bool((self.cfg.get("mesh") or {}).get("phone_notifications", True))
 
     def device_name(self) -> str:
         return (self.cfg.get("device") or {}).get("name") or self.agent.host

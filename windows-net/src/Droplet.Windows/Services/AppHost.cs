@@ -197,6 +197,10 @@ internal sealed class AppHost : IAsyncDisposable
         }
         var cfg = e.Store.Get();
         var tag = n.Tag ?? "";
+        if (tag.StartsWith(Core.Mesh.PhoneNotifications.TagPrefix, StringComparison.Ordinal))
+        {
+            return !cfg.Paused && cfg.PhoneNotifications;
+        }
         if (tag.StartsWith("chat-", StringComparison.Ordinal) || n.App is not null)
         {
             return !cfg.Paused && cfg.NotifyMessages;

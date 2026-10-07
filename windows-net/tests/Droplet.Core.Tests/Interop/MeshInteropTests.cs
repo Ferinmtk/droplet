@@ -117,6 +117,38 @@ public sealed class MeshInteropTests : IAsyncLifetime
         Assert.False(await Tls.GetsHttpAnswerAsync(LanIp, n.Node.Port, stranger.TlsCertificate, "/mesh/files/" + new string('0', 32)));
     }
 
+    /// <summary>
+    /// The side that accepts trusts at once; the side that asked only once its owner has
+    /// confirmed the code and it has polled. A message the accepting side sends in between
+    /// is refused in the TLS handshake, and must go out within seconds of the other side
+    /// trusting back, not at the next outbox round.
+    /// </summary>
+    [Fact]
+    public async Task A_message_sent_right_after_accepting_goes_out_once_the_asker_trusts_back()
+    {
+        await using var a = new LinuxAgent("alpha");
+        await a.StartAsync();
+        await using var n = await DotNetPeer.StartAsync(root, "dotnet", retryEvery: TimeSpan.FromSeconds(60));
+        await Wait.For(() => n.Node.Nearby.Any(s => s.Fp == a.Fingerprint), 30, "the .NET peer to see the agent");
+        PairRequestInfo? seen = null;
+        n.Node.PairingRequested += r => seen = r;
+        var start = await a.CallAsync(new JsonObject { ["cmd"] = "pair-start", ["target"] = $"{LanIp}:{n.Node.Port}" });
+        Assert.Null(start.Str("error"));
+        await Wait.For(() => seen is not null, 10, "the .NET peer to show the request");
+        n.Node.PairAnswer(seen!.Request, true);
+        var job = n.Node.SendText(a.Fingerprint, "hello, new friend");
+        // the agent's owner hasn't confirmed yet: it refuses our certificate, and the message waits
+        var first = await n.Node.WaitJobAsync(job.Id, TimeSpan.FromSeconds(20));
+        Assert.Equal(JobState.Queued, first?.State);
+        Assert.Null(a.Trust()[n.Node.Identity.Fingerprint]);
+        await a.CallAsync(new JsonObject { ["cmd"] = "pair-confirm", ["request"] = start.Str("request"), ["yes"] = true });
+        var confirmed = DateTimeOffset.UtcNow;
+        var done = await n.Node.Outbox.WaitAsync(job.Id, j => j.State == JobState.Done, TimeSpan.FromSeconds(20));
+        Assert.Equal(JobState.Done, done?.State);
+        Assert.True(DateTimeOffset.UtcNow - confirmed < TimeSpan.FromSeconds(10), "delivered at the next outbox round, not within seconds");
+        Assert.Contains(a.Chat(), m => m.Str("body") == "hello, new friend" && m.Str("dir") == "in");
+    }
+
     [Fact]
     public async Task A_denied_request_trusts_nobody()
     {

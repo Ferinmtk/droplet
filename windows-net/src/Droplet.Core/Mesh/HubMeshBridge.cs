@@ -50,7 +50,19 @@ public sealed class HubMeshBridge : IMeshHost, IAsyncDisposable
     public MeshNode? Node { get; set; }
 
     /// <inheritdoc/>
-    public IReadOnlyList<string> MeshCaps => dispatcher?.Offered() ?? [];
+    /// <remarks>Plus <c>notify</c> while this PC shows a phone's notifications (docs/mesh.md §9.4).</remarks>
+    public IReadOnlyList<string> MeshCaps
+    {
+        get
+        {
+            var caps = new List<string>(dispatcher?.Offered() ?? []);
+            if (store.Get().PhoneNotifications)
+            {
+                caps.Add(PhoneNotifications.Cap);
+            }
+            return caps;
+        }
+    }
 
     /// <inheritdoc/>
     public string DeviceName

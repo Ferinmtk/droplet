@@ -53,6 +53,7 @@ public partial class SettingsWindow : Window
         AutoDownload.IsChecked = c.AutoDownload;
         NotifyFiles.IsChecked = c.NotifyFiles;
         NotifyMessages.IsChecked = c.NotifyMessages;
+        PhoneNotifications.IsChecked = c.PhoneNotifications;
         RingSound.IsChecked = c.RingSound;
         Paused.IsChecked = c.Paused;
         Autostart.IsChecked = c.Autostart;
@@ -132,6 +133,7 @@ public partial class SettingsWindow : Window
                 c.AutoDownload = AutoDownload.IsChecked == true;
                 c.NotifyFiles = NotifyFiles.IsChecked == true;
                 c.NotifyMessages = NotifyMessages.IsChecked == true;
+                c.PhoneNotifications = PhoneNotifications.IsChecked == true;
                 c.RingSound = RingSound.IsChecked == true;
                 c.Paused = Paused.IsChecked == true;
                 c.SendTo = AppHost.SendToAvailable && SendTo.IsChecked == true;
