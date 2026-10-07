@@ -147,17 +147,40 @@ class Chat:
         return out
 
 
+def default_gateways(route_table: str = "/proc/net/route") -> list[str]:
+    """This computer's IPv4 default gateways. On a phone's hotspot, that's the phone."""
+    out = []
+    try:
+        with open(route_table) as f:
+            next(f, None)
+            for line in f:
+                parts = line.split()
+                # a default route (destination 0) through a gateway (flag RTF_GATEWAY)
+                if len(parts) < 4 or parts[1] != "00000000" or not int(parts[3], 16) & 0x2:
+                    continue
+                if parts[0].startswith(("docker", "br-", "veth", "virbr", "tailscale", "tun", "wg")):
+                    continue
+                gw = str(ipaddress.IPv4Address(int.from_bytes(bytes.fromhex(parts[2]), "little")))
+                if gw not in out:
+                    out.append(gw)
+    except (OSError, ValueError):
+        pass
+    return out
+
+
 class MeshNode:
     def __init__(self, host: Host, *, config_dir: Path, data_dir: Path, downloads: Path,
                  port: int | None = None, max_rate: int = 0, dry_run: bool = False, announce: bool = True,
                  local_addresses=None, retry_every: float = RETRY_EVERY, control: bool = True,
-                 session_env=None):
+                 session_env=None, gateways=None):
         self.host = host
         self.config_dir, self.data_dir, self.downloads = config_dir, data_dir, downloads
         self.want_port, self.dry_run, self.announce = port, dry_run, announce
         self.retry_every = retry_every
         self.use_control = control
         self.local_addresses = local_addresses or (lambda: [])   # LAN addresses, the main one first
+        self.gateways = gateways or default_gateways
+        self._gateway_misses: set[tuple[str, str]] = set()        # (gateway, fp) that weren't that peer
         self.identity = load_or_create(config_dir)
         self.trust = TrustList(config_dir / "trust.json", self.identity.fp)
         self.contexts = ServerContexts(self.identity, self.trust.pems())
@@ -228,6 +251,7 @@ class MeshNode:
             self.directory.start(self.port, self._txt())
         for target in (self._deliver_loop, self._housekeeping):
             threading.Thread(target=target, name=f"mesh-{target.__name__.strip('_')}", daemon=True).start()
+        threading.Thread(target=self.probe_gateways, name="mesh-gateway", daemon=True).start()
         self._kick.set()
 
     def close(self):
@@ -252,12 +276,49 @@ class MeshNode:
             now = time.monotonic()
             for links in list(self.links.values()):
                 for link in list(links):
-                    if link.outbound and now - link.last_used > IDLE_CLOSE:
+                    if link.outbound and not getattr(link, "keep", False) and now - link.last_used > IDLE_CLOSE:
                         link.close(1000, "idle")
             try:
                 self.refresh_announcement()
             except Exception:
                 log.exception("mesh: announcing again")
+            try:
+                self.probe_gateways()
+            except Exception:
+                log.exception("mesh: looking for a paired device at the gateway")
+
+    def probe_gateways(self) -> Link | None:
+        """Link with a paired device that is this network's gateway: a phone serving a hotspot.
+
+        Android doesn't announce on a hotspot it serves, and can't see who joined
+        it, so neither side would find the other. The phone is always the
+        hotspot's gateway, though. The link stays open (it's how the phone
+        knows this computer is there), and only the device whose certificate
+        is pinned for that peer gets one. A gateway that turned out not to be
+        a peer isn't tried for it again until the network changes.
+        """
+        gateways = self.gateways()
+        self._gateway_misses = {m for m in self._gateway_misses if m[0] in gateways}
+        for gw in gateways:
+            with self._lock:
+                if any(link.address == gw and not link.closed for links in self.links.values() for link in links):
+                    continue
+            for entry in self.trust.all():
+                fp, port = entry["fp"], entry.get("port") or DEFAULT_PORT
+                if self.open_link(fp) is not None or (gw, fp) in self._gateway_misses:
+                    continue
+                try:
+                    socket.create_connection((gw, port), timeout=LAN_TIMEOUT).close()
+                except OSError:
+                    break   # nothing listening there: no peer at this gateway
+                link = self._dial(entry, gw, port, "lan")
+                if link is None:
+                    self._gateway_misses.add((gw, fp))
+                    continue
+                link.keep = True
+                log.info("mesh: link open with %s at the gateway (%s): its hotspot", entry["name"], gw)
+                return link
+        return None
 
     # --- trust ------------------------------------------------------------------
 
@@ -367,6 +428,8 @@ class MeshNode:
             for s in self.directory.by_fp(entry["fp"]):
                 out += [(a, s.port, "tailnet" if is_tailnet(a) else "lan") for a in s.addresses]
         out += [(a, port, "tailnet" if is_tailnet(a) else "lan") for a in entry.get("lan") or []]
+        # a phone serving a hotspot doesn't announce itself on it, but it's the hotspot's gateway
+        out += [(gw, port, "lan") for gw in self.gateways() if (gw, entry["fp"]) not in self._gateway_misses]
         if entry.get("tailnet_ip"):
             out.append((entry["tailnet_ip"], port, "tailnet"))
         seen, ordered = set(), []
