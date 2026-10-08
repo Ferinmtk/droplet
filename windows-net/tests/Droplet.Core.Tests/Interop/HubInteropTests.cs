@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Droplet.Core.Common;
 using Droplet.Core.Config;
@@ -209,35 +210,51 @@ public sealed class HubInteropTests : IAsyncLifetime
         using var sender = new HubClient(hub.Url);
         await sender.RegisterAsync("sender");
 
+        // every seen list the poller saves: the next poll drops the file from the list once the
+        // hub's inbox is empty, so the list as it stands afterwards says nothing about the file
+        var seenLists = new ConcurrentQueue<List<string>>();
+        app.Engine.Store.Changed += c => seenLists.Enqueue(c.InboxSeen);
+
         // a file for this PC: saved to the download folder, then removed from the hub
         await sender.UploadDataAsync(dev.Id, "note.txt", "hello"u8.ToArray(), "text/plain");
         app.Engine.Poller.Poke();
         var saved = Path.Combine(app.Downloads, "note.txt");
         await Wait.For(() => File.Exists(saved), 20, "the inbox file to be saved\n" + app.Log.Text);
         Assert.Equal("hello", await File.ReadAllTextAsync(saved));
+        // the file is on disk before the poll gets as far as the notification
+        await Wait.For(() => app.Fakes.Notifications.Shown.Any(n => n.Title == "sender sent note.txt"), 20, "the file's notification");
         Assert.Contains(app.Fakes.Notifications.Shown, n => n.Title == "sender sent note.txt" && n.Buttons.Count == 2);
         using (var asApp = new HubClient(hub.Url, app.Engine.Store.Get().DeviceToken))
         {
             await Wait.For(async () => (await asApp.FilesAsync()).Inbox.Count == 0, 10, "the hub's inbox to be emptied");
         }
-        Assert.Contains("note.txt|", Assert.Single(app.Engine.Store.Get().InboxSeen), StringComparison.Ordinal);
+        // remembered as seen while it was in the hub's inbox, so it's announced once...
+        Assert.Contains(seenLists, s => s.Count == 1 && s[0].StartsWith("note.txt|", StringComparison.Ordinal));
+        // ...and forgotten once it's gone from there, so the list can't grow forever
+        app.Engine.Poller.Poke();
+        await Wait.For(() => app.Engine.Store.Get().InboxSeen.Count == 0, 20, "the seen list to drop the removed file");
+        Assert.Single(app.Fakes.Notifications.Shown, n => n.Title == "sender sent note.txt");
 
         // a message: shown once
         await sender.SendTextAsync(dev.Id, "hi from sender");
         app.Engine.Poller.Poke();
         await Wait.For(() => app.Fakes.Notifications.Shown.Any(n => n.Title == "sender" && n.Body == "hi from sender"), 20, "the message");
+        // a later message proves later polls ran: it's shown on its own, and the first isn't shown again
+        await sender.SendTextAsync(dev.Id, "and again");
         app.Engine.Poller.Poke();
-        await Task.Delay(1000);
+        await Wait.For(() => app.Fakes.Notifications.Shown.Any(n => n.Title == "sender" && n.Body.StartsWith("and again", StringComparison.Ordinal)), 20, "the second message");
+        Assert.Equal("and again", Assert.Single(app.Fakes.Notifications.Shown, n => n.Body.StartsWith("and again", StringComparison.Ordinal)).Body);
         Assert.Single(app.Fakes.Notifications.Shown, n => n.Body == "hi from sender");
 
-        // a ring: sounds until it's stopped elsewhere
+        // a ring: sounds until it's stopped elsewhere (the sound starts, and stops, just before the status changes)
         await sender.RingDeviceAsync(dev.Id);
         app.Engine.Poller.Poke();
-        await Wait.For(() => app.Fakes.Sound.Rings == 1, 20, "the ring");
+        await Wait.For(() => app.Fakes.Sound.Rings >= 1 && app.Engine.Poller.Status.RingingFrom is not null, 20, "the ring");
+        Assert.Equal(1, app.Fakes.Sound.Rings);
         Assert.Equal("sender", app.Engine.Poller.Status.RingingFrom);
         await sender.StopRingDeviceAsync(dev.Id);
-        await Wait.For(() => app.Fakes.Sound.Stops == 1, 20, "the ring to stop");
-        Assert.Null(app.Engine.Poller.Status.RingingFrom);
+        await Wait.For(() => app.Fakes.Sound.Stops >= 1 && app.Engine.Poller.Status.RingingFrom is null, 20, "the ring to stop");
+        Assert.Equal(1, app.Fakes.Sound.Stops);
     }
 
     [Fact]
