@@ -63,7 +63,7 @@ def publish(root: Path, where: str, wheel: bytes, sums: str | None = "good"):
         (d / "SHA256SUMS.txt").write_text(f"{'1' * 64}  droplet-android.apk\n{digest}  droplet-agent.whl\n")
 
 
-def run(home: Path, releases: str, *args, script: Path = INSTALL):
+def run(home: Path, releases: str, *args, script: Path = INSTALL, env_extra: dict | None = None):
     env = {
         "HOME": str(home),
         "PATH": os.environ["PATH"],
@@ -72,6 +72,7 @@ def run(home: Path, releases: str, *args, script: Path = INSTALL):
         "PIP_NO_DEPS": "1",
         "PIP_NO_INDEX": "1",
         "PIP_NO_CACHE_DIR": "1",
+        **(env_extra or {}),
     }
     # no WAYLAND_DISPLAY/DISPLAY: the tray isn't started; no session bus either
     return subprocess.run(["sh", str(script), *args], env=env, capture_output=True, text=True,
@@ -113,6 +114,38 @@ def test_installs_from_the_latest_release_without_a_hub(tmp_path, server, wheel)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "Creating" not in r.stdout
     assert not (home / ".config/autostart/io.github.ferinmtk.DropletAgent.Tray.desktop").exists()
+
+
+def test_the_window_is_installed_only_from_a_desktop_session(tmp_path, server, wheel):
+    root, url = server
+    publish(root, "latest/download", wheel)
+    home = tmp_path / "home"
+    home.mkdir()
+    # no desktop (the test above): not even tried
+    r = run(home, url, "--no-service", "--no-tray")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Droplet's window" not in r.stdout
+    # a desktop session: it's tried. Offline, PySide6 can't come, and that's not fatal
+    desktop = {"WAYLAND_DISPLAY": "wayland-test"}
+    r = run(home, url, "--no-service", "--no-tray", env_extra=desktop)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Installing Droplet's window" in r.stdout
+    assert "Couldn't install Droplet's window; the tray and the commands work without it." in r.stdout
+    assert (home / ".local/share/droplet-agent/bin/droplet-agent").exists()
+    # and --no-app leaves it out
+    r = run(home, url, "--no-service", "--no-tray", "--no-app", env_extra=desktop)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Droplet's window" not in r.stdout
+
+
+def test_the_wheel_offers_the_window_as_an_extra(wheel):
+    import io
+    import zipfile
+    z = zipfile.ZipFile(io.BytesIO(wheel))
+    meta = z.read(f"droplet_agent-{agent_dist.version()}.dist-info/METADATA").decode()
+    assert "Provides-Extra: app" in meta
+    assert 'Requires-Dist: PySide6-Essentials>=6.6; extra == "app"' in meta
+    assert "droplet_agent/app/window.py" in z.namelist()
 
 
 def test_refuses_a_wheel_that_doesnt_match_the_sums(tmp_path, server, wheel):
