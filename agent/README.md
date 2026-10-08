@@ -22,8 +22,9 @@ curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-
 
 Then pair it with your phone: open droplet on the phone, tap **Pair a
 device** and pick this computer. Both screens show the same four digits;
-accept on the computer from the tray (or run `droplet-agent pair`). Other
-computers pair with `droplet-agent pair <name>` (see [the mesh](#the-mesh-talking-to-your-devices-directly)).
+accept on the computer in [Droplet's window](#droplets-window) or the tray
+(or run `droplet-agent pair`). Other computers pair from the window's
+**Pair a device**, or with `droplet-agent pair <name>` (see [the mesh](#the-mesh-talking-to-your-devices-directly)).
 
 The installer needs no sudo. It:
 
@@ -35,7 +36,10 @@ The installer needs no sudo. It:
 - installs and starts a systemd user service, `droplet-agent.service`, which
   starts with your desktop session (`--no-service` leaves it out),
 - puts droplet in the system tray, now and with every desktop session
-  (`--no-tray` leaves it out),
+  (`--no-tray` leaves it out), and **Droplet** in the app menu,
+- run from a desktop session, installs [Droplet's window](#droplets-window)
+  (PySide6, about 80 MB from PyPI; `--no-app` leaves it out). If it can't
+  be installed, everything else works without it,
 - prints `droplet-agent doctor`'s advice.
 
 Running it again upgrades the agent and keeps your settings and pairings.
@@ -187,10 +191,47 @@ sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --re
 
 **Without a hub**, `droplet-agent run` (and the service) runs the mesh alone.
 
+## Droplet's window
+
+**Droplet** in the app menu (or `droplet-agent app`) opens a window like the
+Windows app's:
+
+- **Devices**: each paired device as a card, with how it's reached now
+  (*Connected on this network*, *Connected via Tailscale*, *On this network*,
+  or *Not reachable*, when what you send waits for it) and **Send files…**,
+  **Send clipboard**, **Ring** and **Message**. **⋯** has Stop ringing, About
+  this device and Unpair. Drop files on a card to send them; the card says
+  when they've arrived, failed, or wait in the outbox.
+- **Pair a device**: the droplet devices on this network, or one by its
+  address. Both screens show the same four digits: **They match**, then
+  accept on the other device.
+- A device **asking to pair** shows on top of every page, with its code and
+  **Accept** / **Decline**.
+- **Messages**: a chat with each device, newest at the bottom. Enter sends
+  (Shift+Enter for a new line); a message to a device that can't be reached
+  waits and goes when it can.
+- **Received**: the latest files your devices sent, to open or show in the
+  folder.
+- **Settings**: this computer's name, id and fingerprint; clipboard sync,
+  your phone's notifications and what your devices may control here (saved
+  to `config.json`, and the agent restarts to use them); the tray; about.
+
+Like the tray it's a separate process that does everything through the
+running agent; when the agent isn't running it says so, with **Start it**.
+Opening it again brings the open window to the front. It's Qt (PySide6),
+installed as the agent's `app` extra; on a computer installed without it:
+
+```sh
+~/.local/share/droplet-agent/bin/python -m pip install 'droplet-agent[app]'
+```
+
+Without PySide6, Droplet in the app menu starts the tray and says where it is.
+
 ## The tray
 
 `droplet-agent tray` puts droplet in the system tray. Its menu lists:
 
+- **Open Droplet**: [the window](#droplets-window), when it's installed;
 - this computer's name, then each trusted device with how it can be reached
   (*connected*, *nearby* on the LAN, or *not reachable*). Each has **Send
   files…** (the desktop's file picker; a notification says when they've
@@ -233,6 +274,8 @@ Starting it again replaces the one running, so there's only ever one.
 | `droplet-agent pair [PEER]` | pair directly with a device; with nothing, answer the devices asking (`--accept`, `--deny`) |
 | `droplet-agent unpair PEER` | stop trusting a directly paired device |
 | `droplet-agent text`, `send-file`, `ring`, `clip`, `send` | send to a device: see [the mesh](#the-mesh-talking-to-your-devices-directly) |
+| `droplet-agent app` | open [Droplet's window](#droplets-window) (`--page` opens it on a page: `devices`, `pair`, `messages`, `received` or `settings`), or bring it to the front |
+| `droplet-agent open` | what Droplet in the app menu runs: starts the tray if it isn't running, and opens the window (without PySide6, says where the tray is). `--install` only adds Droplet to the app menu |
 | `droplet-agent tray` | droplet in the system tray: see [the tray](#the-tray). `--autostart` / `--no-autostart` |
 | `droplet-agent uninstall` | stop the service and the tray, and remove the agent, its settings, the service file and the tray's autostart entry |
 
@@ -371,6 +414,8 @@ python -m venv .venv && .venv/bin/pip install websockets jeepney zeroconf pytest
 .venv/bin/python tests/e2e_lan.py 8851           # routes, against a hub on the LAN
 .venv/bin/python tests/e2e_mesh.py direct        # two agents with no hub, and an untrusted third
 .venv/bin/python tests/e2e_mesh.py hub http://127.0.0.1:8861 <hub pid>   # the roster, hub down, mailbox, outbox
+.venv/bin/pip install 'PySide6-Essentials>=6.6'  # then the window's tests run too (offscreen)
+.venv/bin/python -m droplet_agent app --demo     # the window, with pretend devices and no agent
 ```
 
 `tests/e2e_local.py` links an agent to a throwaway hub with a real link code,
@@ -385,7 +430,9 @@ unpairing; with a throwaway hub, the roster, the hub stopped and
 restarted, the mailbox and the outbox.
 
 The mesh lives in `droplet_agent/mesh/` and reaches the rest of the agent
-only through `mesh_host.py`.
+only through `mesh_host.py`. The window lives in `droplet_agent/app/`: what
+it shows is worked out in `model.py`, without Qt, and every request to the
+agent runs on a worker thread (`agent.py`), never on the window's.
 
 The hub serves the agent at `/agent/install.sh`, `/agent/droplet-agent.tar.gz`
 and `/agent/droplet_agent-<version>-py3-none-any.whl`, built from this

@@ -12,8 +12,8 @@
 #   curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 123456
 #   curl -fsSL https://<hub's tailnet name>/agent/install.sh | sh -s -- --code 123456
 #
-# Either way only the agent's small dependencies (websockets, jeepney,
-# zeroconf, cryptography) come from PyPI. A release's wheel is checked
+# Either way only the agent's dependencies (websockets, jeepney, zeroconf,
+# cryptography, and for Droplet's window PySide6) come from PyPI. A release's wheel is checked
 # against the release's SHA256SUMS.txt.
 #
 # Fetched over the LAN's plain http, the agent reads the hub's certificate
@@ -34,6 +34,8 @@
 #   --wheel FILE    install this agent wheel (a path or a URL)
 #   --no-service    don't install the systemd user service
 #   --no-tray       don't put droplet in the system tray
+#   --no-app        don't install Droplet's window (PySide6, about 80 MB from
+#                   PyPI; installed only from a desktop session)
 #
 # Re-running it upgrades the agent and keeps the settings.
 
@@ -49,7 +51,7 @@ RELEASE_WHEEL='droplet-agent.whl'  # each release's wheel, under a name that doe
 say() { printf '%s\n' "$*"; }
 usage() {
     say "usage: install.sh [--hub URL [--code 123456 | --name NAME] [--pin PIN]]"
-    say "                  [--release TAG | --wheel FILE] [--no-service] [--no-tray]"
+    say "                  [--release TAG | --wheel FILE] [--no-service] [--no-tray] [--no-app]"
     say "  Without a hub, the agent comes from droplet's latest GitHub release and"
     say "  pairs with your devices directly."
     say "  --hub      a droplet hub to link to (optional)"
@@ -60,6 +62,7 @@ usage() {
     say "  --wheel    install this agent wheel (a path or a URL)"
     say "  --no-service   don't install the systemd user service"
     say "  --no-tray      don't put droplet in the system tray"
+    say "  --no-app       don't install Droplet's window (PySide6, about 80 MB)"
 }
 die() { printf 'droplet-agent install: %s\n' "$*" >&2; exit 1; }
 
@@ -74,7 +77,7 @@ fetch() {  # fetch URL FILE
 }
 
 main() {
-    hub="$DROPLET_HUB" code="" name="" pin="" service=1 tray=1
+    hub="$DROPLET_HUB" code="" name="" pin="" service=1 tray=1 app=1
     release="$DROPLET_RELEASE" wheel="" source=""
     prev=""
     for a in "$@"; do
@@ -107,6 +110,7 @@ main() {
             --pin) [ $# -ge 2 ] || die "--pin needs the PIN"; pin="$2"; shift 2 ;;
             --no-service) service=0; shift ;;
             --no-tray) tray=0; shift ;;
+            --no-app) app=0; shift ;;
             -h|--help) usage; exit 0 ;;
             *) die "unknown option $1" ;;
         esac
@@ -201,6 +205,19 @@ sys.exit(1)
     # same version number, newer code: install it anyway
     pip install --force-reinstall --no-deps "$tmpdir/$whl"
     agent="$data/bin/droplet-agent"
+
+    # Droplet's window (Qt, through PySide6): only where there's a desktop to show it on.
+    # Without it the agent, the tray and the commands work the same.
+    if [ "$app" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+        say "Installing Droplet's window (PySide6, about 80 MB from PyPI)"
+        if pip install "${tmpdir}/${whl}[app]" &&
+            "$data/bin/python" -c 'import PySide6.QtWidgets' 2>/dev/null </dev/null; then
+            say "Droplet's window is installed: open Droplet from your app menu."
+        else
+            say "Couldn't install Droplet's window; the tray and the commands work without it."
+            say "To try again: $data/bin/python -m pip install 'droplet-agent[app]'"
+        fi
+    fi
 
     mkdir -p "$HOME/.local/bin"
     ln -sf "$agent" "$HOME/.local/bin/droplet-agent"
@@ -298,6 +315,11 @@ EOF
         fi
     else
         say "Service not installed. Start the agent with: $agent run"
+    fi
+
+    # Droplet in the app menu: opens its window (or, without one, says where the tray is)
+    if [ "$tray" = 1 ]; then
+        "$agent" open --install >/dev/null 2>&1 </dev/null || true
     fi
 
     # start (or restart, after an upgrade) the tray in this desktop session

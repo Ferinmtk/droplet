@@ -53,6 +53,16 @@ def _dependencies() -> list[str]:
     return re.findall(r'"([^"]+)"', m.group(1)) if m else []
 
 
+def _extras() -> dict[str, list[str]]:
+    """[project.optional-dependencies]: {extra: [requirement, ...]}."""
+    text = (AGENT_DIR / "pyproject.toml").read_text()
+    m = re.search(r"^\[project\.optional-dependencies\]\n(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    if not m:
+        return {}
+    return {name: re.findall(r'"([^"]+)"', reqs)
+            for name, reqs in re.findall(r"^(\w[\w-]*) = \[(.*?)\]", m.group(1), re.M | re.S)}
+
+
 def _requires_python() -> str:
     m = re.search(r'^requires-python = "([^"]+)"', (AGENT_DIR / "pyproject.toml").read_text(), re.M)
     return m.group(1) if m else ">=3.9"
@@ -83,6 +93,8 @@ def build_wheel() -> bytes:
         "Summary: Lets your other devices control this Linux computer through droplet",
         f"Requires-Python: {_requires_python()}",
         *[f"Requires-Dist: {d}" for d in _dependencies()],
+        *[line for extra, reqs in _extras().items()
+          for line in (f"Provides-Extra: {extra}", *(f'Requires-Dist: {r}; extra == "{extra}"' for r in reqs))],
         "Description-Content-Type: text/markdown",
         "",
         readme,

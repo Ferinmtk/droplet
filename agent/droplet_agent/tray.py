@@ -97,15 +97,18 @@ OS_ICONS = {"android": "smartphone", "ios": "smartphone", "windows": "computer",
             "macos": "computer"}
 
 
-def build_view(status: dict | None) -> View:
-    """The menu, tooltip and status for an answer to the agent's `status` (None: it isn't running)."""
+def build_view(status: dict | None, app: bool = True) -> View:
+    """The menu, tooltip and status for an answer to the agent's `status` (None: it isn't running).
+    `app`: Droplet's window can be opened (PySide6 is installed)."""
     downloads = Item("open-downloads", "Open received files", icon="folder-download", action=("open-downloads",))
+    top = [Item("open-app", "Open Droplet", icon=LAUNCHER_ID, action=("open-app",)),
+           Item("sep-app", separator=True)] if app else []
     if status is None:
-        return View(items=[Item("not-running", "droplet agent isn't running", enabled=False),
+        return View(items=[*top, Item("not-running", "droplet agent isn't running", enabled=False),
                            Item("sep-end", separator=True), downloads],
                     tooltip="droplet agent isn't running", running=False)
 
-    items = [Item("header", status.get("name") or "this computer", enabled=False, icon="computer"),
+    items = [*top, Item("header", status.get("name") or "this computer", enabled=False, icon="computer"),
              Item("sep-top", separator=True)]
     incoming = [r for r in status.get("incoming") or [] if r.get("request")]
     for r in incoming:
@@ -699,6 +702,11 @@ class Actions:
                             "It's in the droplet menu now.")
         self.refresh()
 
+    def open_app(self):
+        """Droplet's window: a second one just brings the open one up."""
+        subprocess.Popen([sys.executable, "-m", "droplet_agent", "app"], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
     def open_downloads(self):
         from . import config
         d = config.downloads_dir(config.load())
@@ -717,7 +725,9 @@ class Tray:
     def __init__(self, call=None, notify=None):
         from .mesh import control
         from .mesh.desktop import Desktop
+        from . import app
         self.call = call or control.call
+        self.has_app = app.available()
         self.objects = TrayObjects()
         self.actions = Actions(self.call, notify or Desktop(dry_run=False).notify, refresh=self.kick)
         self.stop = threading.Event()
@@ -737,7 +747,7 @@ class Tray:
         return None if st.get("error") else st
 
     def refresh(self):
-        for path, iface, member, sig, body in self.objects.show(build_view(self.status())):
+        for path, iface, member, sig, body in self.objects.show(build_view(self.status(), self.has_app)):
             self.emit(path, iface, member, sig, body)
 
     def emit(self, path, iface, member, sig, body):
@@ -903,7 +913,7 @@ def autostart_entry(command: str) -> str:
             "Name=droplet\n"
             "Comment=droplet in the system tray: send to your devices, answer pairing requests\n"
             f"Exec={command} tray\n"
-            "Icon=input-mouse\n"
+            f"Icon={LAUNCHER_ID}\n"
             "Terminal=false\n"
             "X-GNOME-Autostart-enabled=true\n")
 
@@ -927,6 +937,131 @@ def start_detached():
     """Start a tray that outlives this command (it replaces any running one)."""
     subprocess.Popen([sys.executable, "-m", "droplet_agent", "tray"], stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def is_running() -> bool:
+    """Whether a tray is up in this desktop session."""
+    try:
+        from jeepney import message_bus
+        from jeepney.io.blocking import open_dbus_connection
+        from jeepney.wrappers import unwrap_msg
+        with open_dbus_connection(bus="SESSION") as conn:
+            return bool(unwrap_msg(conn.send_and_get_reply(message_bus.NameHasOwner(TRAY_ID), timeout=5))[0])
+    except Exception as e:
+        log.debug("couldn't ask the session bus about the tray: %s", e)
+        return False
+
+
+# --- the launcher entry (Droplet in the app menu) -------------------------------------
+
+LAUNCHER_ID = "io.github.ferinmtk.Droplet"
+ICON_SIZES = (22, 32, 48, 64)
+
+
+def _data_home() -> Path:
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+
+
+def launcher_path() -> Path:
+    return _data_home() / "applications" / f"{LAUNCHER_ID}.desktop"
+
+
+def icon_paths() -> list[Path]:
+    return [_data_home() / "icons/hicolor" / f"{n}x{n}" / "apps" / f"{LAUNCHER_ID}.png" for n in ICON_SIZES]
+
+
+def png(width: int, height: int, argb: bytes) -> bytes:
+    """A PNG from the tray's ARGB32 (big-endian) pixels, without an imaging library."""
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)                       # no filter
+        line = argb[y * width * 4:(y + 1) * width * 4]
+        for x in range(0, len(line), 4):
+            a, r, g, b = line[x:x + 4]
+            rows += bytes((r, g, b, a))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + chunk(b"IEND", b""))
+
+
+def launcher_entry(command: str) -> str:
+    return ("[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=Droplet\n"
+            "GenericName=Share with your devices\n"
+            "Comment=Send files, messages and your clipboard to your phone and computers\n"
+            f"Exec={command} open\n"
+            f"Icon={LAUNCHER_ID}\n"
+            "Terminal=false\n"
+            "StartupNotify=false\n"
+            "Categories=Network;FileTransfer;Utility;\n"
+            "Keywords=share;send;files;phone;clipboard;pair;droplet;\n")
+
+
+def install_launcher() -> Path:
+    """Put Droplet in the app menu, with the drop icon."""
+    by_size = {w: (w, h, d) for w, h, d in load_pixmaps()}
+    for size, path in zip(ICON_SIZES, icon_paths()):
+        if size in by_size:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(png(*by_size[size]))
+    path = launcher_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(launcher_entry(agent_command()))
+    for tool in (["update-desktop-database", str(path.parent)],
+                 ["gtk-update-icon-cache", "-q", "-t", str(_data_home() / "icons/hicolor")]):
+        if shutil.which(tool[0]):
+            subprocess.run(tool, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    return path
+
+
+def remove_launcher() -> bool:
+    removed = False
+    for path in (launcher_path(), *icon_paths()):
+        try:
+            path.unlink()
+            removed = True
+        except FileNotFoundError:
+            pass
+    return removed
+
+
+def where_text(status: dict | None) -> tuple[str, str]:
+    """The notification shown when droplet is opened from the app menu."""
+    if status is None:
+        return ("droplet is in your system tray",
+                "Its icon is greyed out because the droplet agent isn't running. "
+                "Start it with: systemctl --user start droplet-agent")
+    view = build_view(status)
+    return ("droplet is in your system tray",
+            f"Click the drop icon near the clock (it may be behind the ^ arrow). {view.tooltip}.")
+
+
+def open_app() -> int:
+    """What the app menu's Droplet does: make sure the tray is up, and open Droplet's window.
+    Without PySide6 there's no window: a notification says where the tray is instead."""
+    if not is_running():
+        start_detached()
+    from . import app
+    if app.available():
+        try:
+            return app.run([])
+        except ImportError as e:   # PySide6 is there but broken: say where the tray is instead
+            log.warning("Droplet's window can't start: %s", e)
+    from .mesh import control
+    from .mesh.desktop import Desktop
+    try:
+        status = control.call({"cmd": "status"}, timeout=5)
+        if status.get("error"):
+            status = None
+    except Exception:
+        status = None
+    title, body = where_text(status)
+    Desktop(dry_run=False).notify(title, body, key="droplet-open")
+    return 0
 
 
 def run() -> int:

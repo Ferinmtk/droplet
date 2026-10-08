@@ -73,6 +73,11 @@ class Outbox:
         with self._lock:
             return [dict(j) for j in sorted(self._jobs.values(), key=lambda j: j["created"])]
 
+    def failed(self) -> list[dict]:
+        """Jobs that failed for good since the agent started, oldest first."""
+        with self._lock:
+            return [dict(j) for j in self._finished.values() if j["state"] == FAILED]
+
     def for_peer(self, fp: str) -> list[dict]:
         return [j for j in self.queued() if j["fp"] == fp]
 
