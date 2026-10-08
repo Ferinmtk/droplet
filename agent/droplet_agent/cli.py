@@ -532,7 +532,15 @@ def cmd_send(args) -> int:
     return 0
 
 
-# --- the tray ----------------------------------------------------------------
+# --- the window and the tray ---------------------------------------------------
+
+def cmd_app(args) -> int:
+    from . import app
+    if not app.available():
+        print(app.missing_text(), file=sys.stderr)
+        return 1
+    return app.run((["--page", args.page] if args.page else []) + (["--demo"] if args.demo else []))
+
 
 def cmd_open(args) -> int:
     from . import tray
@@ -921,10 +929,18 @@ def main(argv=None) -> int:
     sn.add_argument("peer")
     sn.add_argument("message", help='JSON, e.g. \'{"t":"input","ev":[{"k":"key","key":"ArrowRight"}]}\'')
     sn.set_defaults(func=cmd_send)
-    op = sub.add_parser("open", help="what Droplet in the app menu does: start the tray, and say where it is",
-                        description="Start the tray if it isn't running, and show a notification saying where "
-                                    "its icon is. Running droplet-agent with no command from the desktop (not "
-                                    "a terminal) does the same.")
+    ap = sub.add_parser("app", help="open Droplet's window: your devices, pairing, messages, received files",
+                        description="Open Droplet's window (it needs PySide6: pip install 'droplet-agent[app]'). "
+                                    "If it's open already, it comes to the front.")
+    ap.add_argument("--page", choices=["devices", "pair", "messages", "received", "settings"],
+                    help="open on this page")
+    ap.add_argument("--demo", action="store_true", help=argparse.SUPPRESS)
+    ap.set_defaults(func=cmd_app)
+    op = sub.add_parser("open", help="what Droplet in the app menu does: open its window (and start the tray)",
+                        description="Start the tray if it isn't running, and open Droplet's window. Without "
+                                    "PySide6 there's no window: a notification says where the tray's icon is "
+                                    "instead. Running droplet-agent with no command from the desktop (not a "
+                                    "terminal) does the same.")
     op.add_argument("--install", action="store_true",
                     help="only put Droplet in the app menu (the launcher entry and its icon)")
     op.set_defaults(func=cmd_open)

@@ -21,11 +21,16 @@ dependencies = [
     "cryptography>=42.0",
 ]
 
+[project.optional-dependencies]
+# Droplet's window (`droplet-agent app`). Only Qt's essential modules: Core, Gui, Widgets,
+# Network (one window at a time) and DBus (showing a file in the file manager).
+app = ["PySide6-Essentials>=6.6"]
+
 [project.scripts]
 droplet-agent = "droplet_agent.cli:main"
 
 [tool.setuptools]
-packages = ["droplet_agent", "droplet_agent.inject", "droplet_agent.mesh"]
+packages = ["droplet_agent", "droplet_agent.app", "droplet_agent.inject", "droplet_agent.mesh"]
 
 [tool.setuptools.package-data]
 # the tray icon's pixels, made by tools/make_tray_icon.py (agent_dist.py ships it too)

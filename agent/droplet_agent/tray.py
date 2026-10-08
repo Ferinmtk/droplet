@@ -97,15 +97,18 @@ OS_ICONS = {"android": "smartphone", "ios": "smartphone", "windows": "computer",
             "macos": "computer"}
 
 
-def build_view(status: dict | None) -> View:
-    """The menu, tooltip and status for an answer to the agent's `status` (None: it isn't running)."""
+def build_view(status: dict | None, app: bool = True) -> View:
+    """The menu, tooltip and status for an answer to the agent's `status` (None: it isn't running).
+    `app`: Droplet's window can be opened (PySide6 is installed)."""
     downloads = Item("open-downloads", "Open received files", icon="folder-download", action=("open-downloads",))
+    top = [Item("open-app", "Open Droplet", icon=LAUNCHER_ID, action=("open-app",)),
+           Item("sep-app", separator=True)] if app else []
     if status is None:
-        return View(items=[Item("not-running", "droplet agent isn't running", enabled=False),
+        return View(items=[*top, Item("not-running", "droplet agent isn't running", enabled=False),
                            Item("sep-end", separator=True), downloads],
                     tooltip="droplet agent isn't running", running=False)
 
-    items = [Item("header", status.get("name") or "this computer", enabled=False, icon="computer"),
+    items = [*top, Item("header", status.get("name") or "this computer", enabled=False, icon="computer"),
              Item("sep-top", separator=True)]
     incoming = [r for r in status.get("incoming") or [] if r.get("request")]
     for r in incoming:
@@ -699,6 +702,11 @@ class Actions:
                             "It's in the droplet menu now.")
         self.refresh()
 
+    def open_app(self):
+        """Droplet's window: a second one just brings the open one up."""
+        subprocess.Popen([sys.executable, "-m", "droplet_agent", "app"], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
     def open_downloads(self):
         from . import config
         d = config.downloads_dir(config.load())
@@ -717,7 +725,9 @@ class Tray:
     def __init__(self, call=None, notify=None):
         from .mesh import control
         from .mesh.desktop import Desktop
+        from . import app
         self.call = call or control.call
+        self.has_app = app.available()
         self.objects = TrayObjects()
         self.actions = Actions(self.call, notify or Desktop(dry_run=False).notify, refresh=self.kick)
         self.stop = threading.Event()
@@ -737,7 +747,7 @@ class Tray:
         return None if st.get("error") else st
 
     def refresh(self):
-        for path, iface, member, sig, body in self.objects.show(build_view(self.status())):
+        for path, iface, member, sig, body in self.objects.show(build_view(self.status(), self.has_app)):
             self.emit(path, iface, member, sig, body)
 
     def emit(self, path, iface, member, sig, body):
@@ -1031,9 +1041,16 @@ def where_text(status: dict | None) -> tuple[str, str]:
 
 
 def open_app() -> int:
-    """What the app menu's Droplet does: make sure the tray is up, and say where it is."""
+    """What the app menu's Droplet does: make sure the tray is up, and open Droplet's window.
+    Without PySide6 there's no window: a notification says where the tray is instead."""
     if not is_running():
         start_detached()
+    from . import app
+    if app.available():
+        try:
+            return app.run([])
+        except ImportError as e:   # PySide6 is there but broken: say where the tray is instead
+            log.warning("Droplet's window can't start: %s", e)
     from .mesh import control
     from .mesh.desktop import Desktop
     try:
