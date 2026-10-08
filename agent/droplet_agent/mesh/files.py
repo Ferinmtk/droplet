@@ -189,6 +189,11 @@ class Completed:
                     return x.get("path") or ""
         return None
 
+    def recent(self, n: int = 50) -> list[dict]:
+        """The last `n` received, newest first."""
+        with self._lock:
+            return [dict(x) for x in reversed(self._items[-n:])]
+
     def add(self, fp: str, oid: str, path: str):
         with self._lock:
             self._items.append({"fp": fp, "id": oid, "path": path, "ts": int(time.time())})
