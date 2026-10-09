@@ -1,7 +1,8 @@
-"""Battery level for the "battery" state, from /sys/class/power_supply."""
+"""Battery level for the "battery" state, from /sys/class/power_supply (on a Mac, `pmset -g batt`)."""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 ROOT = Path("/sys/class/power_supply")
@@ -20,6 +21,9 @@ def read(root: Path = ROOT) -> dict | None:
     "charging" means plugged in: a battery held at a charge threshold
     reports "Not charging" while on mains, and that still counts.
     """
+    if sys.platform == "darwin" and root == ROOT:
+        from . import macos
+        return macos.battery()
     batteries, ac_online = [], None
     try:
         supplies = sorted(root.iterdir())

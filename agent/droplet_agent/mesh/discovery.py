@@ -18,18 +18,19 @@ import ipaddress
 import logging
 import re
 import socket
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from . import PROTOCOL_VERSION, SERVICE
+from . import OS_NAME, PROTOCOL_VERSION, SERVICE
 from .identity import PEER_ID, normalize_fingerprint
 from .trust import clean_caps, clean_name
 
 log = logging.getLogger("droplet_agent.mesh.discovery")
 
-OSES = ("android", "windows", "linux")
+OSES = ("android", "windows", "linux", "macos")
 
 
 @dataclass
@@ -47,7 +48,7 @@ class Seen:
 
 
 def txt_records(*, peer_id: str, fp: str, name: str, caps, hub_id: str | None) -> dict[str, str]:
-    return {"id": peer_id, "fp": fp, "name": clean_name(name)[:63], "os": "linux",
+    return {"id": peer_id, "fp": fp, "name": clean_name(name)[:63], "os": OS_NAME,
             "caps": ",".join(clean_caps(list(caps))), "hub": hub_id or "", "v": str(PROTOCOL_VERSION)}
 
 
@@ -275,6 +276,10 @@ class Directory:
 # VMs, VPNs. Tailscale addresses reach peers through the roster instead (route 2).
 VIRTUAL = ("docker", "br-", "veth", "virbr", "vnet", "podman", "cni", "flannel", "kube", "lxc", "lxd",
            "tailscale", "tun", "wg", "zt", "vboxnet", "vmnet", "lo")
+if sys.platform == "darwin":
+    # a Mac's: VPNs and tailnets (utun), AirDrop's own links (awdl, llw), Internet Sharing and VMs
+    # (bridge), and the rest no other device on the LAN can reach
+    VIRTUAL += ("utun", "ipsec", "ppp", "awdl", "llw", "bridge", "anpi", "ap", "gif", "stf", "XHC")
 
 
 def _primary_ipv4() -> str | None:

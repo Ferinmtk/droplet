@@ -142,7 +142,7 @@ too). At most five join requests wait at once, and they expire after a day.
 **How the apps find the hub.** The hub announces itself on the LAN as
 `_droplet._tcp` (mDNS) with its permanent id and certificate fingerprint. It
 also serves HTTPS on port 8443 with its own long-lived certificate. The
-Android, Windows and Linux apps:
+Android, Windows, Linux and Mac apps:
 - **find the hub by itself,** even when DHCP moves it to a new address;
 - **trust only that certificate,** pinned by fingerprint, so an impostor on
   the Wi-Fi never gets a request or a login token;
@@ -175,7 +175,7 @@ working.
 same four-digit code, protected by a commit-then-reveal exchange so a
 machine in the middle can't fake it.
 
-The **Linux agent** is the first peer (`droplet-agent peers`, `pair`,
+The **Linux and Mac agent** is the first peer (`droplet-agent peers`, `pair`,
 `text`, `send-file`, `ring`, `clip`); Android and Windows follow. Browsers
 still go through the hub. The Android app also controls your TV directly.
 Details: [agent/README.md](agent/README.md) and [docs/mesh.md](docs/mesh.md).
@@ -540,7 +540,7 @@ tried on the Redmi itself (MIUI autostart and battery rules, real Doze).
 
 Like KDE Connect's remote input and multimedia control, for every machine
 you own. A device becomes controllable once a small **helper** runs on it:
-the [Linux agent](#linux-computers-droplet-agent), the
+the [Linux and Mac agent](#linux-computers-droplet-agent), the
 [Windows app](#windows-app) or the [Android app](#android-app). The helper
 and the browser on that machine are **one device**, so each machine appears
 once.
@@ -626,6 +626,12 @@ No hub needed. On the computer, run:
 ```sh
 curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
 ```
+
+**On a Mac**, paste the same command into Terminal. It's free and needs no
+Apple developer account: it uses the Mac's Python 3, runs the agent at login
+with launchd, puts droplet in the menu bar and Droplet in Launchpad. Remote
+control needs one switch in System Settings → Privacy & Security →
+Accessibility. See [agent/README.md](agent/README.md#on-a-mac).
 
 then pair it with your phone (droplet on the phone → **Pair a device**, and
 accept on the computer from the tray or with `droplet-agent pair`).

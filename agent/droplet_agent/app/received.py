@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QMimeDatabase, Qt, QUrl
@@ -19,6 +20,9 @@ def file_icon(name: str):
 
 def show_in_folder(path: Path) -> bool:
     """Open the file manager on the file's folder, with the file selected where it can."""
+    if sys.platform == "darwin":
+        from .. import macos
+        return macos.open_path(path, reveal=True)   # Finder, with the file selected
     try:
         from PySide6.QtDBus import QDBusConnection, QDBusMessage
         msg = QDBusMessage.createMethodCall("org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",

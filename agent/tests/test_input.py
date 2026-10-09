@@ -96,6 +96,7 @@ def test_portal_answers(monkeypatch, tmp_path):
     monkeypatch.setattr(manager.uinput, "open_backend", lambda mode: opened.append(mode) or LogBackend())
     changes = []
 
+    monkeypatch.setattr(manager, "AUTO_ORDER", ("portal", "uinput", "x11"))   # Linux's, on a Mac too
     m = manager.InputManager("auto", "app", tmp_path / "tok", lambda: changes.append(1))
     m.start()
     assert not m.available and "waiting" in m.reason

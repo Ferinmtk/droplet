@@ -2,7 +2,9 @@
 
 Wayland: `wl-paste --watch` tells us when the clipboard changes, then the text
 is read with wl-paste (text types only). X11: xclip or xsel, polled once a
-second. Incoming text is written with wl-copy / xclip / xsel.
+second. Incoming text is written with wl-copy / xclip / xsel. A Mac has no way
+to watch the clipboard either: its change count is read once a second (cheap,
+through AppKit) and the text with pbpaste only when it moved; pbcopy writes.
 
 Echoes are suppressed: text we were just given, or just sent, isn't sent
 again. Text a password manager marks as secret is never sent.
@@ -12,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -23,10 +26,15 @@ log = logging.getLogger("droplet_agent.clipboard")
 TEXT_TYPE = "text/plain;charset=utf-8"
 DEBOUNCE = 1.0  # at most one send a second
 PASSWORD_HINT = "x-kde-passwordManagerHint"
+MAC_POLL = 1.0  # seconds between looks at a Mac's clipboard
 
 
 def detect() -> tuple[str | None, str]:
-    """(mode, why): mode is "wayland", "x11-xclip", "x11-xsel" or None."""
+    """(mode, why): mode is "wayland", "x11-xclip", "x11-xsel", "macos" or None."""
+    if sys.platform == "darwin":
+        if env.which("pbpaste") and env.which("pbcopy"):
+            return "macos", "pbpaste and pbcopy"
+        return None, "pbpaste and pbcopy aren't there"
     if env.is_wayland():
         if env.which("wl-paste") and env.which("wl-copy"):
             return "wayland", "wl-clipboard"
@@ -132,6 +140,13 @@ class ClipboardSync:
                     log.info("clipboard: a password manager marked this as secret; not sending it")
                     return None
             argv = ["wl-paste", "--no-newline", "--type", "text"]
+        elif self.mode == "macos":
+            from . import macos
+            if macos.pasteboard_concealed():
+                log.info("clipboard: a password manager marked this as secret; not sending it")
+                return None
+            argv = ["pbpaste", "-Prefer", "txt"]
+            env_ = _utf8(env_)
         elif self.mode == "x11-xclip":
             argv = ["xclip", "-selection", "clipboard", "-o", "-t", "UTF8_STRING"]
         elif self.mode == "x11-xsel":
@@ -157,6 +172,8 @@ class ClipboardSync:
     def _write(self, text: str) -> str | None:
         if self.mode == "wayland":
             argv = ["wl-copy", "--type", TEXT_TYPE]
+        elif self.mode == "macos":
+            argv = ["pbcopy"]
         elif self.mode == "x11-xclip":
             argv = ["xclip", "-selection", "clipboard", "-i"]
         elif self.mode == "x11-xsel":
@@ -168,7 +185,7 @@ class ClipboardSync:
         # doesn't block and still gives us the error message.
         with tempfile.TemporaryFile() as err:
             try:
-                r = subprocess.run(argv, input=text.encode("utf-8"), env=env.session_env(), timeout=5,
+                r = subprocess.run(argv, input=text.encode("utf-8"), env=_utf8(env.session_env()), timeout=5,
                                    stdout=subprocess.DEVNULL, stderr=err, start_new_session=True)
             except (OSError, subprocess.TimeoutExpired) as e:
                 return f"{argv[0]} failed: {e}"
@@ -183,7 +200,7 @@ class ClipboardSync:
         # what's on the clipboard now isn't a change: don't push it to every
         # device each time the agent starts
         self.last_sent = self.reader()
-        target = self._watch_wayland if self.mode == "wayland" else self._poll_x11
+        target = {"wayland": self._watch_wayland, "macos": self._poll_mac}.get(self.mode, self._poll_x11)
         threading.Thread(target=target, name="clipboard", daemon=True).start()
 
     def _watch_wayland(self):
@@ -226,6 +243,19 @@ class ClipboardSync:
             except Exception:
                 log.exception("clipboard: reading failed")
 
+    def _poll_mac(self):
+        from . import macos
+        seen = macos.pasteboard_change_count()
+        while not self._stop.wait(MAC_POLL):
+            try:
+                count = macos.pasteboard_change_count()
+                if count is not None and count == seen:
+                    continue   # nothing copied since the last look: no need to run pbpaste
+                seen = count
+                self.local_change(self.reader())
+            except Exception:
+                log.exception("clipboard: reading failed")
+
     def _give_up(self, why: str):
         self.failed = why
         log.warning("clipboard: can't watch the clipboard: %s", why)
@@ -240,3 +270,13 @@ class ClipboardSync:
             self._proc.terminate()
         if self._timer:
             self._timer.cancel()
+
+
+def _utf8(environ: dict) -> dict:
+    """pbcopy and pbpaste use the locale's encoding, and launchd starts the agent with none."""
+    if sys.platform == "darwin" and "UTF-8" not in (environ.get("LC_ALL") or environ.get("LC_CTYPE")
+                                                    or environ.get("LANG") or "").upper():
+        environ = dict(environ, LANG="en_US.UTF-8")
+        environ.pop("LC_ALL", None)
+        environ.pop("LC_CTYPE", None)
+    return environ
