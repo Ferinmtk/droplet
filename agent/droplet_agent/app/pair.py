@@ -1,8 +1,10 @@
-"""Pair a device: pick one on this network (or type its address), compare the code, wait for it."""
+"""Pair a device: pick one on this network (or type its address), compare the code, wait for it.
+Or pair an iPhone: show a QR code for droplet's web app to scan (docs/iphone.md)."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
 from . import model
@@ -20,6 +22,39 @@ class NearbyRow(Card):
         self.setLayout(hbox(icon_label(device_icon(n.get("os"), model.is_phone(n.get("os"))), 32),
                             vbox(name, label(" · ".join(b for b in bits if b), muted=True), spacing=2),
                             None, go, spacing=12, margins=(14, 10, 12, 10)))
+
+
+class QrView(QWidget):
+    """A QR code, drawn dark on white with a quiet zone, as large as fits."""
+
+    def __init__(self):
+        super().__init__()
+        self.matrix: list[list[bool]] = []
+        self.setMinimumSize(240, 240)
+
+    def set_matrix(self, matrix):
+        self.matrix = matrix or []
+        self.update()
+
+    def sizeHint(self):
+        return QSize(300, 300)
+
+    def paintEvent(self, _event):
+        if not self.matrix:
+            return
+        n, quiet = len(self.matrix), 4
+        side = min(self.width(), self.height())
+        cell = max(1, side // (n + 2 * quiet))
+        full = cell * (n + 2 * quiet)
+        x0, y0 = (self.width() - full) // 2, (self.height() - full) // 2
+        p = QPainter(self)
+        p.fillRect(x0, y0, full, full, QColor("white"))
+        dark = QColor("black")
+        for r, row in enumerate(self.matrix):
+            for c, on in enumerate(row):
+                if on:
+                    p.fillRect(x0 + (c + quiet) * cell, y0 + (r + quiet) * cell, cell, cell, dark)
+        p.end()
 
 
 class PairPage(QWidget):
@@ -43,8 +78,14 @@ class PairPage(QWidget):
         by_address.clicked.connect(lambda: self.start(self.address.text()))
         body = QWidget()
         body.setObjectName("scrollbody")
+        self.iphone = primary("Show a QR code")
+        self.iphone.clicked.connect(self.show_qr)
         body.setLayout(vbox(
             label("On this network", size=1.5, bold=True), self.rows, self.none_nearby, 14,
+            label("Pair an iPhone", size=1.5, bold=True),
+            hbox(label("Open droplet's web app on the iPhone (droplet.noxeratech.com/app, added to the Home "
+                       "Screen), tap Pair, and scan the code this shows.", muted=True, wrap=True),
+                 self.iphone, spacing=12), 14,
             label("Or by address (an IP or name, with :port if it isn't 1739)", size=1.5, bold=True),
             hbox(self.address, by_address), 14,
             label("Open droplet on the other device, on the same network, and keep it open while you pair. "
@@ -88,8 +129,25 @@ class PairPage(QWidget):
                             hbox(None, self.no, self.back, self.yes, self.again, self.done, None),
                             12, hbox(None, self.cert, None), None, spacing=10))
 
+        # 3. the QR code an iPhone scans
+        qr_page = QWidget()
+        self.qr = QrView()
+        self.qr_text = label(muted=True, wrap=True, selectable=True)
+        self.qr_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.qr_text.setMinimumWidth(380)
+        self.qr_text.setMaximumWidth(460)
+        qr_done = button("Done")
+        qr_done.clicked.connect(self.reset)
+        qr_page.setLayout(vbox(label("Scan this with droplet on the iPhone", size=1.5, bold=True), self.qr,
+                               hbox(None, self.qr_text, None),
+                               label("When the iPhone asks to pair, this computer asks you to accept, with a "
+                                     "code: accept if the iPhone shows the same one. The QR code is good for "
+                                     "10 minutes.", muted=True, wrap=True),
+                               hbox(None, qr_done, None), spacing=10))
+
         self.stack.addWidget(pick)
         self.stack.addWidget(flow)
+        self.stack.addWidget(qr_page)
         self.setLayout(vbox(title("Pair a device"), self.stack, spacing=12, margins=(24, 20, 24, 16)))
 
         self.timer = QTimer(self)
@@ -112,6 +170,24 @@ class PairPage(QWidget):
         for n in nearby:
             self.rows.addWidget(NearbyRow(self, n))
         self.none_nearby.setVisible(not nearby)
+
+    # --- an iPhone ---
+    def show_qr(self):
+        self.win.agent.ask({"cmd": "qr"}, self._got_qr)
+
+    def _got_qr(self, r):
+        if not r.ok:
+            self.win.say(r.error or "Couldn't make a QR code.")
+            return
+        link = r.data.get("link") or ""
+        try:
+            from ..webrtc.qr import matrix
+            self.qr.set_matrix(matrix(link))
+            self.qr_text.setText(f"{', '.join(r.data.get('addresses') or [])} · UDP port {r.data.get('port')}")
+        except ImportError:
+            self.qr.set_matrix([])
+            self.qr_text.setText(f"Install segno to draw the code here (pip install segno). The link: {link}")
+        self.stack.setCurrentIndex(2)
 
     # --- the flow ---
     def start(self, target: str, name: str | None = None):

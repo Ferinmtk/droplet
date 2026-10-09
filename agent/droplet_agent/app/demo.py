@@ -183,6 +183,9 @@ class DemoAgent:
             if req.get("accept"):
                 self.peers.append(_peer(r["id"], r["name"], r["fp"], r["os"], on_lan=True))
             return {"state": "accepted" if req.get("accept") else "denied", "name": r["name"], "fp": r["fp"]}
+        if cmd == "qr":
+            return {"link": "https://droplet.noxeratech.com/app/#pair=eyJ2IjoxLCJuIjoiZGVtbyJ9",
+                    "expires_in": 600, "port": 1739, "fp": LINUX_FP, "addresses": ["192.168.1.20"]}
         return {"error": f"unknown command {cmd!r}"}
 
     def _job(self, jid):
