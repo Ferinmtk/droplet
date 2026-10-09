@@ -17,6 +17,10 @@
 Not yet: the Windows app as a peer, chat history merged on the hub (§6),
 and the TV remote in the apps (§7).
 
+An iPhone, which can't run a peer, connects to the Linux agent from a web
+app over WebRTC instead, with no server: docs/iphone.md (experimental).
+It's kept in the trust list with source `browser`.
+
 Where the design changed while it was built, this document says so, and why.
 §9 is the exact wire protocol, for implementing a peer.
 
