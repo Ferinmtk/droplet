@@ -40,7 +40,7 @@ from .outbox import DONE, FAILED, QUEUED, SENDING, Outbox
 from .pairing import ACCEPTED, CANCELLED, DENIED, EXPIRED, Incoming, Outgoing, PairError
 from .server import Server
 from .tlsctx import ServerContexts, client_context
-from .trust import TrustList, clean_addresses, clean_port, make_entry
+from .trust import TrustList, clean_addresses, clean_port, make_browser_entry, make_entry
 from .wslink import Link, LinkError, client_handshake, server_handshake
 
 log = logging.getLogger("droplet_agent.mesh")
@@ -224,6 +224,10 @@ class MeshNode:
         self.directory: Directory | None = None
         self.control: ControlServer | None = None
         self.port = 0
+        # the iPhone link (droplet_agent/webrtc), when it's on: it adds control commands ("qr")
+        # and a "webrtc" section to the status
+        self.webrtc = None
+        self.control_ext: dict = {}
 
     # --- who we are -------------------------------------------------------------
 
@@ -274,7 +278,7 @@ class MeshNode:
     def close(self):
         self.stop.set()
         self._kick.set()
-        for c in (self.control, self.directory, self.server):
+        for c in (self.control, self.directory, self.server, self.webrtc):
             if c is not None:
                 try:
                     c.close()
@@ -321,6 +325,8 @@ class MeshNode:
                 if any(link.address == gw and not link.closed for links in self.links.values() for link in links):
                     continue
             for entry in self.trust.all():
+                if entry["source"] == "browser":
+                    continue   # a browser is never dialled: it connects when it's open
                 fp, port = entry["fp"], entry.get("port") or DEFAULT_PORT
                 if self.open_link(fp) is not None or (gw, fp) in self._gateway_misses:
                     continue
@@ -471,7 +477,7 @@ class MeshNode:
         if link or not dial:
             return link
         entry = self.trust.get(fp)
-        if entry is None:
+        if entry is None or entry["source"] == "browser":
             return None
         with self._lock:
             lock = self._dial_locks.setdefault(fp, threading.Lock())
@@ -551,7 +557,7 @@ class MeshNode:
             if isinstance(msg.get("key"), str):
                 self.desktop.close_notification(f"{link.fp}:{msg['key']}")
         elif t == "unpair":
-            if entry["source"] == "paired":
+            if entry["source"] in ("paired", "browser"):
                 log.info("mesh: %s unpaired from this device", entry["name"])
                 self.trust.remove(link.fp)
             else:
@@ -774,7 +780,12 @@ class MeshNode:
             timer.daemon = True
             timer.start()
         if link is not None:
-            got = self._direct_text(link, job) if job["kind"] == "text" else self._direct_file(link, job)
+            if job["kind"] == "text":
+                got = self._direct_text(link, job)
+            elif hasattr(link, "send_file"):
+                got = link.send_file(job)    # a browser: the file goes over its data channel
+            else:
+                got = self._direct_file(link, job)
             if got == "ok":
                 self._finish(job, DONE, route=link.kind, error=None)
                 return "done"
@@ -951,7 +962,10 @@ class MeshNode:
         if r is None:
             raise ValueError("no such pairing request waiting (it may have expired)")
         self.desktop.close_notification(f"pair-{rid}")
-        if accept:
+        if accept and r.get("kind") == "browser":
+            self.trust.add_browser(make_browser_entry(name=r["name"], key=r["der"], os_name=r["os"] or "ios"))
+            log.info("mesh: paired with %s (%s), a browser", r["name"], r["fp"])
+        elif accept:
             self.trust.add_paired(make_entry(peer_id=r["id"], name=r["name"], cert_pem=der_to_pem(r["der"]),
                                              source="paired", os_name=r["os"]))
             with self._lock:
@@ -963,7 +977,7 @@ class MeshNode:
 
     def unpair(self, fp: str) -> dict:
         entry = self._entry(fp)
-        if entry["source"] != "paired":
+        if entry["source"] not in ("paired", "browser"):
             raise ValueError(f"{entry['name']} is trusted because your hub lists it. Remove it on the hub, "
                              "and every device stops trusting it.")
         told = False
@@ -1007,6 +1021,7 @@ class MeshNode:
             "outbox": [{k: j.get(k) for k in ("id", "kind", "peer", "state", "error", "name", "attempts")}
                        for j in self.outbox.queued()],
             "refused": self.server.refused if self.server else 0,
+            "webrtc": self.webrtc.status() if self.webrtc is not None else None,
         }
 
     def chat_history(self, fp: str | None = None, n: int = 100) -> list[dict]:
@@ -1083,6 +1098,11 @@ class MeshNode:
                 if not isinstance(msg, dict) or msg.get("t") not in LIVE:
                     raise ValueError(f"only {', '.join(LIVE)} messages can be sent this way")
                 return {"route": self.send_live(self.resolve(str(req.get("peer") or ""))["fp"], msg)}
+            if cmd in self.control_ext:
+                return self.control_ext[cmd](req)
+            if cmd == "qr":
+                return {"error": "The iPhone link is off. Turn it on with \"iphone\": {\"enabled\": true} in "
+                                 "the config (it needs aiortc), and restart the agent."}
             return {"error": f"unknown command {cmd!r}"}
         except (ValueError, TypeError, NoRoute) as e:
             return {"error": str(e)}
