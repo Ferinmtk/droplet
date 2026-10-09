@@ -621,11 +621,8 @@ def install(service: bool = True, menu: bool = True) -> int:
     else:
         print(f"Service not loaded. Start the agent with: {program[0]} run")
 
-    if menu:
-        print(f"Droplet is in Launchpad and Spotlight ({install_app_bundle(program)}).")
-    else:
-        remove_app_bundle()
     if menu and qt_app.available():
+        print(f"Droplet is in Launchpad and Spotlight ({install_app_bundle(program)}).")
         write_launch_agent(MENU_LABEL, [*program, "tray"], keep_alive=False)
         if gui_session():
             why = load(MENU_LABEL)
@@ -634,6 +631,8 @@ def install(service: bool = True, menu: bool = True) -> int:
         else:
             print("The menu bar icon starts when you log in.")
     else:
+        # both open Droplet's window, which isn't there (or wasn't wanted)
+        remove_app_bundle()
         if loaded(MENU_LABEL):
             unload(MENU_LABEL)
         try:
@@ -642,7 +641,8 @@ def install(service: bool = True, menu: bool = True) -> int:
             pass
         stop_menu()
         if menu:
-            print("No menu bar icon: it needs Droplet's window (PySide6), which isn't installed.")
+            print("No menu bar icon and no Droplet.app: they need Droplet's window (PySide6), "
+                  "which isn't installed.")
     return 0
 
 

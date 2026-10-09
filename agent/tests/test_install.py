@@ -236,18 +236,17 @@ def test_installs_on_a_mac(tmp_path, server, wheel):
     assert ".local/bin" in (home / ".zprofile").read_text()
     plist = plistlib.loads((home / "Library/LaunchAgents/io.github.ferinmtk.DropletAgent.plist").read_bytes())
     assert plist["ProgramArguments"] == [str(agent), "run"]
-    exe = home / "Applications/Droplet.app/Contents/MacOS/Droplet"
-    assert os.access(exe, os.X_OK) and str(agent) in exe.read_text()
+    # without PySide6 there's no window to open: no menu bar icon, no Droplet.app
+    assert "No menu bar icon and no Droplet.app" in out
+    assert not (home / "Applications/Droplet.app").exists()
     # nothing of Linux's
     assert not (home / ".config/systemd").exists()
     assert not (home / ".local/share/applications").exists()
     assert not (home / ".config/autostart").exists()
-    # no menu bar icon without PySide6
     assert not (home / "Library/LaunchAgents/io.github.ferinmtk.DropletAgent.Menu.plist").exists()
 
-    # again, without the menu bar: an upgrade in place, and Droplet.app goes
+    # again, without the menu bar: an upgrade in place
     r = run(home, url, "--no-service", "--no-tray")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "Creating" not in r.stdout
-    assert not (home / "Applications/Droplet.app").exists()
     assert (home / ".zprofile").read_text().count(".local/bin") == 1

@@ -296,8 +296,10 @@ What it sets up, all in your own user account (no admin password):
   it), which opens [Droplet's window](#droplets-window).
 
 The menu bar icon and the window are Qt (PySide6, about 80 MB from PyPI),
-installed by default on a Mac (`--no-app` leaves them out; `--no-tray`
-leaves out the menu bar and Droplet.app).
+installed by default on a Mac (`--no-app` leaves them out, and Droplet.app
+with them; `--no-tray` leaves out the menu bar and Droplet.app). If PySide6
+can't be installed (a Python too old for it), the agent and the commands
+still work.
 
 **Allow what you want your devices to do.** macOS asks for some things once,
 under **System Settings → Privacy & Security**. The agent runs on Python, so
