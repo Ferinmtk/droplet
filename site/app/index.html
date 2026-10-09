@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>droplet</title>
+<meta name="description" content="droplet on your iPhone: messages and files straight to your own computers, with no server in between.">
+<meta name="theme-color" content="#061419">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="droplet">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="../droplet.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- home: the computers this iPhone is paired with -->
+  <section id="home" class="view">
+    <header class="bar">
+      <div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6c4.2 5 6.4 8.3 6.4 11.1A6.4 6.4 0 0 1 12 20.1a6.4 6.4 0 0 1-6.4-6.4c0-2.8 2.2-6.1 6.4-11.1Z" fill="#38bdf8"/><circle cx="9.7" cy="14.4" r="1.5" fill="#bae6fd"/></svg><b>droplet</b></div>
+    </header>
+    <main class="scroll">
+      <div id="devices"></div>
+      <div id="empty" class="empty" hidden>
+        <h2>Pair with a computer</h2>
+        <p>On a computer running droplet, open <b>Pair</b> and choose <b>Pair an iPhone</b> (or run <code>droplet-agent pair --qr</code>). Then tap below and scan the code it shows.</p>
+      </div>
+      <button id="pair-start" class="btn primary wide">Pair a computer</button>
+      <p class="fine" id="install-hint" hidden>Tip: tap <b>Share</b> → <b>Add to Home Screen</b> to keep droplet as an app. It works from there, with no website in between.</p>
+      <p class="fine">Straight to your own computers over your Wi-Fi: no account, no server. Keep droplet open while you send.</p>
+    </main>
+  </section>
+
+  <!-- pairing -->
+  <section id="pair" class="view" hidden>
+    <header class="bar"><button class="back" data-go="home" aria-label="Back">‹</button><h1>Pair a computer</h1></header>
+    <main class="scroll">
+      <div id="pair-scan">
+        <div class="camera"><video id="video" playsinline muted></video><div class="frame"></div></div>
+        <p class="status" id="scan-status">Point the camera at the QR code on the computer.</p>
+        <label class="field">This iPhone's name<input id="my-name" maxlength="40" autocomplete="off"></label>
+        <details>
+          <summary>No camera? Paste the pairing link</summary>
+          <div class="row"><input id="pair-link" placeholder="https://droplet.noxeratech.com/app/#pair=…" autocomplete="off"><button id="pair-go" class="btn">Pair</button></div>
+        </details>
+      </div>
+      <div id="pair-code-step" hidden>
+        <p class="status" id="pair-with"></p>
+        <div class="code" id="pair-code"></div>
+        <p class="status" id="pair-detail">Check the computer shows the same four digits, and accept it there.</p>
+        <div class="row center">
+          <button id="pair-cancel" class="btn">Cancel</button>
+          <button id="pair-match" class="btn primary">They match</button>
+        </div>
+      </div>
+      <div id="pair-error" class="error" hidden></div>
+    </main>
+  </section>
+
+  <!-- one computer: messages and files -->
+  <section id="peer" class="view" hidden>
+    <header class="bar">
+      <button class="back" data-go="home" aria-label="Back">‹</button>
+      <div class="title"><h1 id="peer-name"></h1><span id="peer-state" class="state"></span></div>
+      <button id="peer-menu" class="icon" aria-label="More">⋯</button>
+    </header>
+    <main class="scroll" id="peer-scroll">
+      <div id="transfers"></div>
+      <h3 class="section" id="received-title" hidden>Received</h3>
+      <ul id="received" class="files"></ul>
+      <h3 class="section">Messages</h3>
+      <ul id="messages" class="chat"></ul>
+    </main>
+    <footer class="composer">
+      <label class="btn icon" id="file-label" aria-label="Send files">＋<input id="file-input" type="file" multiple hidden></label>
+      <input id="composer" placeholder="Message" autocomplete="off" enterkeyhint="send">
+      <button id="send" class="btn primary">Send</button>
+    </footer>
+  </section>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-body">
+      <button id="unpair" class="btn danger wide">Unpair this computer</button>
+      <button id="sheet-close" class="btn wide">Cancel</button>
+    </div>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
