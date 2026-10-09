@@ -83,13 +83,25 @@ fetch() {  # fetch URL FILE
     fi
 }
 
-# Python 3.9 or newer on a Mac: the newest found, since Droplet's window (PySide6) wants a recent one
+# Python 3.9 or newer on a Mac. python.org's first, then Apple's (the Command Line Tools'), then
+# any other, newest first: the first two are signed by their makers, so the permissions macOS
+# gives the agent (Accessibility, for remote control) last across their updates. Homebrew's
+# Python is signed afresh by each upgrade, and macOS then asks again.
+py_ok() {
+    "$1" -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null </dev/null
+}
 mac_python() {
+    c=/Library/Frameworks/Python.framework/Versions/Current/bin/python3
+    if [ -x "$c" ] && py_ok "$c"; then printf '%s\n' "$c"; return; fi
+    # only with the tools there: without them, /usr/bin/python3 offers to install them instead
+    if xcode-select -p >/dev/null 2>&1 && py_ok /usr/bin/python3; then
+        printf '%s\n' /usr/bin/python3; return
+    fi
     best="" best_v=0
     for c in python3.14 python3.13 python3.12 python3.11 python3.10 \
-        /opt/homebrew/bin/python3 /usr/local/bin/python3 \
-        /Library/Frameworks/Python.framework/Versions/Current/bin/python3 python3; do
+        /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
         command -v "$c" >/dev/null 2>&1 || continue
+        [ "$(command -v "$c")" != /usr/bin/python3 ] || continue
         v="$("$c" -c 'import sys; print(sys.version_info[0] * 100 + sys.version_info[1])' 2>/dev/null </dev/null)" ||
             continue
         case "$v" in ''|*[!0-9]*) continue ;; esac
@@ -235,7 +247,11 @@ main() {
     if [ "$mac" = 1 ]; then
         # DROPLET_PYTHON: use this Python instead of the newest one found
         py="${DROPLET_PYTHON:-$(mac_python)}"
-        [ -n "$py" ] || die "needs Python 3 (3.9 or newer), which isn't installed. Install Apple's Command Line Tools with: xcode-select --install   (or Python from https://www.python.org/downloads/macos/), then run this again."
+        if [ -z "$py" ]; then
+            # this asks macOS to offer the Command Line Tools (a window opens), which bring Python 3
+            /usr/bin/python3 -c '' >/dev/null 2>&1 </dev/null || true
+            die "needs Python 3, which this Mac doesn't have yet. Install Apple's Command Line Tools (a window may have opened offering them; or run: xcode-select --install), or Python from https://www.python.org/downloads/macos/. Then run this command again."
+        fi
     else
         for c in python3 python; do
             if command -v "$c" >/dev/null 2>&1 &&

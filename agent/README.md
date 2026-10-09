@@ -272,11 +272,14 @@ Free, and no Apple developer account or App Store needed. Open **Terminal**
 curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
 ```
 
-It needs Python 3. A Mac without it says so and stops; install Apple's
-Command Line Tools (`xcode-select --install`, a few minutes) or Python from
-[python.org](https://www.python.org/downloads/macos/), and run the command
-again. Homebrew's Python works too. The newest Python found is used;
-Droplet's window wants a recent one (3.10 or newer is safest).
+It needs Python 3 (3.9 or newer). On a Mac without it, macOS offers to
+install Apple's Command Line Tools, which bring it (or run
+`xcode-select --install`, a few minutes); Python from
+[python.org](https://www.python.org/downloads/macos/) works too. Then run the
+command again. It uses python.org's Python if there is one, then Apple's, then
+any other (Homebrew's): the first two keep the permissions you give the agent
+across their updates, while after a Homebrew Python upgrade macOS asks again
+(and the installer should be run again).
 
 What it sets up, all in your own user account (no admin password):
 
