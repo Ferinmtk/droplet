@@ -292,7 +292,8 @@ def test_the_menu_bar_shows_the_trays_menu(monkeypatch):
     pytest.importorskip("PySide6.QtWidgets")
     from PySide6.QtWidgets import QApplication
     from droplet_agent import macmenu
-    QApplication.instance() or QApplication(["droplet-test"])
+    from droplet_agent.app import main as appmain
+    QApplication.instance() or appmain.make_app(["droplet-test"])   # the same app the window's tests use
     status = {"id": "me", "name": "mac", "fp": "", "port": 1739, "nearby": [], "outbox": [],
               "peers": [{"id": "p1", "name": "phone", "link": "lan", "on_lan": True, "os": "android"}],
               "incoming": [{"request": "r1", "name": "friend", "code": "1234"}]}
