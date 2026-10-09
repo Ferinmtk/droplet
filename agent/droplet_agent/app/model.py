@@ -81,6 +81,7 @@ def grouped_fp(fp: str, group: int = 4, per_line: int = 0) -> str:
 
 
 ROUTES = {"lan": "directly, over the network", "tailnet": "directly, over Tailscale",
+          "webrtc": "directly, to its web app",
           "hub": "through the hub", "hub-mailbox": "to the hub's mailbox (it's offline)"}
 
 

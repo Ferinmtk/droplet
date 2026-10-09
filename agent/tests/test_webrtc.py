@@ -349,6 +349,237 @@ def test_sending_a_file_reports_a_refusal(tmp_path):
     asyncio.run(go())
 
 
+# --- the clipboard ---------------------------------------------------------------------------
+
+def test_a_clip_from_the_browser_is_delivered_only_once_it_has_said_who_it_is(tmp_path):
+    async def go():
+        b = Browser()
+        host, ch, conn = make(tmp_path)
+        conn.opened()
+        conn.message(json.dumps({"t": "clip", "id": "abcdefgh12", "text": "sneaky"}))
+        assert host.delivered == []
+        host.trusted[b.fp] = make_browser_entry(name="iPhone", key=b.b64)
+        sig = b.sign(auth_transcript(b.fp, host.own.fp, DTLS, ch.json()[0]["nonce"]))
+        conn.message(json.dumps({"t": "auth", "key": b.b64, "sig": sig}))
+        conn.message(json.dumps({"t": "clip", "id": "abcdefgh12", "text": "copied on the iPhone"}))
+        assert host.delivered[-1] == {"t": "clip", "id": "abcdefgh12", "text": "copied on the iPhone"}
+        conn.message(json.dumps({"t": "clip", "id": "abcdefgh13", "text": 5}))
+        assert ch.json()[-1] == {"t": "nack", "id": "abcdefgh13", "error": "no text"}
+        assert len(host.delivered) == 1
+    asyncio.run(go())
+
+
+def test_frames_carry_utf8_and_a_frame_too_large_isnt_sent(tmp_path):
+    async def go():
+        b = Browser()
+        host, ch, conn = authed(tmp_path, b)
+        assert conn.send({"t": "clip", "text": "héllo ✓ 日本"})
+        assert ch.sent[-1] == '{"t":"clip","text":"héllo ✓ 日本"}'
+        big = {"t": "clip", "text": "\n" * (200 * 1024)}   # 200 KB of text, 400 KB as JSON
+        assert not protocol.fits(big)
+        n = len(ch.sent)
+        assert conn.send(big) is False and len(ch.sent) == n
+        assert protocol.fits({"t": "clip", "text": "x" * (250 * 1024)})
+        # a lone surrogate (JSON allows one) still goes, escaped
+        assert conn.send({"t": "clip", "text": "a\ud800b"}) and "\\ud800" in ch.sent[-1]
+    asyncio.run(go())
+
+
+class FakeListener:
+    """The UDP listener without the network: an asyncio loop on a thread, like the real one."""
+
+    def __init__(self, cert, key, on_channel, port=None):
+        import threading
+        self.on_channel, self.port = on_channel, port or 1739
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def close(self):
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.thread.join(2)
+
+    def call(self, fn, *args):
+        self.loop.call_soon_threadsafe(fn, *args)
+
+
+class Session:
+    def __init__(self, channel):
+        self.channel, self.remote_fp, self.peer_address, self.on_close = channel, DTLS, "192.0.2.7", []
+        self.handlers = {}
+        channel.on = lambda ev, fn: self.handlers.setdefault(ev, fn)
+
+
+def wait_for(cond, timeout=5):
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+@pytest.fixture
+def iphone(tmp_path, monkeypatch):
+    """A dry-run agent with a mesh node, the iPhone link (no network), and a paired, connected browser.
+
+    Yields (agent, node, browser fp, the channel, send(msg) as the browser, clipboard writes)."""
+    from droplet_agent import agent as agent_mod, config, mediastate
+    from droplet_agent.mesh.node import Host, MeshNode
+    from droplet_agent.webrtc.bridge import Bridge
+    monkeypatch.setattr(mediastate, "available", lambda: (True, "fake"))
+    made = []
+
+    def start(clipboard_sync=True):
+        cfg = config.load()
+        cfg["device"]["name"] = "t15"
+        cfg["caps"]["clipboard"] = clipboard_sync
+        a = agent_mod.Agent(cfg, dry_run=True)
+        a.hello()
+        written = []
+        a.clip.writer = lambda t: written.append(t)
+
+        class AgentHost(Host):
+            def device_name(self): return "t15"
+            def dispatch_remote(self, msg, source): a.dispatch(msg, source)
+            def last_states(self): return {}
+
+        base = tmp_path / "node"
+        node = MeshNode(AgentHost(), config_dir=base / "cfg", data_dir=base / "data", downloads=base / "dl",
+                        port=0, announce=False, control=False, local_addresses=lambda: ["127.0.0.1"],
+                        dry_run=True, gateways=lambda: [])
+        node.start()
+        a.peers_broadcast = node.broadcast
+        bridge = Bridge(node, listener_factory=FakeListener)
+        bridge.start()
+        made.append((a, node, bridge))
+        b = Browser()
+        node.trust.add_browser(make_browser_entry(name="Ann's iPhone", key=b.b64))
+        ch = Channel()
+        bridge.listener.call(bridge._on_channel, Session(ch))
+        assert wait_for(lambda: ch.json())
+        sig = b.sign(auth_transcript(b.fp, node.identity.fp, DTLS, ch.json()[0]["nonce"]))
+        conn = next(iter(bridge.conns))
+        bridge.listener.call(conn.message, json.dumps({"t": "auth", "key": b.b64, "sig": sig}))
+        assert wait_for(lambda: node.open_link(b.fp) is not None)
+
+        def send(msg):
+            bridge.listener.call(conn.message, json.dumps(msg))
+        return a, node, b.fp, ch, send, written
+    yield start
+    for a, node, bridge in made:
+        bridge.close()
+        node.close()
+        a.close()
+
+
+def clips(ch):
+    return [m for m in ch.json() if m["t"] == "clip"]
+
+
+def test_the_iphone_sends_its_clipboard_even_with_sync_off_and_it_doesnt_echo(iphone):
+    a, node, fp, ch, send, written = iphone(clipboard_sync=False)
+    assert "clipboard" not in a.advertised
+    send({"t": "clip", "id": "clip000001", "text": "from the iPhone"})
+    assert wait_for(lambda: {"t": "ack", "id": "clip000001"} in ch.json())
+    assert written == ["from the iPhone"]
+    # the write comes back as a local change: not sent anywhere, the iPhone least of all
+    a.clip.local_change("from the iPhone")
+    assert clips(ch) == []
+
+
+def test_text_the_iphone_sent_isnt_sent_back_to_it(iphone):
+    a, node, fp, ch, send, written = iphone(clipboard_sync=True)
+    send({"t": "clip", "id": "clip000002", "text": "round trip"})
+    assert wait_for(lambda: {"t": "ack", "id": "clip000002"} in ch.json())
+    a.clip.local_change("round trip")       # wl-copy's write, seen by the watcher
+    a.clip.local_change("copied here")      # then something new copied on the computer
+    assert wait_for(lambda: clips(ch))
+    assert clips(ch) == [{"t": "clip", "text": "copied here"}]
+
+
+def test_a_clip_over_the_computers_limit_is_refused(iphone):
+    a, node, fp, ch, send, written = iphone()
+    a.clip.max_bytes = 1024
+    send({"t": "clip", "id": "clip000003", "text": "x" * 2000})
+    assert wait_for(lambda: any(m.get("id") == "clip000003" for m in ch.json()))
+    nack = next(m for m in ch.json() if m.get("id") == "clip000003")
+    assert nack["t"] == "nack" and "too large" in nack["error"] and written == []
+
+
+def test_the_computers_clipboard_reaches_the_iphone_only_with_sync_on(iphone):
+    a, node, fp, ch, send, written = iphone(clipboard_sync=True)
+    a.clip.local_change("copied on the computer")
+    assert wait_for(lambda: clips(ch))
+    assert clips(ch) == [{"t": "clip", "text": "copied on the computer"}]
+
+
+def test_with_sync_off_only_an_explicit_send_reaches_the_iphone(iphone):
+    a, node, fp, ch, send, written = iphone(clipboard_sync=False)
+    assert a.send_clip("copied on the computer") is False
+    import time
+    time.sleep(0.2)
+    assert clips(ch) == []
+    # tray / window / droplet-agent clip <iphone>
+    assert node.handle_control({"cmd": "clip", "peer": "Ann's iPhone", "text": "sent on purpose"}) == {"route": "webrtc"}
+    assert wait_for(lambda: clips(ch) == [{"t": "clip", "text": "sent on purpose"}])
+
+
+def test_a_secret_on_the_clipboard_never_reaches_the_iphone(iphone, monkeypatch):
+    from droplet_agent import clip, env
+
+    a, node, fp, ch, send, written = iphone(clipboard_sync=True)
+
+    class R:
+        def __init__(self, out): self.stdout, self.returncode = out, 0
+    monkeypatch.setattr(env, "run", lambda argv, **kw: R(
+        b"text/plain " + clip.PASSWORD_HINT.encode() if "--list-types" in argv else b"secret"))
+    sync = clip.ClipboardSync("wayland", a.send_clip)
+    sync.local_change(sync.reader())          # what the watcher does on a change
+    import time
+    time.sleep(0.2)
+    assert sync.reader() is None and clips(ch) == []
+
+
+def test_too_much_text_for_the_iphone_is_refused_not_dropped(iphone):
+    a, node, fp, ch, send, written = iphone()
+    with pytest.raises(ValueError, match="too much text"):
+        node.clip(fp, "\n" * (200 * 1024))
+    assert node.broadcast({"t": "clip", "text": "\n" * (200 * 1024)}) is False
+    assert clips(ch) == []
+
+
+def test_a_clip_from_the_hub_or_a_native_peer_cant_claim_to_be_explicit(iphone):
+    a, node, fp, ch, send, written = iphone(clipboard_sync=False)
+    a.dispatch({"t": "clip", "text": "from the hub", "explicit": True})
+    import time
+    time.sleep(0.2)
+    assert written == []
+
+    class Lan:
+        kind, outbound, closed = "lan", False, False
+    link = Lan()
+    link.fp = fp
+    link.ready = type("E", (), {"is_set": lambda self: True})()
+    got = []
+    node.host.dispatch_remote = lambda msg, source: got.append(msg)
+    node._on_message(link, {"t": "clip", "text": "native", "explicit": True})
+    assert got[-1]["explicit"] is False
+
+
+def test_an_iphone_that_isnt_connected_is_said_so(iphone):
+    from droplet_agent.mesh.node import NoRoute
+    a, node, fp, ch, send, written = iphone()
+    for conn in list(node.webrtc.conns):
+        node.webrtc.listener.call(conn.close)
+    assert wait_for(lambda: node.open_link(fp) is None)
+    with pytest.raises(NoRoute, match="open droplet on it"):
+        node.clip(fp, "hello")
+
+
 # --- the QR code ---------------------------------------------------------------------------
 
 def test_qr_payload_round_trip():

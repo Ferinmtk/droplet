@@ -1,8 +1,9 @@
 // Offline: after the first visit the app loads from this cache, so it works with no
 // internet (only your Wi-Fi). Each load also fetches a fresh copy in the background,
-// used from the next start. Bump VERSION when the list of files changes.
+// used from the next start. Bump VERSION when the list of files changes, and with each
+// new version of the app, so installed iPhones fetch all of it again.
 
-const VERSION = "droplet-app-v1";
+const VERSION = "droplet-app-v2";
 const SHELL = [
   "./", "index.html", "app.css", "app.js", "rtc.js", "proto.js", "crypto.js", "store.js", "scan.js",
   "vendor/jsQR.js", "manifest.webmanifest",

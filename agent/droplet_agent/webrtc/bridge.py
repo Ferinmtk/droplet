@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from . import DEFAULT_PORT
-from .protocol import Conn, Host
+from .protocol import Conn, Host, fits
 from . import qr
 
 log = logging.getLogger("droplet_agent.webrtc")
@@ -47,11 +47,16 @@ class BrowserLink:
         self.hello = {"name": conn.name, "os": "ios"}
 
     def send(self, msg: dict) -> bool:
-        if self.closed:
+        if self.closed or not fits(msg):
             return False
         self.last_used = time.monotonic()
         self.bridge.listener.call(self.conn.send, msg)
         return True
+
+    @staticmethod
+    def fits(msg: dict) -> bool:
+        """Whether msg fits in one frame of the channel (a large clipboard may not)."""
+        return fits(msg)
 
     def close(self, code: int = 1000, reason: str = ""):
         if not self.closed:

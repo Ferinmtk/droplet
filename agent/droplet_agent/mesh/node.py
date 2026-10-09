@@ -601,6 +601,10 @@ class MeshNode:
         elif t in ("input", "media", "cmd", "clip", "rpc"):
             out = {k: v for k, v in msg.items() if k not in ("from", "to")}
             out["from"] = sender   # who sent it is the authenticated peer, whatever the message says
+            if t == "clip":
+                # the iPhone's web app can't watch the clipboard: a clip from it is always
+                # someone tapping "Send clipboard" there, so it's applied even with sync off
+                out["explicit"] = link.kind == "webrtc"
             self.host.dispatch_remote(out, PeerSource(self, link.fp, entry["name"]))
         # hello, welcome, pong, rpc-result and anything newer: nothing to do
 
@@ -695,9 +699,14 @@ class MeshNode:
         entry = self._entry(fp)
         if not isinstance(text, str) or not text or len(text.encode("utf-8", "surrogatepass")) > 256 * 1024:
             raise ValueError("clipboard text must be 1 byte to 256 KB")
+        msg = {"t": "clip", "text": text}
         link = self.direct(fp)
-        if link is not None and link.send({"t": "clip", "text": text}):
+        if link is not None and not getattr(link, "fits", lambda _m: True)(msg):
+            raise ValueError(f"that's too much text for {entry['name']}'s web app in one go (256 KB at most)")
+        if link is not None and link.send(msg):
             return link.kind
+        if entry["source"] == "browser":
+            raise NoRoute(f"{entry['name']} isn't connected: open droplet on it, on the same Wi-Fi")
         # the hub has no addressed clipboard message: it goes to all your devices' clipboards
         if self._hub_has_it_live(entry) and self.host.hub_send({"t": "clip", "text": text}):
             return "hub"

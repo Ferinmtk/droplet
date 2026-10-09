@@ -7,6 +7,7 @@ import { authTranscript, commitment, hex, pairCode, pairTranscript, randomHex, s
 const CHUNK = 16 * 1024;
 const HIGH = 1024 * 1024;
 const LOW = 256 * 1024;
+export const MAX_FRAME = 256 * 1024;   // bytes in one message on the channel (its max-message-size)
 
 export class Session extends EventTarget {
   // peer: { fp, addresses, port, name }; id: this device's identity (crypto.js)
@@ -100,6 +101,19 @@ export class Session extends EventTarget {
     const id = randomHex(12);
     const done = this._ack(id, 10000);
     this._send({ t: "text", id, body, ts: Date.now() / 1000 });
+    const r = await done;
+    if (!r.ok) throw new Error(r.error || "not delivered");
+    return id;
+  }
+
+  // this iPhone's clipboard text, sent on a tap: resolves once the computer has put it on its clipboard
+  async sendClip(text) {
+    const id = randomHex(12);
+    const frame = JSON.stringify({ t: "clip", id, text });
+    if (new TextEncoder().encode(frame).length > MAX_FRAME) throw new Error("It's too long to send (256 KB at most).");
+    if (this.closed || !this.dc || this.dc.readyState !== "open") throw new Error("Not connected.");
+    const done = this._ack(id, 10000);
+    this.dc.send(frame);
     const r = await done;
     if (!r.ok) throw new Error(r.error || "not delivered");
     return id;
@@ -204,6 +218,7 @@ export class Session extends EventTarget {
       }
       case "ping": this._send({ t: "pong" }); break;
       case "ring": this.emit("ring", m); break;
+      case "clip": if (typeof m.text === "string" && m.text) this.emit("clip", m); break;
       case "unpair": this.emit("unpair", m); break;
     }
   }

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import socket
 import threading
 import time
@@ -231,7 +232,11 @@ class Agent:
             elif t == "cmd":
                 self._cmd(msg, source)
             elif t == "clip":
-                if "clipboard" in self.advertised and config.enabled(self.cfg, "clipboard"):
+                if msg.get("explicit") is True and source.kind != "hub":
+                    # someone tapped "Send clipboard" on a device that can't sync it by
+                    # itself (the iPhone's web app): applied even with automatic sync off
+                    self.serial.submit(self._clip_explicit, msg, source)
+                elif "clipboard" in self.advertised and config.enabled(self.cfg, "clipboard"):
                     self.serial.submit(self._clip, msg.get("text"))
             elif t == "rpc":
                 # files.* isn't offered on Linux; answer at once so nobody waits 30 s
@@ -314,6 +319,23 @@ class Agent:
         why = self.clip.apply(text)
         if why:
             log.warning("clipboard: couldn't apply: %s", why)
+
+    def _clip_explicit(self, msg: dict, source):
+        """Apply a clipboard someone sent on purpose, and say whether it worked (if it asked)."""
+        if self.clip.mode is None:
+            why = f"{self.host} can't set its clipboard ({self.clip_why})"
+        else:
+            why = self.clip.apply(msg.get("text"))
+            if why == "too large":
+                why = f"too large for {self.host}'s clipboard (over {self.clip.max_bytes // 1024} KB)"
+        name = (msg.get("from") or {}).get("name") or "a device"
+        if why:
+            log.warning("clipboard from %s: couldn't apply: %s", name, why)
+        else:
+            log.info("clipboard: set from %s (%d characters)", name, len(msg["text"]))
+        mid = msg.get("id")
+        if isinstance(mid, str) and re.fullmatch(r"[0-9A-Za-z_-]{8,64}", mid):
+            source.reply({"t": "nack", "id": mid, "error": why} if why else {"t": "ack", "id": mid})
 
     def _dry_clip_write(self, text: str):
         log.info("clipboard (dry run): would set %d characters: %r", len(text), text[:60])

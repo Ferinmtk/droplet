@@ -35,7 +35,9 @@ DEFAULTS: dict = {
     # true while a new device waits for one of yours to let it in
     "pending": False,
     # each capability can be switched off here; the agent then neither
-    # advertises it nor acts on it
+    # advertises it nor acts on it. "clipboard" is automatic clipboard sync; text
+    # someone sends on purpose from the iPhone's web app (it can't sync by itself,
+    # only on a tap) is put on the clipboard even with it off
     "caps": {c: True for c in CAPS},
     # "auto" picks the first that works: portal, then uinput, then x11 (on a Mac, quartz)
     "input_backend": "auto",

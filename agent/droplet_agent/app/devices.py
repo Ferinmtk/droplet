@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -14,6 +15,17 @@ from .widgets import (GOOD, Card, button, device_icon, dot, hbox, icon, icon_lab
                       title, vbox)
 
 TONES = {"busy": None, "ok": "good", "warn": "warn", "bad": "bad"}
+
+
+def clipboard_secret(mime) -> bool:
+    """A password manager marked the clipboard secret: never send it (as clip.py's sync doesn't)."""
+    from ..clip import PASSWORD_HINT
+    if mime is not None and mime.hasFormat(PASSWORD_HINT) and bytes(mime.data(PASSWORD_HINT)).strip() == b"secret":
+        return True
+    if sys.platform == "darwin":
+        from .. import macos
+        return macos.pasteboard_concealed()
+    return False
 
 
 class DeviceCard(Card):
@@ -238,7 +250,11 @@ class DevicesPage(QWidget):
 
     def send_clipboard(self, peer: dict):
         name = peer.get("name")
-        text = QGuiApplication.clipboard().text()
+        cb = QGuiApplication.clipboard()
+        if clipboard_secret(cb.mimeData()):
+            self.win.say("A password manager marked what's on the clipboard secret; it wasn't sent.")
+            return
+        text = cb.text()
         if not text:
             self.win.say("The clipboard holds no text.")
             return

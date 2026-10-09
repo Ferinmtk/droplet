@@ -20,6 +20,10 @@ const status = new Map();       // fp → "connecting" | "connected" | "offline"
 const retry = new Map();        // fp → timer
 let current = null;             // the peer being shown
 let scanning = null;
+// clipboard text the computers sent, newest first: in memory only, never stored (it may be a
+// password), so it's gone when iOS ends the app. { id, fp, text, ts, fresh }
+const clips = [];
+const CLIPS_PER_PEER = 5;
 
 // --- small things ---
 function toast(text, ms = 3500) {
@@ -119,6 +123,7 @@ function attach(peer, s) {
     if (current && current.fp === peer.fp) renderReceived();
     else toast(`${peer.name} sent ${f.name}`);
   });
+  s.addEventListener("clip", (e) => gotClip(peer, e.detail.text));
   s.addEventListener("ring", () => toast(`${peer.name} is looking for this iPhone`, 8000));
   s.addEventListener("unpair", async () => {
     await forget(peer);
@@ -142,6 +147,8 @@ async function forget(peer) {
   if (s) s.close();
   clearTimeout(retry.get(peer.fp));
   status.delete(peer.fp);
+  for (let i = clips.length - 1; i >= 0; i--) if (clips[i].fp === peer.fp) clips.splice(i, 1);
+  renderClips();
   await db.peers.remove(peer.fp);
   if (current && current.fp === peer.fp) { current = null; show("home"); }
   renderDevices();
@@ -153,14 +160,134 @@ async function renderDevices() {
   const box = $("devices");
   box.replaceChildren(...list.sort((a, b) => a.name.localeCompare(b.name)).map((p) => {
     const on = status.get(p.fp) === "connected";
+    const fresh = clips.filter((c) => c.fp === p.fp && c.fresh).length;
     const b = el("button", { className: "device" },
       el("i", { className: "dot" + (on ? " on" : "") }),
-      el("div", {}, el("b", { textContent: p.name }), el("span", { textContent: stateText(p.fp) })));
-    b.dataset.fp = p.fp;
+      el("div", {}, el("b", { textContent: p.name }), el("span", { textContent: stateText(p.fp) })),
+      fresh ? el("em", { className: "badge", textContent: "New clipboard", title: `${fresh} new` }) : null);
     b.onclick = () => openPeer(p);
-    return b;
+    const card = el("div", { className: "device-card" }, b);
+    card.dataset.fp = p.fp;
+    if (on) {
+      const send = clipButton("Send clipboard");
+      send.onclick = () => sendClipboard(p, send);
+      card.append(el("div", { className: "device-tools" }, send));
+    }
+    return card;
   }));
   $("empty").hidden = list.length > 0;
+}
+
+// --- the clipboard ---
+// iOS lets a web app read or write the clipboard only in answer to a tap: so this iPhone sends
+// its clipboard when "Send clipboard" is tapped (iOS shows its Paste button first), and what a
+// computer sends waits on a card until "Copy" is tapped. Nothing here is ever sent on its own.
+const CLIP_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9z M7 5H5.5A1.5 1.5 0 0 0 4 6.5v13A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 18.5 5H17 M12 17v-7 M9 12.5l3-3 3 3"/></svg>';
+
+function clipButton(label) {
+  const b = el("button", { className: "chip" });
+  b.innerHTML = CLIP_ICON;
+  b.append(el("span", { textContent: label }));
+  return b;
+}
+
+async function sendClipboard(peer, button) {
+  const label = button && button.querySelector("span");
+  // readText first, straight from the tap: iOS asks (its Paste button) only inside the tap
+  let text;
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.readText) throw Object.assign(new Error(), { name: "Unsupported" });
+    text = await navigator.clipboard.readText();
+  } catch (e) {
+    toast(e.name === "NotAllowedError" ? "droplet can't see the clipboard unless you tap Paste when iOS asks."
+      : e.name === "Unsupported" ? "This browser doesn't let droplet read the clipboard."
+        : "Couldn't read the clipboard (is there text on it?).");
+    return;
+  }
+  if (!text) { toast("There's no text on the clipboard to send."); return; }
+  const s = sessions.get(peer.fp);
+  if (!s) { toast(`Not connected to ${peer.name}.`); return; }
+  if (button) { button.disabled = true; label.textContent = "Sending…"; }
+  try {
+    await s.sendClip(text);
+    toast(`Sent to ${peer.name}: it's on its clipboard.`);
+  } catch (e) {
+    toast(`Not sent to ${peer.name}: ${e.message}`, 5000);
+  } finally {
+    if (button) { button.disabled = false; label.textContent = "Send clipboard"; }
+  }
+}
+
+function gotClip(peer, text) {
+  const same = clips.findIndex((c) => c.fp === peer.fp && c.text === text);
+  if (same >= 0) clips.splice(same, 1);     // the same text again: moves to the top
+  clips.unshift({ id: Math.random().toString(16).slice(2), fp: peer.fp, name: peer.name, text, ts: Date.now() / 1000, fresh: true });
+  let mine = 0;
+  for (let i = 0; i < clips.length; i++) {
+    if (clips[i].fp === peer.fp && ++mine > CLIPS_PER_PEER) clips.splice(i--, 1);
+  }
+  const here = current && current.fp === peer.fp && !$("peer").hidden;
+  if (!here && $("home").hidden) toast(`${peer.name} sent its clipboard`);
+  renderClips();
+  if (here) clips[0].fresh = false;   // seen as it arrived: highlighted this once
+  renderDevices();
+}
+
+function dropClip(c) {
+  const i = clips.indexOf(c);
+  if (i >= 0) clips.splice(i, 1);
+  renderClips();
+  renderDevices();
+}
+
+function copyFallback(text) {
+  // an older iOS: a selected text field and the copy command (still inside the tap)
+  const t = el("textarea", { value: text, readOnly: true });
+  t.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
+  document.body.append(t);
+  t.select();
+  t.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (_) {}
+  t.remove();
+  return ok;
+}
+
+async function copyClip(c, button) {
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(c.text); ok = true; }
+  } catch (_) {}
+  if (!ok) ok = copyFallback(c.text);
+  if (!ok) { toast("Couldn't copy it: iOS said no."); return; }
+  c.fresh = false;
+  button.textContent = "Copied";
+  button.classList.add("done");
+  toast("Copied: paste it anywhere.");
+  renderDevices();
+}
+
+function clipCard(c, compact) {
+  const copy = el("button", { className: "btn primary copy", textContent: "Copy" });
+  copy.onclick = () => copyClip(c, copy);
+  const x = el("button", { className: "x", textContent: "×", ariaLabel: "Dismiss", title: "Dismiss" });
+  x.onclick = () => dropClip(c);
+  const head = el("div", { className: "clip-head" },
+    el("b", { textContent: `From ${c.name}` }),
+    c.fresh ? el("em", { className: "badge", textContent: "New" }) : null,
+    el("small", { textContent: when(c.ts) }), x);
+  const card = el("div", { className: "clip" + (c.fresh ? " fresh" : "") + (compact ? " compact" : "") },
+    head, el("div", { className: "clip-body" }, el("p", { className: "clip-text", textContent: c.text }), copy));
+  card.dataset.id = c.id;
+  return card;
+}
+
+function renderClips() {
+  const home = $("home-clips");
+  home.replaceChildren(...(clips.length ? [el("h3", { className: "section", textContent: "Clipboard" }), ...clips.map((c) => clipCard(c))] : []));
+  const box = $("peer-clip");
+  const mine = current ? clips.filter((c) => c.fp === current.fp) : [];
+  box.replaceChildren(...(mine.length ? [clipCard(mine[0], true)] : []));
 }
 
 // --- pairing ---
@@ -250,6 +377,8 @@ async function openPeer(peer) {
   renderPeerState();
   $("transfers").replaceChildren();
   show("peer");
+  renderClips();
+  for (const c of clips) if (c.fp === peer.fp) c.fresh = false;   // seen: the highlight goes next time
   await Promise.all([renderMessages(), renderReceived()]);
   if (!sessions.has(peer.fp)) connectPeer(peer);
 }
@@ -351,11 +480,12 @@ async function sendFiles(list) {
 async function main() {
   me = await identity();
   myName = (await db.kv.get("name")) || (/iPad/.test(navigator.userAgent) ? "iPad" : "iPhone");
-  for (const b of document.querySelectorAll("[data-go]")) b.onclick = () => { current = null; show(b.dataset.go); renderDevices(); };
+  for (const b of document.querySelectorAll("[data-go]")) b.onclick = () => { current = null; show(b.dataset.go); renderDevices(); renderClips(); };
   $("pair-start").onclick = startPairView;
   $("pair-go").onclick = () => pairWith($("pair-link").value);
   $("pair-link").addEventListener("keydown", (e) => { if (e.key === "Enter") pairWith($("pair-link").value); });
   $("send").onclick = sendMessage;
+  $("send-clip").onclick = () => current && sendClipboard(current, $("send-clip"));
   $("composer").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
   $("file-input").onchange = (e) => { const files = [...e.target.files]; e.target.value = ""; sendFiles(files); };
   $("peer-menu").onclick = () => { $("sheet").hidden = false; };
@@ -386,4 +516,4 @@ async function main() {
 main().catch((e) => { document.body.textContent = `droplet couldn't start: ${e.message || e}`; });
 
 // for tests and debugging
-window.droplet = { sessions, status, db };
+window.droplet = { sessions, status, db, clips };

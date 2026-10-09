@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>droplet</title>
-<meta name="description" content="droplet on your iPhone: messages and files straight to your own computers, with no server in between.">
+<meta name="description" content="droplet on your iPhone: messages, files and the clipboard straight to your own computers, with no server in between.">
 <meta name="theme-color" content="#061419">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -24,6 +24,7 @@
       <div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6c4.2 5 6.4 8.3 6.4 11.1A6.4 6.4 0 0 1 12 20.1a6.4 6.4 0 0 1-6.4-6.4c0-2.8 2.2-6.1 6.4-11.1Z" fill="#38bdf8"/><circle cx="9.7" cy="14.4" r="1.5" fill="#bae6fd"/></svg><b>droplet</b></div>
     </header>
     <main class="scroll">
+      <div id="home-clips"></div>
       <div id="devices"></div>
       <div id="empty" class="empty" hidden>
         <h2>Pair with a computer</h2>
@@ -75,10 +76,16 @@
       <h3 class="section">Messages</h3>
       <ul id="messages" class="chat"></ul>
     </main>
-    <footer class="composer">
-      <label class="btn icon" id="file-label" aria-label="Send files">＋<input id="file-input" type="file" multiple hidden></label>
-      <input id="composer" placeholder="Message" autocomplete="off" enterkeyhint="send">
-      <button id="send" class="btn primary">Send</button>
+    <footer class="foot">
+      <div id="peer-clip"></div>
+      <div class="tools">
+        <button id="send-clip" class="chip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9z M7 5H5.5A1.5 1.5 0 0 0 4 6.5v13A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 18.5 5H17 M12 17v-7 M9 12.5l3-3 3 3"/></svg><span>Send clipboard</span></button>
+      </div>
+      <div class="composer">
+        <label class="btn icon" id="file-label" aria-label="Send files">＋<input id="file-input" type="file" multiple hidden></label>
+        <input id="composer" placeholder="Message" autocomplete="off" enterkeyhint="send">
+        <button id="send" class="btn primary">Send</button>
+      </div>
     </footer>
   </section>
 
