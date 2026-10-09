@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import APP_ID, __version__, battery, clip, config, hub, lock, mediastate, screenshot
 from .inject.manager import InputManager
+from .mesh import OS_NAME
 
 log = logging.getLogger("droplet_agent")
 
@@ -116,7 +117,7 @@ class Agent:
     def hello(self) -> dict:
         caps = self.caps()
         self.advertised = set(caps)
-        return {"t": "hello", "caps": caps, "platform": "linux", "app": f"droplet-agent/{__version__}"}
+        return {"t": "hello", "caps": caps, "platform": OS_NAME, "app": f"droplet-agent/{__version__}"}
 
     def check_caps(self):
         cb = self.on_caps_changed

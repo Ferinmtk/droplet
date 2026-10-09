@@ -8,6 +8,8 @@ Backends, tried in this order when the config says "auto":
   compositor (niri, sway, Hyprland…) but needs /dev/uinput to be writable,
   which takes a one-time root step (see `droplet-agent doctor`).
 - x11: xdotool, on an X11 session only.
+- quartz: a Mac's own input events (the only one there). Needs the user to
+  allow it under Privacy & Security → Accessibility.
 - log: acts on nothing, just records. For tests and --dry-run.
 """
 

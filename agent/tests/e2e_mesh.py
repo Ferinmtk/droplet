@@ -242,8 +242,11 @@ def direct():
         for msg, want in (
             ({"t": "input", "ev": [{"k": "move", "dx": 3, "dy": 4}, {"k": "key", "key": "ArrowRight"},
                                    {"k": "text", "s": "héllo"}]}, "input (dry run): text héllo"),
-            # no player runs in the throwaway session: the handler answers "nothing is playing"
-            ({"t": "media", "action": "play-pause"}, "media play-pause: nothing is playing"),
+            # no player runs in the throwaway session: the handler answers "nothing is playing".
+            # A Mac has no players to ask: it presses the media key (only logged in a dry run)
+            ({"t": "media", "action": "play-pause"},
+             "media (dry run): media-key MediaPlayPause" if sys.platform == "darwin"
+             else "media play-pause: nothing is playing"),
             ({"t": "cmd", "cmd": "lock"}, "lock (dry run)"),
         ):
             r = a.cli("send", b_id, json.dumps(msg))

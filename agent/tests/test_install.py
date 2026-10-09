@@ -28,6 +28,8 @@ import agent_dist  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     not shutil.which("curl") or not shutil.which("python3"), reason="needs curl and python3")
+linux_only = pytest.mark.skipif(sys.platform == "darwin", reason="Linux's desktop entries and systemd")
+mac_only = pytest.mark.skipif(sys.platform != "darwin", reason="needs a Mac")
 
 
 class Quiet(SimpleHTTPRequestHandler):
@@ -79,6 +81,7 @@ def run(home: Path, releases: str, *args, script: Path = INSTALL, env_extra: dic
                           timeout=300, stdin=subprocess.DEVNULL)
 
 
+@linux_only
 def test_installs_from_the_latest_release_without_a_hub(tmp_path, server, wheel):
     root, url = server
     publish(root, "latest/download", wheel)
@@ -116,6 +119,7 @@ def test_installs_from_the_latest_release_without_a_hub(tmp_path, server, wheel)
     assert not (home / ".config/autostart/io.github.ferinmtk.DropletAgent.Tray.desktop").exists()
 
 
+@linux_only
 def test_the_window_is_installed_only_from_a_desktop_session(tmp_path, server, wheel):
     root, url = server
     publish(root, "latest/download", wheel)
@@ -207,3 +211,43 @@ def test_a_hub_still_serves_the_agent(tmp_path, server, wheel):
     # then it ran `droplet-agent setup` against the hub, which this fake one can't answer
     assert r.returncode != 0
     assert "Pair with your phone" not in out
+
+
+@mac_only
+def test_installs_on_a_mac(tmp_path, server, wheel):
+    import plistlib
+    root, url = server
+    publish(root, "latest/download", wheel)
+    home = tmp_path / "home"
+    home.mkdir()
+    r = run(home, url, "--no-service")
+    out = r.stdout + r.stderr
+    assert r.returncode == 0, out
+    assert "Checked its SHA-256" in out
+    # offline, PySide6 can't come: not fatal, and said
+    assert "Installing Droplet's window and menu bar icon" in out
+    assert "Couldn't install Droplet's window" in out
+    assert "Service not loaded" in out
+    assert "this Mac, then accept here" in out and "Accessibility" in out
+
+    agent = home / ".local/share/droplet-agent/bin/droplet-agent"
+    assert agent.exists()
+    assert os.readlink(home / ".local/bin/droplet-agent") == str(agent)
+    assert ".local/bin" in (home / ".zprofile").read_text()
+    plist = plistlib.loads((home / "Library/LaunchAgents/io.github.ferinmtk.DropletAgent.plist").read_bytes())
+    assert plist["ProgramArguments"] == [str(agent), "run"]
+    exe = home / "Applications/Droplet.app/Contents/MacOS/Droplet"
+    assert os.access(exe, os.X_OK) and str(agent) in exe.read_text()
+    # nothing of Linux's
+    assert not (home / ".config/systemd").exists()
+    assert not (home / ".local/share/applications").exists()
+    assert not (home / ".config/autostart").exists()
+    # no menu bar icon without PySide6
+    assert not (home / "Library/LaunchAgents/io.github.ferinmtk.DropletAgent.Menu.plist").exists()
+
+    # again, without the menu bar: an upgrade in place, and Droplet.app goes
+    r = run(home, url, "--no-service", "--no-tray")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Creating" not in r.stdout
+    assert not (home / "Applications/Droplet.app").exists()
+    assert (home / ".zprofile").read_text().count(".local/bin") == 1

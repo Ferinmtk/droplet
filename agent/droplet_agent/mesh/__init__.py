@@ -1,6 +1,6 @@
 """droplet mesh: devices talk to each other directly; the hub is an optional helper.
 
-The design is docs/mesh.md. This package is the Linux agent's peer, and the
+The design is docs/mesh.md. This package is the Linux and macOS agent's peer, and the
 reference other platforms follow:
 
 - identity.py   the long-lived key and self-signed certificate; the fingerprint is the peer
@@ -20,7 +20,11 @@ It depends on the rest of the agent only through the `Host` interface in
 node.py, so it can be lifted out whole.
 """
 
+import sys
+
 PROTOCOL_VERSION = 1
+# what this peer says it runs, in hello, pairing and mDNS: "linux", or "macos" on a Mac
+OS_NAME = "macos" if sys.platform == "darwin" else "linux"
 SERVICE = "_droplet-peer._tcp.local."
 DEFAULT_PORT = 1739
 PORT_RANGE = range(1739, 1750)   # 1739, or the next free one up to 1749

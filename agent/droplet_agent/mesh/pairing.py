@@ -44,7 +44,7 @@ import secrets
 import threading
 import time
 
-from . import PROTOCOL_VERSION
+from . import OS_NAME, PROTOCOL_VERSION
 from .identity import Identity, PEER_ID, fingerprint, pem_to_der, sign, verify
 from .tlsctx import client_context, peer_fingerprint
 
@@ -133,7 +133,7 @@ class Incoming:
                 "fp": fp, "der": der, "commit": commit, "nonce_r": nonce_r, "code": None,
             }
         return 200, {"v": PROTOCOL_VERSION, "request": rid, "nonce": nonce_r, "id": my_id, "name": my_name,
-                     "os": "linux", "fp": self.identity.fp}
+                     "os": OS_NAME, "fp": self.identity.fp}
 
     def confirm(self, rid: str, body: dict) -> tuple[int, dict]:
         """Step 2: the reveal and the signature."""
@@ -245,7 +245,7 @@ class Outgoing:
             der = conn.sock.getpeercert(binary_form=True)
             tls_fp = peer_fingerprint(conn.sock)
             status, out = _call(conn, "POST", "/mesh/pair", {
-                "v": PROTOCOL_VERSION, "id": self.my_id, "name": self.my_name, "os": "linux",
+                "v": PROTOCOL_VERSION, "id": self.my_id, "name": self.my_name, "os": OS_NAME,
                 "cert": self.identity.cert_pem, "commit": commitment(nonce_i)})
             if status != 200:
                 raise PairError(out.get("error") or f"the peer answered {status}")

@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
+import sys
+import threading
 from pathlib import Path
 
 from . import Backend, InputHandler
-from . import remotedesktop, uinput, xdotool
+from . import quartz, remotedesktop, uinput, xdotool
 from .logonly import LogBackend
 
 log = logging.getLogger("droplet_agent.input")
 
-AUTO_ORDER = ("portal", "uinput", "x11")
+AUTO_ORDER = ("quartz",) if sys.platform == "darwin" else ("portal", "uinput", "x11")
+TRUST_POLL = 5.0   # seconds between looks at whether a Mac's Accessibility switch is on yet
 
 
 def probe(choice: str = "auto") -> list[tuple[str, bool, str]]:
@@ -25,6 +28,8 @@ def probe(choice: str = "auto") -> list[tuple[str, bool, str]]:
             ok, why = uinput.writable()
         elif name == "x11":
             ok, why = xdotool.usable()
+        elif name == "quartz":
+            ok, why = quartz.usable()
         elif name == "log":
             ok, why = True, "dry run: input is only logged"
         else:
@@ -48,6 +53,7 @@ class InputManager:
         self._session: remotedesktop.PortalSession | None = None
         self._remaining: list[str] = []
         self._why: list[str] = []
+        self._closed = threading.Event()
 
     @property
     def available(self) -> bool:
@@ -89,11 +95,48 @@ class InputManager:
                 if ok:
                     self.use(xdotool.XdotoolBackend())
                     return
+            elif name == "quartz":
+                ok, why = quartz.usable()
+                if ok:
+                    try:
+                        self.use(quartz.QuartzBackend())
+                        return
+                    except OSError as e:
+                        why = f"couldn't use CoreGraphics: {e}"
+                elif sys.platform == "darwin" and why.startswith("not allowed yet"):
+                    self._wait_for_accessibility()
             else:
                 why = f"unknown input backend {name!r}"
             self._why.append(f"{name}: {why}")
         self.reason = "no way to inject input here. " + "; ".join(self._why)
         log.warning("input: %s", self.reason)
+
+    def _wait_for_accessibility(self):
+        """A Mac: ask macOS to list this Python under Accessibility, then start input once it's allowed."""
+        from .. import config, macos
+        # macOS's dialog once, not at every start: the switch stays listed after that
+        asked = config.config_dir() / "asked-accessibility"
+        if not asked.exists():
+            try:
+                macos.accessibility_allowed(prompt=True)
+                asked.parent.mkdir(parents=True, exist_ok=True)
+                asked.touch()
+            except Exception as e:
+                log.debug("input: asking for Accessibility failed: %s", e)
+
+        def wait():
+            while not self._closed.wait(TRUST_POLL):
+                ok, _ = quartz.usable()
+                if ok:
+                    try:
+                        self.use(quartz.QuartzBackend())
+                    except OSError as e:
+                        log.warning("input: Accessibility is allowed, but CoreGraphics failed: %s", e)
+                        return
+                    log.info("input: Accessibility was switched on; remote control works now")
+                    self.on_change()
+                    return
+        threading.Thread(target=wait, name="input-accessibility", daemon=True).start()
 
     def _portal_state(self, state, detail):
         S = remotedesktop.State
@@ -125,6 +168,7 @@ class InputManager:
             h.release_all()
 
     def close(self):
+        self._closed.set()
         if self.backend is not None:
             self.release_all()
             self.backend.close()

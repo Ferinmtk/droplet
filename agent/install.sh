@@ -16,6 +16,11 @@
 # cryptography, and for Droplet's window PySide6) come from PyPI. A release's wheel is checked
 # against the release's SHA256SUMS.txt.
 #
+# On a Mac it's the same command, in Terminal. It uses the Mac's Python 3
+# (Xcode's Command Line Tools, python.org or Homebrew), runs the agent as a
+# LaunchAgent instead of a systemd service, puts droplet in the menu bar, and
+# Droplet.app in ~/Applications (Launchpad and Spotlight).
+#
 # Fetched over the LAN's plain http, the agent reads the hub's certificate
 # fingerprint from it, then switches to the hub's LAN HTTPS with that
 # certificate pinned before it sends anything that matters.
@@ -32,10 +37,12 @@
 #   --release TAG   install the agent from this GitHub release (v1.2.0)
 #                   instead of the latest one
 #   --wheel FILE    install this agent wheel (a path or a URL)
-#   --no-service    don't install the systemd user service
-#   --no-tray       don't put droplet in the system tray
+#   --no-service    don't install the systemd user service (on a Mac: don't
+#                   load the LaunchAgent)
+#   --no-tray       don't put droplet in the system tray (on a Mac: the menu
+#                   bar, and Droplet.app)
 #   --no-app        don't install Droplet's window (PySide6, about 80 MB from
-#                   PyPI; installed only from a desktop session)
+#                   PyPI; installed only from a desktop session, and always on a Mac)
 #
 # Re-running it upgrades the agent and keeps the settings.
 
@@ -76,8 +83,110 @@ fetch() {  # fetch URL FILE
     fi
 }
 
+# Python 3.9 or newer on a Mac: the newest found, since Droplet's window (PySide6) wants a recent one
+mac_python() {
+    best="" best_v=0
+    for c in python3.14 python3.13 python3.12 python3.11 python3.10 \
+        /opt/homebrew/bin/python3 /usr/local/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/Current/bin/python3 python3; do
+        command -v "$c" >/dev/null 2>&1 || continue
+        v="$("$c" -c 'import sys; print(sys.version_info[0] * 100 + sys.version_info[1])' 2>/dev/null </dev/null)" ||
+            continue
+        case "$v" in ''|*[!0-9]*) continue ;; esac
+        if [ "$v" -ge 309 ] && [ "$v" -gt "$best_v" ]; then
+            best="$c" best_v="$v"
+        fi
+    done
+    printf '%s\n' "$best"
+}
+
+# the desktop entries (Linux): the permission dialog's name, and the tray at login
+linux_entries() {
+    # the desktop's permission dialog names the app from this file
+    apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+    mkdir -p "$apps"
+    cat >"$apps/io.github.ferinmtk.DropletAgent.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=droplet agent
+Comment=Lets your other devices control this computer through droplet
+Exec="$agent" run
+Icon=input-mouse
+NoDisplay=true
+EOF
+
+    # the tray icon starts with the desktop session (the service can't show one)
+    autostart="$config/autostart/io.github.ferinmtk.DropletAgent.Tray.desktop"
+    if [ "$tray" = 1 ]; then
+        mkdir -p "$config/autostart"
+        cat >"$autostart" <<EOF
+[Desktop Entry]
+Type=Application
+Name=droplet
+Comment=droplet in the system tray: send to your devices, answer pairing requests
+Exec="$agent" tray
+Icon=input-mouse
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+    else
+        rm -f "$autostart"
+    fi
+}
+
+# the systemd user service and the tray (Linux)
+linux_service() {
+    unit_dir="$config/systemd/user"
+    mkdir -p "$unit_dir"
+    cat >"$unit_dir/droplet-agent.service" <<EOF
+[Unit]
+Description=droplet agent: lets your other devices control this computer
+Documentation=https://github.com/Ferinmtk/droplet
+# started with the desktop, so it has WAYLAND_DISPLAY and the session bus
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart="$agent" run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+
+    if [ "$service" = 1 ] && command -v systemctl >/dev/null 2>&1 &&
+        systemctl --user show-environment >/dev/null 2>&1; then
+        systemctl --user daemon-reload
+        systemctl --user enable droplet-agent.service >/dev/null 2>&1 ||
+            say "Couldn't enable the service; start it with: systemctl --user enable --now droplet-agent"
+        if systemctl --user is-active --quiet graphical-session.target; then
+            systemctl --user restart droplet-agent.service
+            say "The agent is running (systemctl --user status droplet-agent)."
+        else
+            say "The service starts with your next desktop session."
+        fi
+    else
+        say "Service not installed. Start the agent with: $agent run"
+    fi
+
+    # Droplet in the app menu: opens its window (or, without one, says where the tray is)
+    if [ "$tray" = 1 ]; then
+        "$agent" open --install >/dev/null 2>&1 </dev/null || true
+    fi
+
+    # start (or restart, after an upgrade) the tray in this desktop session
+    if [ "$tray" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+        nohup "$agent" tray >/dev/null 2>&1 </dev/null &
+        say "droplet is in the system tray, and starts there with your desktop."
+    fi
+}
+
 main() {
     hub="$DROPLET_HUB" code="" name="" pin="" service=1 tray=1 app=1
+    mac=0
+    [ "$(uname -s 2>/dev/null)" = Darwin ] && mac=1
     release="$DROPLET_RELEASE" wheel="" source=""
     prev=""
     for a in "$@"; do
@@ -123,14 +232,21 @@ main() {
 
     # --- Python and a venv --------------------------------------------------
     py=""
-    for c in python3 python; do
-        if command -v "$c" >/dev/null 2>&1 &&
-            "$c" -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; then
-            py="$c"; break
-        fi
-    done
-    [ -n "$py" ] || die "needs Python 3.9 or newer (python3)"
+    if [ "$mac" = 1 ]; then
+        # DROPLET_PYTHON: use this Python instead of the newest one found
+        py="${DROPLET_PYTHON:-$(mac_python)}"
+        [ -n "$py" ] || die "needs Python 3 (3.9 or newer), which isn't installed. Install Apple's Command Line Tools with: xcode-select --install   (or Python from https://www.python.org/downloads/macos/), then run this again."
+    else
+        for c in python3 python; do
+            if command -v "$c" >/dev/null 2>&1 &&
+                "$c" -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; then
+                py="$c"; break
+            fi
+        done
+        [ -n "$py" ] || die "needs Python 3.9 or newer (python3)"
+    fi
     if ! "$py" -c 'import venv, ensurepip' 2>/dev/null; then
+        [ "$mac" = 0 ] || die "$py can't make a virtual environment. Install Python from https://www.python.org/downloads/macos/ and run this again."
         die "Python can't make a virtual environment here. On Debian/Ubuntu: sudo apt install python3-venv"
     fi
 
@@ -208,7 +324,18 @@ sys.exit(1)
 
     # Droplet's window (Qt, through PySide6): only where there's a desktop to show it on.
     # Without it the agent, the tray and the commands work the same.
-    if [ "$app" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+    if [ "$mac" = 1 ] && [ "$app" = 1 ]; then
+        # a Mac always has a desktop, and its menu bar icon is Qt too
+        say "Installing Droplet's window and menu bar icon (PySide6, about 80 MB from PyPI)"
+        if pip install "${tmpdir}/${whl}[app]" &&
+            "$data/bin/python" -c 'import PySide6.QtWidgets' 2>/dev/null </dev/null; then
+            say "Droplet's window is installed: open Droplet from Launchpad or Spotlight."
+        else
+            say "Couldn't install Droplet's window ($py may be too old for PySide6); the agent and the"
+            say "commands work without it, but there's no menu bar icon. Python 3.10 or newer from"
+            say "https://www.python.org/downloads/macos/ fixes it: install it, then run this again."
+        fi
+    elif [ "$app" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
         say "Installing Droplet's window (PySide6, about 80 MB from PyPI)"
         if pip install "${tmpdir}/${whl}[app]" &&
             "$data/bin/python" -c 'import PySide6.QtWidgets' 2>/dev/null </dev/null; then
@@ -221,36 +348,21 @@ sys.exit(1)
 
     mkdir -p "$HOME/.local/bin"
     ln -sf "$agent" "$HOME/.local/bin/droplet-agent"
+    if [ "$mac" = 1 ]; then
+        # a Mac's Terminal doesn't look in ~/.local/bin: add it for zsh, the Mac's shell
+        case ":${PATH:-}:" in
+            *":$HOME/.local/bin:"*) ;;
+            *)
+                if ! grep -qs '.local/bin' "$HOME/.zprofile"; then
+                    # shellcheck disable=SC2016  # written as is, for zsh to expand
+                    printf '\n# droplet-agent\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$HOME/.zprofile"
+                    say "Added ~/.local/bin to your PATH in ~/.zprofile (new Terminal windows find droplet-agent)."
+                fi ;;
+        esac
+    fi
 
-    # the desktop's permission dialog names the app from this file
-    apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-    mkdir -p "$apps"
-    cat >"$apps/io.github.ferinmtk.DropletAgent.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=droplet agent
-Comment=Lets your other devices control this computer through droplet
-Exec="$agent" run
-Icon=input-mouse
-NoDisplay=true
-EOF
-
-    # the tray icon starts with the desktop session (the service can't show one)
-    autostart="$config/autostart/io.github.ferinmtk.DropletAgent.Tray.desktop"
-    if [ "$tray" = 1 ]; then
-        mkdir -p "$config/autostart"
-        cat >"$autostart" <<EOF
-[Desktop Entry]
-Type=Application
-Name=droplet
-Comment=droplet in the system tray: send to your devices, answer pairing requests
-Exec="$agent" tray
-Icon=input-mouse
-Terminal=false
-X-GNOME-Autostart-enabled=true
-EOF
-    else
-        rm -f "$autostart"
+    if [ "$mac" = 0 ]; then
+        linux_entries
     fi
 
     # --- link to the hub (only with one) ---------------------------------------
@@ -282,50 +394,15 @@ EOF
     fi
 
     # --- the service ---------------------------------------------------------
-    unit_dir="$config/systemd/user"
-    mkdir -p "$unit_dir"
-    cat >"$unit_dir/droplet-agent.service" <<EOF
-[Unit]
-Description=droplet agent: lets your other devices control this computer
-Documentation=https://github.com/Ferinmtk/droplet
-# started with the desktop, so it has WAYLAND_DISPLAY and the session bus
-After=graphical-session.target
-PartOf=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart="$agent" run
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=graphical-session.target
-EOF
-
-    if [ "$service" = 1 ] && command -v systemctl >/dev/null 2>&1 &&
-        systemctl --user show-environment >/dev/null 2>&1; then
-        systemctl --user daemon-reload
-        systemctl --user enable droplet-agent.service >/dev/null 2>&1 ||
-            say "Couldn't enable the service; start it with: systemctl --user enable --now droplet-agent"
-        if systemctl --user is-active --quiet graphical-session.target; then
-            systemctl --user restart droplet-agent.service
-            say "The agent is running (systemctl --user status droplet-agent)."
-        else
-            say "The service starts with your next desktop session."
-        fi
+    if [ "$mac" = 1 ]; then
+        # LaunchAgents for the agent and the menu bar icon, and Droplet.app
+        set --
+        [ "$service" = 1 ] || set -- "$@" --no-service
+        [ "$tray" = 1 ] || set -- "$@" --no-menu
+        "$data/bin/python" -m droplet_agent.macos install "$@" </dev/null ||
+            say "Couldn't set up the agent's LaunchAgent. Start it with: $agent run"
     else
-        say "Service not installed. Start the agent with: $agent run"
-    fi
-
-    # Droplet in the app menu: opens its window (or, without one, says where the tray is)
-    if [ "$tray" = 1 ]; then
-        "$agent" open --install >/dev/null 2>&1 </dev/null || true
-    fi
-
-    # start (or restart, after an upgrade) the tray in this desktop session
-    if [ "$tray" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
-        nohup "$agent" tray >/dev/null 2>&1 </dev/null &
-        say "droplet is in the system tray, and starts there with your desktop."
+        linux_service
     fi
 
     say ""
@@ -335,7 +412,14 @@ EOF
     if [ -z "$hub" ] && [ "$linked" = 0 ]; then
         say ""
         say "Pair with your phone: open droplet on the phone, tap Pair a device and pick"
-        say "this computer, then accept here (the tray asks), or run: droplet-agent pair"
+        if [ "$mac" = 1 ]; then
+            say "this Mac, then accept here (the menu bar icon asks), or run: droplet-agent pair"
+            say ""
+            say "To control this Mac from your phone, allow it once: System Settings, Privacy &"
+            say "Security, Accessibility: switch on Python. (droplet-agent doctor says what else.)"
+        else
+            say "this computer, then accept here (the tray asks), or run: droplet-agent pair"
+        fi
         say "Your devices: droplet-agent peers"
     fi
 }

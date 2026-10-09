@@ -1,4 +1,4 @@
-# The Linux agent (agent/): test it on every change, and on a v* tag attach it to that
+# The Linux and macOS agent (agent/): test it on every change (on Linux, and on a Mac), and on a v* tag attach it to that
 # tag's GitHub release, so it installs with no hub at all:
 #
 #   curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
@@ -77,9 +77,129 @@ jobs:
           sh -n agent/install.sh
           shellcheck -s sh agent/install.sh
 
+  macos:
+    # the only Mac there is: the agent's tests, two agents talking over the mesh, and the
+    # installer run exactly as a Mac user runs it, with the Mac's own Python and launchd
+    name: macOS (${{ matrix.case }})
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [tests, install]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the agent, Droplet's window and pytest
+        if: matrix.case == 'tests'
+        run: python -m pip install --disable-pip-version-check -q pytest './agent[app]'
+
+      - name: Tests
+        if: matrix.case == 'tests'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: >-
+          python -m pytest -q -ra --log-level=DEBUG
+          -o 'log_format=%(relativeCreated)6.0fms %(threadName)s %(name)s: %(message)s'
+          agent/tests
+
+      - name: Droplet's window and the menu bar icon start (offscreen)
+        if: matrix.case == 'tests'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python - <<'EOF'
+          import subprocess, sys, time
+          for cmd in (["app", "--demo"], ["tray", "-v"]):
+              p = subprocess.Popen([sys.executable, "-m", "droplet_agent", *cmd], cwd="agent",
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+              time.sleep(6)
+              alive = p.poll() is None
+              p.terminate()
+              out = p.communicate(timeout=10)[0]
+              print(f"--- droplet-agent {' '.join(cmd)}: {'still running after 6 s' if alive else f'exited {p.returncode}'}")
+              print(out[-3000:])
+              # offscreen there's no menu bar: the icon says so and leaves; the window keeps running
+              ok = alive if cmd[0] == "app" else (alive or "no menu bar" in out)
+              if not ok:
+                  sys.exit(f"droplet-agent {cmd[0]} didn't start")
+          EOF
+
+      - name: Two agents pair and talk directly (mDNS, mutual TLS, files, input, ring, clipboard)
+        if: matrix.case == 'tests'
+        run: python agent/tests/e2e_mesh.py direct
+
+      - name: Build the wheel
+        if: matrix.case == 'install'
+        run: |
+          mkdir dist
+          wheel="$(python agent_dist.py wheel dist)"
+          cp "$wheel" dist/droplet-agent.whl
+          python -m zipfile -l dist/droplet-agent.whl | grep -q 'droplet_agent/app_icon.png'
+          /usr/bin/python3 --version
+
+      - name: Install with the Mac's own Python (/usr/bin/python3), no service, and run it
+        if: matrix.case == 'install'
+        run: |
+          home="$(mktemp -d /tmp/dh.XXXXXX)"
+          HOME="$home" DROPLET_PYTHON=/usr/bin/python3 sh agent/install.sh --wheel dist/droplet-agent.whl --no-service
+          agent="$home/.local/bin/droplet-agent"
+          "$home/.local/share/droplet-agent/bin/python" --version
+          test -x "$home/Applications/Droplet.app/Contents/MacOS/Droplet"
+          test -f "$home/Library/LaunchAgents/io.github.ferinmtk.DropletAgent.plist"
+          HOME="$home" "$agent" run --dry-run -v >"$home/agent.log" 2>&1 &
+          pid=$!
+          for _ in $(seq 60); do
+            HOME="$home" "$agent" peers >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          HOME="$home" "$agent" peers
+          HOME="$home" "$agent" status
+          kill "$pid"
+          wait "$pid" || true
+          cat "$home/agent.log"
+          grep -q "stopped" "$home/agent.log"
+
+      - name: Install as a Mac user does (newest Python, launchd, menu bar, Droplet.app)
+        if: matrix.case == 'install'
+        run: |
+          sh agent/install.sh --wheel dist/droplet-agent.whl
+          agent="$HOME/.local/bin/droplet-agent"
+          launchctl print "gui/$(id -u)/io.github.ferinmtk.DropletAgent" | grep -E 'state|program|pid'
+          for _ in $(seq 60); do
+            "$agent" peers >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          "$agent" peers
+          "$agent" status
+          "$agent" status | grep -q '^service:  running'
+          test -x "$HOME/Applications/Droplet.app/Contents/MacOS/Droplet"
+          test -f "$HOME/Library/LaunchAgents/io.github.ferinmtk.DropletAgent.Menu.plist"
+          launchctl print "gui/$(id -u)/io.github.ferinmtk.DropletAgent.Menu" | grep -E 'state|pid|last exit' || true
+          sleep 3
+          cat "$HOME/Library/Logs/droplet-menu.log" || true
+          "$agent" tray --help >/dev/null
+          "$agent" doctor || true
+          cat "$HOME/Library/Logs/droplet-agent.log"
+
+      - name: Uninstall
+        if: matrix.case == 'install'
+        run: |
+          "$HOME/.local/bin/droplet-agent" uninstall -y
+          test ! -e "$HOME/Library/LaunchAgents/io.github.ferinmtk.DropletAgent.plist"
+          test ! -e "$HOME/Applications/Droplet.app"
+          test ! -e "$HOME/.local/share/droplet-agent"
+          ! launchctl print "gui/$(id -u)/io.github.ferinmtk.DropletAgent" >/dev/null 2>&1
+
   release:
     name: Attach to the release
-    needs: test
+    needs: [test, macos]
     if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30

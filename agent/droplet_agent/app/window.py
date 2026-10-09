@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from PySide6.QtWidgets import (QFrame, QListWidget, QListWidgetItem, QMainWindow, QStackedWidget, QVBoxLayout,
@@ -72,7 +73,8 @@ class NotRunning(QWidget):
         retry = button("Try again")
         self.start.clicked.connect(self.start_agent)
         retry.clicked.connect(win.refresh)
-        cli = label("Or in a terminal: systemctl --user start droplet-agent", muted=True, selectable=True)
+        from ..tray import start_hint
+        cli = label(f"Or in a terminal: {start_hint()}", muted=True, selectable=True)
         cli.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setLayout(vbox(None, hbox(None, pic, None), hbox(None, head, None), hbox(None, text, None),
                             8, hbox(None, retry, self.start, None), hbox(None, self.why, None), 8,
@@ -84,6 +86,9 @@ class NotRunning(QWidget):
         self.why.hide()
 
         def go():
+            if sys.platform == "darwin":
+                from .. import macos
+                return macos.start_service()
             if not shutil.which("systemctl"):
                 return "This computer has no systemctl. Start the agent with: droplet-agent run"
             r = subprocess.run(["systemctl", "--user", "start", "droplet-agent"], capture_output=True, text=True,
@@ -271,5 +276,8 @@ class Window(QMainWindow):
             self.showNormal()
         self.raise_()
         self.activateWindow()
+        if sys.platform == "darwin":
+            from .. import macos
+            macos.activate_app()   # a Mac brings windows up only with their app
         if page:
             self.go(page)
