@@ -25,12 +25,15 @@ device** and pick this computer. Both screens show the same four digits;
 accept on the computer in [Droplet's window](#droplets-window) or the tray
 (or run `droplet-agent pair`). Other computers pair from the window's
 **Pair a device**, or with `droplet-agent pair <name>` (see [the mesh](#the-mesh-talking-to-your-devices-directly)).
+An iPhone: open Droplet, click **Pair an iPhone** and scan the code (see
+[an iPhone](#an-iphone-experimental)).
 
 The installer needs no sudo. It:
 
 - downloads the agent from droplet's latest GitHub release and checks it
   against the release's `SHA256SUMS.txt` (only its dependencies,
-  `websockets`, `jeepney`, `zeroconf` and `cryptography`, come from PyPI),
+  `websockets`, `jeepney`, `zeroconf` and `cryptography`, and the iPhone
+  link's, about 13 MB, come from PyPI),
 - creates a Python virtual environment in `~/.local/share/droplet-agent`,
   and links `droplet-agent` into `~/.local/bin`,
 - installs and starts a systemd user service, `droplet-agent.service`, which
@@ -198,25 +201,43 @@ sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --re
 An iPhone has no droplet app; it uses droplet's web app
 (`droplet.noxeratech.com/app`, added to the Home Screen), which connects
 straight to this computer over WebRTC, with no server in between
-([docs/iphone.md](../docs/iphone.md)). It's off unless you turn it on:
+([docs/iphone.md](../docs/iphone.md)). It's built in and on: there's
+nothing to set up.
 
-1. Install what it needs (about 10 MB; the plain `pip install aiortc` also
-   pulls in PyAV, about 100 MB, which isn't used):
-
-   ```sh
-   pip install segno && pip install --no-deps aiortc && pip install aioice pyee pylibsrtp pyopenssl google-crc32c
-   ```
-
-2. Add `"iphone": {"enabled": true}` to `~/.config/droplet-agent/config.json`,
-   open the UDP port (`sudo firewall-cmd --permanent --add-port=1739-1749/udp
-   && sudo firewall-cmd --reload`), and restart the agent.
-3. `droplet-agent pair --qr` (or **Pair → Pair an iPhone** in Droplet's
-   window) shows a QR code. In the web app, tap **Pair a computer**, scan
-   it, and accept on the computer if both show the same four digits.
+1. Open **Droplet** and click **Pair an iPhone** (or pick **Pair an iPhone…**
+   in the tray or menu bar; in a terminal, `droplet-agent pair --qr`).
+   It shows a QR code.
+2. On the iPhone, open `droplet.noxeratech.com/app` in Safari and add it to
+   the Home Screen (Share → Add to Home Screen). Open it from there, tap
+   **Pair a computer**, and scan the code.
+3. Accept on the computer if both show the same four digits.
 
 The iPhone is then a peer like the others: `droplet-agent text iPhone …` and
 `send-file` reach it while its app is open (and wait in the outbox until
 then), and what it sends lands in `~/Downloads/droplet` and the chat.
+
+**If it doesn't work.** `droplet-agent status` has an `iphone:` line, and
+`droplet-agent doctor` checks it:
+
+- *Not installed*: the installer adds the iPhone link's one extra package,
+  aiortc (about 1 MB; the plain `pip install aiortc` would also pull in
+  PyAV, about 100 MB of video codecs it never uses, so it's installed with
+  `--no-deps`). If that failed, `droplet-agent doctor` offers to install it,
+  or run:
+
+  ```sh
+  ~/.local/share/droplet-agent/bin/python -m pip install --no-deps 'aiortc>=1.9'
+  ```
+
+  then restart the agent.
+- *The firewall*: the iPhone connects to UDP port 1739 (or the next free one
+  up to 1749). Fedora's desktop firewall already allows it; elsewhere
+  `droplet-agent doctor` gives the command, such as
+  `sudo firewall-cmd --permanent --add-port=1739-1749/udp && sudo firewall-cmd --reload`
+  or `sudo ufw allow 1739:1749/udp`. On a Mac, say **Allow** if macOS asks
+  whether Python may accept incoming connections.
+- To turn it off: `"iphone": {"enabled": false}` in `config.json` (see
+  [Settings](#settings)).
 
 ## Droplet's window
 
@@ -229,9 +250,10 @@ Windows app's:
   **Send clipboard**, **Ring** and **Message**. **⋯** has Stop ringing, About
   this device and Unpair. Drop files on a card to send them; the card says
   when they've arrived, failed, or wait in the outbox.
-- **Pair a device**: the droplet devices on this network, or one by its
-  address. Both screens show the same four digits: **They match**, then
-  accept on the other device.
+- **Pair a device**: **Pair an iPhone** first (a QR code to scan with
+  droplet's web app on the iPhone), then the droplet devices on this
+  network, or one by its address. Both screens show the same four digits:
+  **They match**, then accept on the other device.
 - A device **asking to pair** shows on top of every page, with its code and
   **Accept** / **Decline**.
 - **Messages**: a chat with each device, newest at the bottom. Enter sends
@@ -259,6 +281,8 @@ Without PySide6, Droplet in the app menu starts the tray and says where it is.
 `droplet-agent tray` puts droplet in the system tray. Its menu lists:
 
 - **Open Droplet**: [the window](#droplets-window), when it's installed;
+- **Pair an iPhone…**: the window, showing the code an iPhone scans (without
+  the window, a notification says to run `droplet-agent pair --qr`);
 - this computer's name, then each trusted device with how it can be reached
   (*connected*, *nearby* on the LAN, or *not reachable*). Each has **Send
   files…** (the desktop's file picker; a notification says when they've
@@ -458,7 +482,8 @@ acceleration to the virtual mouse.
   "screenshot_command": null,
   "clipboard_max_bytes": 262144,
   "mesh": {"enabled": true, "port": null, "downloads": null, "max_rate": 0, "announce": true,
-           "phone_notifications": true}
+           "phone_notifications": true},
+  "iphone": {"enabled": true, "port": null, "app_url": "https://droplet.noxeratech.com/app/"}
 }
 ```
 
@@ -480,6 +505,9 @@ acceleration to the virtual mouse.
   `announce: false` stops announcing over mDNS (peers then need its address).
   `phone_notifications: false` stops showing a paired phone's notifications
   here, and tells the phone not to send them (the `notify` cap goes).
+- **iphone**: [the iPhone link](#an-iphone-experimental). `enabled: false`
+  turns it off (and takes **Pair an iPhone** out of the tray). `port`: its UDP
+  port (`null`: the mesh's port number). `app_url`: the web app its QR code opens.
 
 Restart the service after editing: `systemctl --user restart droplet-agent` (on a Mac:
 `launchctl kickstart -k gui/$(id -u)/io.github.ferinmtk.DropletAgent`).
