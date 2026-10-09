@@ -337,7 +337,8 @@ def cmd_peers(args) -> int:
     if st["peers"]:
         print("Trusted:")
         for p in st["peers"]:
-            how = "paired directly" if p["source"] == "paired" else "from the hub's roster"
+            how = {"paired": "paired directly", "browser": "web app, paired directly"}.get(
+                p["source"], "from the hub's roster")
             where = p["link"] or ("on this network" if p["on_lan"] else "not seen")
             print(f"  {p['name']:<20} {p['id']:<16} {_short(p['fp'])}  {how}; {where}")
     else:
@@ -383,8 +384,53 @@ def _answer(r: dict, accept: bool) -> int:
     return 0
 
 
+def _pair_qr() -> int:
+    """Show a QR code for the iPhone web app, then answer the pairing request it makes."""
+    import time as _time
+    out = _ask_agent({"cmd": "qr"})
+    if out is None:
+        return 1
+    try:
+        from .webrtc.qr import terminal
+        print(terminal(out["link"]))
+    except ImportError:
+        print("(Install segno to draw the QR code here: pip install segno. The link it holds:)")
+        print(out["link"])
+    print(f"\nIn droplet on the iPhone, tap Pair and scan this. It's good for {out['expires_in'] // 60} minutes.")
+    print(f"This computer: {', '.join(out['addresses'])}, UDP port {out['port']}")
+    print(f"Its fingerprint: {out['fp']}")
+    print("\nWaiting for the iPhone to ask… (Ctrl+C to stop)", flush=True)
+    end = _time.monotonic() + out["expires_in"]
+    answered = set()
+    try:
+        while _time.monotonic() < end:
+            st = _ask_agent({"cmd": "status"})
+            if st is None:
+                return 1
+            for r in st["incoming"]:
+                if r.get("kind") != "browser" or r["request"] in answered:
+                    continue
+                answered.add(r["request"])
+                print(f"\n{r['name']} wants to pair.\n\n    {r['code']}\n")
+                try:
+                    ans = input(f"Does {r['name']} show the same code? Pair with it? [y/N] ").strip().lower()
+                except EOFError:
+                    ans = ""
+                rc = _answer(r, ans in ("y", "yes"))
+                if ans in ("y", "yes") and rc == 0:
+                    return 0
+            _time.sleep(1)
+    except KeyboardInterrupt:
+        print()
+        return 1
+    print("The QR code has expired. Run this again for a new one.", file=sys.stderr)
+    return 1
+
+
 def cmd_pair(args) -> int:
     import time as _time
+    if args.qr:
+        return _pair_qr()
     if args.accept is not None or args.deny is not None:
         st = _ask_agent({"cmd": "status"})
         if st is None:
@@ -455,6 +501,7 @@ def cmd_unpair(args) -> int:
 
 
 ROUTE_TEXT = {"lan": "directly, over the LAN", "tailnet": "directly, over Tailscale",
+              "webrtc": "directly, to its web app",
               "hub": "through the hub", "hub-mailbox": "to the hub's mailbox (it's offline)"}
 
 
@@ -905,6 +952,9 @@ def main(argv=None) -> int:
     g.add_argument("--accept", nargs="?", const="", metavar="WHICH",
                    help="accept the device asking to pair (its name, code or request, if several ask)")
     g.add_argument("--deny", nargs="?", const="", metavar="WHICH", help="refuse it")
+    g.add_argument("--qr", action="store_true",
+                   help="pair an iPhone: show a QR code for the droplet web app to scan (needs the iPhone "
+                        "link on: \"iphone\": {\"enabled\": true} in the config)")
     pr.set_defaults(func=cmd_pair)
     up = sub.add_parser("unpair", help="stop trusting a directly paired device")
     up.add_argument("peer")
