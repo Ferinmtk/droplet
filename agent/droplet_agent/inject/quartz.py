@@ -190,24 +190,31 @@ class CG:
         finally:
             self.release(ev)
 
+    @staticmethod
+    def media_event(nx_key: int, down: bool):
+        """A media key's NSEvent (system-defined, subtype 8) as a CGEvent. Call inside macos.autorelease():
+        the event belongs to the NSEvent, so it's never released here."""
+        from .. import macos
+        data1 = (nx_key << 16) | ((0xA if down else 0xB) << 8)
+        ev = macos.msg_send(
+            macos.objc_class("NSEvent"),
+            "otherEventWithType:location:modifierFlags:timestamp:windowNumber:context:subtype:data1:data2:",
+            14, CGPoint(0, 0), 0xA00 if down else 0xB00, 0.0, 0, None, 8, data1, -1,
+            argtypes=(ctypes.c_ulong, CGPoint, ctypes.c_ulong, ctypes.c_double, ctypes.c_long,
+                      ctypes.c_void_p, ctypes.c_short, ctypes.c_long, ctypes.c_long))
+        cg = macos.msg_send(ev, "CGEvent") if ev else None
+        if not cg:
+            raise OSError("AppKit didn't make the media key event")
+        return cg
+
     def media_key(self, nx_key: int):
-        """A media key press and release, as NSEvent system-defined events (subtype 8)."""
+        """A media key press and release, the way the keyboard's own media keys send them."""
         from .. import macos
         if macos._appkit() is None:
             raise OSError("AppKit isn't there")
         with macos.autorelease():
             for down in (True, False):
-                data1 = (nx_key << 16) | ((0xA if down else 0xB) << 8)
-                ev = macos.msg_send(
-                    macos.objc_class("NSEvent"),
-                    "otherEventWithType:location:modifierFlags:timestamp:windowNumber:context:subtype:data1:data2:",
-                    14, CGPoint(0, 0), 0xA00 if down else 0xB00, 0.0, 0, None, 8, data1, -1,
-                    argtypes=(ctypes.c_ulong, CGPoint, ctypes.c_ulong, ctypes.c_double, ctypes.c_long,
-                              ctypes.c_void_p, ctypes.c_short, ctypes.c_long, ctypes.c_long))
-                cg = macos.msg_send(ev, "CGEvent") if ev else None
-                if not cg:
-                    raise OSError("AppKit didn't make the media key event")
-                self.post(HID_TAP, cg)   # owned by the NSEvent: not released here
+                self.post(HID_TAP, self.media_event(nx_key, down))
 
 
 def usable() -> tuple[bool, str]:

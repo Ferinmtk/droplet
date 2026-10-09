@@ -70,6 +70,9 @@ def listen(name: str, on_message) -> QLocalServer:
 
 
 def make_app(argv=None) -> QApplication:
+    if sys.platform == "darwin" and QApplication.instance() is None:
+        from .. import macos
+        macos.set_app_name(APP_NAME)   # "Droplet" in the menu bar and the Dock, not "Python"
     app = QApplication.instance() or QApplication(list(argv or [sys.argv[0]]))
     QGuiApplication.setApplicationDisplayName(APP_NAME)
     QGuiApplication.setDesktopFileName(DESKTOP_ID)

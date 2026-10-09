@@ -350,6 +350,10 @@ def test_quartz_events_are_made_and_read_back():
     ev = cg.scroll_event(cg.source, quartz.SCROLL_LINE, 2, -3, 0, 0)
     assert ev and cg.get_type(ev) == 22   # kCGEventScrollWheel
     cg.release(ev)
+    # a media key's event is made (not posted: that would start the Music app on the runner)
+    with macos.autorelease():
+        ev = cg.media_event(quartz.MEDIA["MediaPlayPause"], True)
+        assert cg.get_type(ev) == 14   # NSEventTypeSystemDefined
     # posting: harmless (a zero move), and dropped anyway without Accessibility
     cg.send(cg.mouse_event(cg.source, quartz.MOVED, quartz.CGPoint(x, y), 0))
 
@@ -360,6 +364,7 @@ def test_the_permission_checks_answer():
     assert macos.screen_capture_allowed() in (True, False, None)
     ok, why = quartz.usable()
     assert ok or "Accessibility" in why
+    assert macos.set_app_name("Droplet") in (True, False)   # answers, and AppKit doesn't throw
 
 
 @mac_only
@@ -401,7 +406,7 @@ def test_what_a_mac_offers():
     assert OS_NAME == "macos"
     assert env.desktops() == {"macos"}
     cmd, why = lock.detect()
-    assert cmd, why
+    assert cmd == [lock.MAC_LOCK], why   # the login framework, from the dyld cache (not locked here)
     assert screenshot.methods() == ["screencapture"]
     assert mediastate.available()[0]
     b = battery.read()

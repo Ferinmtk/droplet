@@ -568,6 +568,26 @@ def hide_dock_icon() -> bool:
         return False
 
 
+def set_app_name(name: str = APP_NAME) -> bool:
+    """Call the app `name` in the menu bar and the Dock, not "Python" (before Qt starts)."""
+    if _appkit() is None:
+        return False
+    try:
+        with autorelease():
+            bundle = msg_send(objc_class("NSBundle"), "mainBundle")
+            info = msg_send(bundle, "infoDictionary") if bundle else None
+            # only a mutable dictionary can take it; anything else would raise inside AppKit
+            if not info or not msg_send(info, "respondsToSelector:", _objc().sel_registerName(b"setObject:forKey:"),
+                                        restype=ctypes.c_bool, argtypes=(ctypes.c_void_p,)):
+                return False
+            msg_send(info, "setObject:forKey:", ns_string(name), ns_string("CFBundleName"), restype=None,
+                     argtypes=(ctypes.c_void_p, ctypes.c_void_p))
+            return True
+    except Exception as e:
+        log.debug("naming the app: %s", e)
+        return False
+
+
 def activate_app() -> None:
     """Bring this process to the front (before a file dialog from the menu bar)."""
     if _appkit() is None:

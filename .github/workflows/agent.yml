@@ -165,6 +165,17 @@ jobs:
           wait "$pid" || true
           cat "$home/agent.log"
           grep -q "stopped" "$home/agent.log"
+          echo "VENV=$home/.local/share/droplet-agent" >> "$GITHUB_ENV"
+
+      - name: On the Mac's own Python (3.9, LibreSSL), two agents pair and talk, and the tests pass
+        if: matrix.case == 'install'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          "$VENV/bin/python" -c 'import ssl, sys; print(sys.version, ssl.OPENSSL_VERSION)'
+          "$VENV/bin/python" agent/tests/e2e_mesh.py direct
+          "$VENV/bin/python" -m pip install --disable-pip-version-check -q pytest
+          "$VENV/bin/python" -m pytest -q -ra agent/tests
 
       - name: Install as a Mac user does (newest Python, launchd, menu bar, Droplet.app)
         if: matrix.case == 'install'
