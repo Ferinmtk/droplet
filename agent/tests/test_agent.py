@@ -42,7 +42,8 @@ def wait_for(cond, timeout=3):
 def test_hello_lists_working_caps(make_agent):
     a, _ = make_agent()
     hello = a.hello()
-    assert hello["t"] == "hello" and hello["platform"] == "linux"
+    from droplet_agent.mesh import OS_NAME
+    assert hello["t"] == "hello" and hello["platform"] == OS_NAME   # "linux", or "macos" on a Mac
     assert set(hello["caps"]) == {"input", "media", "lock", "screenshot", "clipboard"}
 
 

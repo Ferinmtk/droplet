@@ -47,8 +47,18 @@ MAC_CGSESSION = Path("/System/Library/CoreServices/Menu Extras/User.menu/Content
 MAC_LOCK = "lock-screen"   # SACLockScreenImmediate, through MAC_LOGIN_FRAMEWORK
 
 
+def _can_lock_screen() -> bool:
+    """Whether the login framework's SACLockScreenImmediate is there. Since macOS 11 system
+    frameworks live in the dyld cache, not as files, so it's asked, not looked for."""
+    import ctypes
+    try:
+        return hasattr(ctypes.cdll.LoadLibrary(str(MAC_LOGIN_FRAMEWORK)), "SACLockScreenImmediate")
+    except OSError:
+        return False
+
+
 def _detect_mac() -> tuple[list[str] | None, str]:
-    if MAC_LOGIN_FRAMEWORK.exists():
+    if _can_lock_screen():
         return [MAC_LOCK], "the login framework's lock screen"
     if MAC_CGSESSION.exists():
         return [str(MAC_CGSESSION), "-suspend"], "CGSession"

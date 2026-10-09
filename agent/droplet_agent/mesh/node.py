@@ -167,7 +167,7 @@ class Chat:
 
 def default_gateways(route_table: str = "/proc/net/route") -> list[str]:
     """This computer's IPv4 default gateways. On a phone's hotspot, that's the phone."""
-    if sys.platform == "darwin":
+    if sys.platform == "darwin" and route_table == "/proc/net/route":
         return _mac_default_gateway()
     out = []
     try:
@@ -1037,6 +1037,7 @@ class MeshNode:
             "outbox": [{k: j.get(k) for k in ("id", "kind", "peer", "state", "error", "name", "attempts")}
                        for j in self.outbox.queued()],
             "refused": self.server.refused if self.server else 0,
+            "caps": self.host.mesh_caps(),   # what this device offers right now
         }
 
     def chat_history(self, fp: str | None = None, n: int = 100) -> list[dict]:

@@ -7,6 +7,12 @@ from droplet_agent import mediastate
 from droplet_agent import mediactl as mc
 
 
+@pytest.fixture(autouse=True)
+def linux_media(monkeypatch):
+    """playerctl and wpctl's media, wherever these run; test_macos has the Mac's."""
+    monkeypatch.setattr(mediastate, "MAC", False)
+
+
 @pytest.fixture
 def fake_players(monkeypatch):
     players = {

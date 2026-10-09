@@ -22,6 +22,12 @@ STATUS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def linux_tray(monkeypatch):
+    """These are the Linux tray's (D-Bus, .desktop files) wherever they run; test_macos has the Mac's."""
+    monkeypatch.setattr(tray, "MAC", False)
+
+
 def labels(items):
     return [i.label for i in items if not i.separator]
 

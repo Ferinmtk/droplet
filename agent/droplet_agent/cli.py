@@ -605,10 +605,30 @@ def _probe_caps(cfg: dict) -> dict[str, tuple[bool, str]]:
     out["screenshot"] = (bool(shots), "tries " + ", ".join(shots) if shots else "no screenshot tool found")
     mode, why = clip.detect()
     out["clipboard"] = (mode is not None, why)
+    if MAC:
+        _mac_running_input(out)
     for cap in config.CAPS:
         if not config.enabled(cfg, cap):
             out[cap] = (False, "switched off in the config")
     return out
+
+
+def _mac_running_input(out: dict):
+    """macOS grants Accessibility per app: a command in Terminal has Terminal's, the agent
+    (started by launchd) its own. So when the agent runs, ask it."""
+    from .mesh import control
+    try:
+        st = control.call({"cmd": "status"}, timeout=5)
+    except (control.NotRunning, OSError, ValueError):
+        return
+    caps = st.get("caps")
+    if not isinstance(caps, list):
+        return
+    if "input" in caps:
+        out["input"] = (True, "quartz: the running agent is allowed (Accessibility)")
+    else:
+        out["input"] = (False, "the running agent isn't allowed yet: switch on Python in System Settings → "
+                               "Privacy & Security → Accessibility")
 
 
 def _service_state() -> str:
@@ -867,10 +887,10 @@ def _doctor_mac(cfg: dict, caps: dict) -> int:
         print("  runs on it; if it isn't listed, add it with +). It starts working a few seconds later.\n")
     elif config.enabled(cfg, "input"):
         print("• Remote control is allowed (Accessibility).\n")
-    if config.enabled(cfg, "screenshot") and macos.screen_capture_allowed() is False:
-        problems += 1
-        print(f"• Screenshots show only the desktop until you allow it: {settings} →")
-        print("  Screen Recording (or Screen & System Audio Recording), switch on Python.\n")
+    if config.enabled(cfg, "screenshot"):
+        # like Accessibility, granted per app: the agent's own grant can't be seen from here
+        print(f"• Screenshots need {settings} → Screen Recording (or Screen & System")
+        print("  Audio Recording): switch on Python. Without it they show only the desktop picture.\n")
     state = macos.service_state()
     if state != "running":
         problems += 1

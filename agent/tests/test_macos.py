@@ -124,6 +124,46 @@ def test_the_gateway_from_route():
     assert mac_gateway_from_route("route: writing to routing socket: not in table") == []
 
 
+# --- media on a Mac: volume through osascript, the rest through the media keys -------------
+
+@pytest.fixture
+def mac_media(monkeypatch):
+    from droplet_agent import mediastate
+    monkeypatch.setattr(mediastate, "MAC", True)
+    monkeypatch.setattr(mediastate, "_mac_keys_allowed", lambda: True)
+    monkeypatch.setattr(macos, "read_volume", lambda: {"level": 0.25, "muted": False})
+    calls = []
+
+    def runner(*argv):
+        import subprocess
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    return mediastate.Media(runner=runner), calls
+
+
+def test_a_macs_media_state(mac_media):
+    media, _ = mac_media
+    snap = media.snapshot()
+    assert snap["volume"] == {"level": 0.25, "muted": False}
+    assert snap["active"] == "media-keys" and snap["players"][0]["can_seek"] is False
+
+
+def test_a_macs_media_actions(mac_media):
+    media, calls = mac_media
+    assert media.act("volume", value=0.5) is None
+    assert media.act("mute") is None              # toggles: it wasn't muted
+    assert media.act("mute", value=False) is None
+    assert media.act("play-pause") is None
+    assert media.act("next", player="anything") is None
+    assert calls == [["osascript", "-e", "set volume output volume 50"],
+                     ["osascript", "-e", "set volume output muted true"],
+                     ["osascript", "-e", "set volume output muted false"],
+                     ["media-key", "MediaPlayPause"], ["media-key", "MediaNext"]]
+    assert "isn't possible on a Mac" in media.act("seek", value=10)
+    assert media.act("volume", value="loud") and media.act("mute", value=3)
+    assert len(calls) == 5
+
+
 # --- the Quartz backend, against a fake CoreGraphics -------------------------------------
 
 class FakeCG:

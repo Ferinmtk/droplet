@@ -214,7 +214,10 @@ def test_the_worker_answers_on_the_gui_thread(qapp):
 
 
 def test_a_second_launch_brings_up_the_first(qapp, tmp_path):
-    name = str(tmp_path / "app.sock")
+    import tempfile
+    # a Mac's temp dir is too deep for a Unix socket's 104 bytes (the real one is in ~/.config)
+    short = Path(tempfile.mkdtemp(dir="/tmp")) if len(str(tmp_path)) > 70 else tmp_path
+    name = str(short / "app.sock")
     got = []
     server = appmain.listen(name, got.append)
     try:
@@ -223,7 +226,7 @@ def test_a_second_launch_brings_up_the_first(qapp, tmp_path):
         assert got[0] == {"cmd": "raise", "page": "messages", "token": "t"}
     finally:
         server.close()
-    assert not appmain.hand_over(str(tmp_path / "nobody.sock"), {"cmd": "raise"})
+    assert not appmain.hand_over(str(short / "nobody.sock"), {"cmd": "raise"})
 
 
 def test_the_window_has_the_drop_icon(qapp):
