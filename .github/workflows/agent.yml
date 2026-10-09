@@ -172,7 +172,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          "$VENV/bin/python" -c 'import ssl, sys; print(sys.version, ssl.OPENSSL_VERSION)'
+          "$VENV/bin/python" agent/tests/tls_probe.py
           "$VENV/bin/python" agent/tests/e2e_mesh.py direct
           "$VENV/bin/python" -m pip install --disable-pip-version-check -q pytest
           "$VENV/bin/python" -m pytest -q -ra agent/tests
