@@ -193,6 +193,31 @@ sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --re
 
 **Without a hub**, `droplet-agent run` (and the service) runs the mesh alone.
 
+### An iPhone (experimental)
+
+An iPhone has no droplet app; it uses droplet's web app
+(`droplet.noxeratech.com/app`, added to the Home Screen), which connects
+straight to this computer over WebRTC, with no server in between
+([docs/iphone.md](../docs/iphone.md)). It's off unless you turn it on:
+
+1. Install what it needs (about 10 MB; the plain `pip install aiortc` also
+   pulls in PyAV, about 100 MB, which isn't used):
+
+   ```sh
+   pip install segno && pip install --no-deps aiortc && pip install aioice pyee pylibsrtp pyopenssl google-crc32c
+   ```
+
+2. Add `"iphone": {"enabled": true}` to `~/.config/droplet-agent/config.json`,
+   open the UDP port (`sudo firewall-cmd --permanent --add-port=1739-1749/udp
+   && sudo firewall-cmd --reload`), and restart the agent.
+3. `droplet-agent pair --qr` (or **Pair → Pair an iPhone** in Droplet's
+   window) shows a QR code. In the web app, tap **Pair a computer**, scan
+   it, and accept on the computer if both show the same four digits.
+
+The iPhone is then a peer like the others: `droplet-agent text iPhone …` and
+`send-file` reach it while its app is open (and wait in the outbox until
+then), and what it sends lands in `~/Downloads/droplet` and the chat.
+
 ## Droplet's window
 
 **Droplet** in the app menu (or `droplet-agent app`) opens a window like the
@@ -349,7 +374,7 @@ Then switch Python off under Privacy & Security if you like.
 | `droplet-agent setup --hub URL --code 123456` | link to a given hub (`http://<address>:8000`, or its tailnet URL). `--name NAME` joins as a new device, `--pin` uses the hub's PIN instead of waiting to be allowed |
 | `droplet-agent run` | run in the foreground (the service does this). `--dry-run` only logs what it would do; `-v` for more detail. Without a hub, runs the mesh alone |
 | `droplet-agent peers` | the devices this one talks to directly, who's nearby, who's asking to pair, and what's waiting to be sent |
-| `droplet-agent pair [PEER]` | pair directly with a device; with nothing, answer the devices asking (`--accept`, `--deny`) |
+| `droplet-agent pair [PEER]` | pair directly with a device; with nothing, answer the devices asking (`--accept`, `--deny`); `--qr` pairs an iPhone (see [an iPhone](#an-iphone-experimental)) |
 | `droplet-agent unpair PEER` | stop trusting a directly paired device |
 | `droplet-agent text`, `send-file`, `ring`, `clip`, `send` | send to a device: see [the mesh](#the-mesh-talking-to-your-devices-directly) |
 | `droplet-agent app` | open [Droplet's window](#droplets-window) (`--page` opens it on a page: `devices`, `pair`, `messages`, `received` or `settings`), or bring it to the front |

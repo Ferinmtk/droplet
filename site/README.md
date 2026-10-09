@@ -4,6 +4,11 @@ The page people land on when you send them droplet. One static file, no build st
 no framework: `index.html` with the styles inline, three screenshots, and `_redirects`
 for the short links.
 
+`app/` is droplet for iPhone: a web app (no build step either) that connects straight to
+your computers over WebRTC, with no server. It's served from here once, then kept by its
+service worker. See `docs/iphone.md`. It isn't linked from the landing page yet.
+`app/vendor/jsQR.js` is jsQR 1.4.0 (Apache-2.0), unmodified.
+
 ## Deploying it (once)
 
 1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**,

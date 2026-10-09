@@ -45,7 +45,7 @@ import threading
 import time
 
 from . import OS_NAME, PROTOCOL_VERSION
-from .identity import Identity, PEER_ID, fingerprint, pem_to_der, sign, verify
+from .identity import Identity, PEER_ID, fingerprint, key_fingerprint, p256_spki, pem_to_der, sign, verify, verify_key
 from .tlsctx import client_context, peer_fingerprint
 
 REQUEST_TTL = 300        # seconds a request stays open
@@ -98,20 +98,33 @@ class Incoming:
             if now - r["created"] > REQUEST_TTL * 2:
                 del self._reqs[rid]
 
-    def open(self, body: dict, my_id: str, my_name: str) -> tuple[int, dict]:
-        """Step 1. Returns (HTTP status, JSON body)."""
+    def open(self, body: dict, my_id: str, my_name: str, *, browser: bool = False) -> tuple[int, dict]:
+        """Step 1. Returns (HTTP status, JSON body).
+
+        `browser`: the iPhone web app over WebRTC (docs/iphone.md). It has a bare P-256 key
+        (`key`, base64 SPKI) instead of a certificate; its fingerprint, the `fpI` of the
+        transcript, is the key's SHA-256, and its id the first 16 hex of that.
+        """
         if not isinstance(body, dict):
             return 400, {"error": "expected a JSON object"}
         peer_id, commit = body.get("id"), body.get("commit")
-        if not isinstance(peer_id, str) or not PEER_ID.match(peer_id):
-            return 400, {"error": "bad id"}
         if not isinstance(commit, str) or not NONCE.match(commit):
             return 400, {"error": "bad commit"}
-        try:
-            der = pem_to_der(body.get("cert"))
-        except ValueError as e:
-            return 400, {"error": f"bad certificate: {e}"}
-        fp = fingerprint(der)
+        if browser:
+            try:
+                der = p256_spki(body.get("key"))
+            except ValueError as e:
+                return 400, {"error": f"bad key: {e}"}
+            fp = key_fingerprint(der)
+            peer_id = fp[:16]
+        else:
+            if not isinstance(peer_id, str) or not PEER_ID.match(peer_id):
+                return 400, {"error": "bad id"}
+            try:
+                der = pem_to_der(body.get("cert"))
+            except ValueError as e:
+                return 400, {"error": f"bad certificate: {e}"}
+            fp = fingerprint(der)
         if fp == self.identity.fp:
             return 409, {"error": "that's this device"}
         with self._lock:
@@ -131,6 +144,7 @@ class Incoming:
                 "name": "".join(c for c in name if c.isprintable())[:64] or peer_id,
                 "os": "".join(c for c in str(body.get("os") or "") if c.isalnum())[:20],
                 "fp": fp, "der": der, "commit": commit, "nonce_r": nonce_r, "code": None,
+                "kind": "browser" if browser else "peer",
             }
         return 200, {"v": PROTOCOL_VERSION, "request": rid, "nonce": nonce_r, "id": my_id, "name": my_name,
                      "os": OS_NAME, "fp": self.identity.fp}
@@ -151,7 +165,8 @@ class Incoming:
                     raw_sig = base64.b64decode(sig, validate=True) if isinstance(sig, str) else b""
                 except ValueError:
                     raw_sig = b""
-                ok = verify(r["der"], raw_sig, transcript(r["fp"], self.identity.fp, nonce_i, r["nonce_r"]))
+                check = verify_key if r["kind"] == "browser" else verify
+                ok = check(r["der"], raw_sig, transcript(r["fp"], self.identity.fp, nonce_i, r["nonce_r"]))
             if not ok:
                 del self._reqs[rid]
                 return 403, {"error": "the pairing proof didn't check out"}
@@ -181,7 +196,7 @@ class Incoming:
             return 200, {"state": r["state"]}
 
     def _public(self, r: dict) -> dict:
-        return {k: r[k] for k in ("request", "id", "name", "os", "fp", "code", "created", "state")}
+        return {k: r[k] for k in ("request", "id", "name", "os", "fp", "code", "created", "state", "kind")}
 
     def waiting(self) -> list[dict]:
         with self._lock:

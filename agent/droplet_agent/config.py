@@ -64,6 +64,15 @@ DEFAULTS: dict = {
         # (the "notify" cap tells the phone to send them)
         "phone_notifications": True,
     },
+    # the iPhone link: the droplet web app on an iPhone connects straight to this
+    # computer over WebRTC, with no server (docs/iphone.md). Needs aiortc.
+    "iphone": {
+        "enabled": False,
+        # UDP. null: the mesh's port number (1739, or the one it found free)
+        "port": None,
+        # the web app the QR code opens
+        "app_url": "https://droplet.noxeratech.com/app/",
+    },
 }
 
 

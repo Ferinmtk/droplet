@@ -10,6 +10,10 @@ Kept in the config directory, owner-only, as JSON, keyed by fingerprint:
   while the hub is down, so peers keep working without it.
 - "paired": paired directly by the owner. Survives roster changes, and only
   goes when unpaired.
+- "browser": the iPhone web app, paired directly over WebRTC (docs/iphone.md).
+  A bare public key (`key`, base64 SPKI) instead of a certificate
+  (`cert_pem` is null): it never takes part in TLS, and is never dialled; it
+  connects when it's open.
 
 A certificate is stored in full: the server loads it as a trust anchor.
 """
@@ -23,9 +27,9 @@ import threading
 import time
 from pathlib import Path
 
-from .identity import PEER_ID, fingerprint, normalize_fingerprint, pem_to_der
+from .identity import PEER_ID, fingerprint, key_fingerprint, normalize_fingerprint, p256_spki, pem_to_der
 
-SOURCES = ("roster", "paired")
+SOURCES = ("roster", "paired", "browser")
 MAX_LAN = 6
 
 
@@ -87,6 +91,23 @@ def make_entry(*, peer_id, name, cert_pem, source, lan=(), port=None, tailnet_ip
     }
 
 
+def make_browser_entry(*, name, key, os_name="ios", fp=None) -> dict:
+    """A checked entry for a browser peer (the iPhone web app, docs/iphone.md): a bare P-256
+    public key, no certificate, so never a TLS trust anchor. Its fingerprint is the SHA-256 of
+    the key's SubjectPublicKeyInfo, and its id the first 16 hex of that. Raises ValueError."""
+    import base64
+    spki = p256_spki(key)
+    real = key_fingerprint(spki)
+    if fp is not None and normalize_fingerprint(fp) != real:
+        raise ValueError("the fingerprint doesn't match the key")
+    return {
+        "id": real[:16], "name": clean_name(name, "iPhone"), "fp": real,
+        "key": base64.b64encode(spki).decode(), "cert_pem": None, "source": "browser",
+        "lan": [], "port": None, "tailnet_ip": None,
+        "os": clean_name(os_name)[:20], "caps": [], "hub": "", "added": int(time.time()),
+    }
+
+
 def pem_to_pem(der: bytes) -> str:
     from .identity import der_to_pem
     return der_to_pem(der)
@@ -112,6 +133,13 @@ class TrustList:
         peers = {}
         for fp, e in (raw.get("peers") or {}).items() if isinstance(raw, dict) else []:
             try:
+                if isinstance(e, dict) and e.get("source") == "browser":
+                    entry = make_browser_entry(name=e.get("name"), key=e.get("key"), os_name=e.get("os") or "",
+                                               fp=fp)
+                    entry["added"] = e.get("added") or entry["added"]
+                    if entry["fp"] != self.own_fp:
+                        peers[entry["fp"]] = entry
+                    continue
                 entry = make_entry(peer_id=e.get("id"), name=e.get("name"), cert_pem=e.get("cert_pem"),
                                    source=e.get("source"), lan=e.get("lan"), port=e.get("port"),
                                    tailnet_ip=e.get("tailnet_ip"), os_name=e.get("os"), caps=e.get("caps") or [],
@@ -158,7 +186,7 @@ class TrustList:
 
     def pems(self) -> list[str]:
         with self._lock:
-            return [e["cert_pem"] for e in self._peers.values()]
+            return [e["cert_pem"] for e in self._peers.values() if e.get("cert_pem")]
 
     def find(self, query: str) -> list[dict]:
         """Peers matching a name (case-insensitive), an id, or a fingerprint prefix of 8+ hex."""
@@ -191,6 +219,16 @@ class TrustList:
             self._peers[entry["fp"]] = entry
             self._changed(True)
         self._fire()
+
+    def add_browser(self, entry: dict):
+        """Trust a browser peer paired over WebRTC. Not a TLS trust anchor, so no TLS change."""
+        assert entry["source"] == "browser"
+        with self._lock:
+            old = self._peers.get(entry["fp"])
+            if old is not None and old["source"] != "browser":
+                raise ValueError("that key belongs to another peer")
+            self._peers[entry["fp"]] = entry
+            self._save()
 
     def remove(self, fp: str) -> dict | None:
         with self._lock:

@@ -27,12 +27,18 @@ dependencies = [
 # file manager). On macOS nothing else is needed: remote control, the clipboard's change count
 # and the permission checks call the system frameworks through ctypes.
 app = ["PySide6-Essentials>=6.6"]
+# The iPhone link (docs/iphone.md): aiortc for DTLS and SCTP data channels, segno to draw
+# the QR code. aiortc also pulls in PyAV (FFmpeg, ~100 MB) for media it never uses here;
+# the light way skips it, and the agent runs without it:
+#   pip install segno && pip install --no-deps aiortc && pip install aioice pyee pylibsrtp pyopenssl google-crc32c
+iphone = ["aiortc>=1.9", "segno>=1.5"]
 
 [project.scripts]
 droplet-agent = "droplet_agent.cli:main"
 
 [tool.setuptools]
-packages = ["droplet_agent", "droplet_agent.app", "droplet_agent.inject", "droplet_agent.mesh"]
+packages = ["droplet_agent", "droplet_agent.app", "droplet_agent.inject", "droplet_agent.mesh",
+            "droplet_agent.webrtc"]
 
 [tool.setuptools.package-data]
 # the tray icon's pixels, made by tools/make_tray_icon.py, and the 512 px drop for Droplet.app

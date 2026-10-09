@@ -141,6 +141,21 @@ def test_pairing_from_the_pair_page(win, demo):
     assert any(c.name.text() == "pixel-tablet" for c in win.pages["devices"].cards.values())
 
 
+def test_pairing_an_iphone_shows_a_qr_code(win, demo):
+    win.go("pair")
+    page = win.pages["pair"]
+    page.iphone.click()
+    assert page.stack.currentIndex() == 2
+    try:
+        import segno  # noqa: F401
+    except ImportError:
+        assert "pip install segno" in page.qr_text.text()
+    else:
+        assert len(page.qr.matrix) >= 21 and "192.168.1.20" in page.qr_text.text()
+    page.reset()
+    assert page.stack.currentIndex() == 0
+
+
 def test_pairing_by_address_that_fails(win, demo):
     page = win.pages["pair"]
     page.address.setText("nowhere")

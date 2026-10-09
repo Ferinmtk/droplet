@@ -146,6 +146,8 @@ def start_mesh(agent, cfg: dict, *, dry_run: bool):
     agent.on_roster = host.roster_changed
     agent.on_hub_up = host.hub_up
     node.start()
+    from .webrtc.bridge import start_bridge
+    start_bridge(node, cfg)
     threading.Thread(target=host.roster_loop, args=(agent.stop,), name="mesh-roster-loop", daemon=True).start()
     return node, host
 

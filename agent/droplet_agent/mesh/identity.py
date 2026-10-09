@@ -155,6 +155,52 @@ def sign(identity: Identity, data: bytes) -> bytes:
     return key.sign(data, ec.ECDSA(hashes.SHA256()))
 
 
+def p256_spki(raw) -> bytes:
+    """A browser's public key (SubjectPublicKeyInfo DER, or its base64) checked to be EC P-256.
+
+    Raises ValueError otherwise."""
+    import base64
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_der_public_key
+
+    try:
+        der = base64.b64decode(raw, validate=True) if isinstance(raw, str) else bytes(raw)
+        pub = load_der_public_key(der)
+    except Exception as e:
+        raise ValueError(f"not a public key: {e}") from e
+    if not isinstance(pub, ec.EllipticCurvePublicKey) or pub.curve.name != "secp256r1":
+        raise ValueError("not an EC P-256 key")
+    # canonical form, so one key always has one fingerprint
+    return pub.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+
+
+def key_fingerprint(spki_der: bytes) -> str:
+    """A browser peer's identity: SHA-256 of its public key's SubjectPublicKeyInfo DER, lowercase hex."""
+    return hashlib.sha256(spki_der).hexdigest()
+
+
+def verify_key(spki_der: bytes, signature: bytes, data: bytes) -> bool:
+    """ECDSA P-256 / SHA-256 by a bare public key. The signature may be DER, or the raw
+    64-byte r‖s that WebCrypto makes."""
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+    from cryptography.hazmat.primitives.serialization import load_der_public_key
+
+    try:
+        pub = load_der_public_key(spki_der)
+        if not isinstance(pub, ec.EllipticCurvePublicKey):
+            return False
+        if len(signature) == 64:
+            signature = encode_dss_signature(int.from_bytes(signature[:32], "big"),
+                                             int.from_bytes(signature[32:], "big"))
+        pub.verify(signature, data, ec.ECDSA(hashes.SHA256()))
+        return True
+    except (InvalidSignature, ValueError, TypeError):
+        return False
+
+
 def verify(cert_der: bytes, signature: bytes, data: bytes) -> bool:
     """Whether `signature` over `data` was made by the key in `cert_der`.
 
