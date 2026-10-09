@@ -255,8 +255,10 @@ class MeshNode:
         self.control: ControlServer | None = None
         self.port = 0
         # the iPhone link (droplet_agent/webrtc), when it's on: it adds control commands ("qr")
-        # and a "webrtc" section to the status
+        # and a "webrtc" section to the status. When it isn't running, webrtc_off says why
+        # ({"why": "off" | "missing" | "broken" | "failed", "text"}; webrtc.bridge.start_bridge)
         self.webrtc = None
+        self.webrtc_off: dict | None = None
         self.control_ext: dict = {}
 
     # --- who we are -------------------------------------------------------------
@@ -1053,6 +1055,7 @@ class MeshNode:
             "refused": self.server.refused if self.server else 0,
             "caps": self.host.mesh_caps(),   # what this device offers right now
             "webrtc": self.webrtc.status() if self.webrtc is not None else None,
+            "webrtc_off": self.webrtc_off if self.webrtc is None else None,
         }
 
     def chat_history(self, fp: str | None = None, n: int = 100) -> list[dict]:
@@ -1132,8 +1135,16 @@ class MeshNode:
             if cmd in self.control_ext:
                 return self.control_ext[cmd](req)
             if cmd == "qr":
-                return {"error": "The iPhone link is off. Turn it on with \"iphone\": {\"enabled\": true} in "
-                                 "the config (it needs aiortc), and restart the agent."}
+                off = self.webrtc_off or {}
+                if off.get("why") == "missing":
+                    return {"error": "This computer can't pair an iPhone yet: the iPhone link isn't installed. "
+                                     "Run droplet-agent doctor in a terminal: it installs it (a small download)."}
+                if off.get("why") in ("failed", "broken"):
+                    return {"error": f"{off['text'][:1].upper()}{off['text'][1:]}. droplet-agent doctor may say more."}
+                if not off:
+                    return {"error": "The iPhone link is starting. Try again in a moment."}
+                return {"error": "The iPhone link is switched off on this computer. Turn it on with "
+                                 "\"iphone\": {\"enabled\": true} in the config, and restart the agent."}
             return {"error": f"unknown command {cmd!r}"}
         except (ValueError, TypeError, NoRoute) as e:
             return {"error": str(e)}

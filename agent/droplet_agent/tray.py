@@ -115,12 +115,15 @@ def build_view(status: dict | None, app: bool = True) -> View:
     """The menu, tooltip and status for an answer to the agent's `status` (None: it isn't running).
     `app`: Droplet's window can be opened (PySide6 is installed)."""
     downloads = Item("open-downloads", "Open received files", icon="folder-download", action=("open-downloads",))
-    top = [Item("open-app", "Open Droplet", icon=LAUNCHER_ID, action=("open-app",)),
-           Item("sep-app", separator=True)] if app else []
+    top = [Item("open-app", "Open Droplet", icon=LAUNCHER_ID, action=("open-app",))] if app else []
     if status is None:
+        top = top and [*top, Item("sep-app", separator=True)]
         return View(items=[*top, Item("not-running", "droplet agent isn't running", enabled=False),
                            Item("sep-end", separator=True), downloads],
                     tooltip="droplet agent isn't running", running=False)
+    if (status.get("webrtc_off") or {}).get("why") != "off":   # unless the config switched it off
+        top.append(Item("pair-iphone", "Pair an iPhone…", icon="smartphone", action=("pair-iphone",)))
+    top = top and [*top, Item("sep-app", separator=True)]
 
     items = [*top, Item("header", status.get("name") or "this computer", enabled=False, icon="computer"),
              Item("sep-top", separator=True)]
@@ -720,10 +723,22 @@ class Actions:
                             "It's in the droplet menu now.")
         self.refresh()
 
-    def open_app(self):
+    def open_app(self, page: str | None = None):
         """Droplet's window: a second one just brings the open one up."""
-        subprocess.Popen([sys.executable, "-m", "droplet_agent", "app"], stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen([sys.executable, "-m", "droplet_agent", "app", *(["--page", page] if page else [])],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+
+    def pair_iphone(self):
+        """Droplet's window on the Pair page, showing the code an iPhone scans. Without the
+        window (no PySide6), say how to show the code in a terminal."""
+        from . import app
+        if app.available():
+            self.open_app("iphone")
+            return
+        self.notify("Pair an iPhone",
+                    "On the iPhone, open droplet.noxeratech.com/app in Safari and add it to the Home Screen. "
+                    "Then, in a terminal here, run: droplet-agent pair --qr  and scan the code it shows.")
 
     def open_downloads(self):
         from . import config

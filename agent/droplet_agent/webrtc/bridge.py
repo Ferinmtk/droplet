@@ -14,6 +14,7 @@ import asyncio
 import concurrent.futures
 import logging
 import secrets
+import sys
 import threading
 import time
 from pathlib import Path
@@ -200,20 +201,39 @@ class Bridge(Host):
 
 
 def start_bridge(node, cfg: dict) -> Bridge | None:
-    """Start the iPhone link if the config turns it on (`iphone.enabled`). Never raises."""
+    """Start the iPhone link, unless the config turns it off (`iphone.enabled`: false).
+
+    Never raises. When it doesn't start, one line in the log says why, and so does
+    `node.webrtc_off` ({"why": "off" | "missing" | "broken" | "failed", "text": ...}), which the
+    agent's status carries for `droplet-agent status`, doctor, the tray and the window.
+    """
     m = cfg.get("iphone") or {}
-    if m.get("enabled") is not True:
+    if m.get("enabled") is False:
+        node.webrtc_off = {"why": "off", "text": "the iPhone link is switched off in the config "
+                                                 "(\"iphone\": {\"enabled\": false})"}
+        log.info("iphone: switched off in the config")
         return None
     from .deps import available
     ok, why = available()
     if not ok:
-        log.warning("iphone: %s", why)
+        node.webrtc_off = {"why": "missing", "text": why}
+        log.warning("iphone: %s; the agent runs without it (droplet-agent doctor)", why)
         return None
     try:
         b = Bridge(node, port=m.get("port") if isinstance(m.get("port"), int) else None,
                    app_url=m.get("app_url") if isinstance(m.get("app_url"), str) else APP_URL)
         b.start()
-        return b
+    except ImportError as e:
+        # installed, but it won't load (a broken or too old aiortc, say)
+        from .deps import AIORTC
+        node.webrtc_off = {"why": "broken", "text": f"the iPhone link can't load ({e}). Reinstall it with: "
+                                                     f"{sys.executable} -m pip install --no-deps --force-reinstall "
+                                                     f"'{AIORTC}'"}
+        log.warning("iphone: %s", node.webrtc_off["text"])
+        return None
     except Exception as e:
+        node.webrtc_off = {"why": "failed", "text": f"the iPhone link couldn't start: {e}"}
         log.error("iphone: the iPhone link couldn't start: %s", e)
         return None
+    node.webrtc_off = None
+    return b
