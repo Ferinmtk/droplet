@@ -3,6 +3,11 @@
 The playerctl/wpctl reading is mediactl, shared with the hub's own media
 card. What's added here is the protocol's shape: art as a small data: URL
 (other devices can't open this machine's files) and volume clamped to 0..1.
+
+A Mac has no public way to read what's playing: there, the volume is read
+and set with osascript, and play/pause, next and previous press the system's
+media keys (which needs Accessibility, like remote control). The state shows
+one "player", the media keys, without a title.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ import base64
 import logging
 import math
 import subprocess
+import sys
 import threading
 import time
 
@@ -26,7 +32,24 @@ ART_RAW_MAX = (ART_URL_MAX - 64) * 3 // 4
 MAX_SEEK = 24 * 3600
 
 
+MAC = sys.platform == "darwin"
+MAC_PLAYER = "media-keys"
+MAC_KEYS = {"play-pause": "MediaPlayPause", "play": "MediaPlayPause", "pause": "MediaPlayPause",
+            "next": "MediaNext", "previous": "MediaPrevious"}
+
+
+def _mac_keys_allowed() -> bool:
+    from . import macos
+    return macos.accessibility_allowed()
+
+
 def available() -> tuple[bool, str]:
+    if MAC:
+        if not env.which("osascript"):
+            return False, "osascript isn't there"
+        if _mac_keys_allowed():
+            return True, "volume through osascript, and the media keys"
+        return True, "volume through osascript (the media keys need Accessibility, like remote control)"
     pc, wp = bool(env.which("playerctl")), bool(env.which("wpctl"))
     if pc and wp:
         return True, "playerctl and wpctl"
@@ -94,6 +117,8 @@ class Media:
         self._lock = threading.Lock()
 
     def snapshot(self) -> dict:
+        if MAC:
+            return self._mac_snapshot()
         has_pc, has_wp = bool(env.which("playerctl")), bool(env.which("wpctl"))
         players = [mc.read_player(p) for p in mc.list_players()] if has_pc else []
         mc._dedupe_names(players)
@@ -114,6 +139,8 @@ class Media:
         """Do a media action. Returns why it failed, or None."""
         if action not in ACTIONS:
             return f"unknown media action {action!r}"
+        if MAC:
+            return self._mac_act(action, value)
         if action in ("volume", "mute"):
             return self._audio(action, value)
         names = mc.list_players()
@@ -151,6 +178,44 @@ class Media:
         else:
             return "mute takes true, false, or nothing to toggle"
         return self._check(self.runner("wpctl", "set-mute", mc.DEFAULT_SINK, arg))
+
+    # --- a Mac ---
+    def _mac_snapshot(self) -> dict:
+        from . import macos
+        players = []
+        if _mac_keys_allowed():
+            players.append({"id": MAC_PLAYER, "name": "Media keys", "status": "Paused", "title": "", "artist": "",
+                            "album": "", "art": None, "position": None, "length": None, "can_gonext": True,
+                            "can_goprevious": True, "can_play": True, "can_pause": True, "can_seek": False})
+        return {"players": players, "active": players[0]["id"] if players else None,
+                "volume": macos.read_volume()}
+
+    def _mac_act(self, action, value) -> str | None:
+        from . import macos
+        if action == "volume":
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                return "volume needs a level from 0 to 1"
+            return self._check(self.runner(*macos.volume_command(level=float(value))))
+        if action == "mute":
+            if value is None:
+                now = macos.read_volume()
+                value = not (now or {}).get("muted", False)
+            elif not isinstance(value, bool):
+                return "mute takes true, false, or nothing to toggle"
+            return self._check(self.runner(*macos.volume_command(muted=value)))
+        if action not in MAC_KEYS:
+            return f"{action} isn't possible on a Mac (there's no way to reach the player itself)"
+        if self.runner is not mc._run:
+            # the dry run (and tests): say what would be pressed
+            return self._check(self.runner("media-key", MAC_KEYS[action]))
+        if not _mac_keys_allowed():
+            return "the media keys need Accessibility (System Settings → Privacy & Security)"
+        from .inject import quartz
+        try:
+            quartz.CG().media_key(quartz.MEDIA[MAC_KEYS[action]])
+        except OSError as e:
+            return str(e)
+        return None
 
     @staticmethod
     def _check(r: subprocess.CompletedProcess | None) -> str | None:

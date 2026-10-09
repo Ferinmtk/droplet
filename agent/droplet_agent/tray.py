@@ -15,6 +15,11 @@ in worker threads, never in the thread answering D-Bus.
 
 One tray per session: it owns io.github.ferinmtk.DropletAgent.Tray and lets
 a newer one take it over, so starting it again (or upgrading) replaces it.
+
+A Mac has no D-Bus: there `droplet-agent tray` is the menu bar icon
+(macmenu.py, Qt's QSystemTrayIcon), with the same menu built by build_view
+and the same Actions. The functions below that start, stop and install
+things do the Mac's version of each on a Mac.
 """
 
 from __future__ import annotations
@@ -53,6 +58,15 @@ RETRY = 5.0       # and while it doesn't
 ICON_FILE = Path(__file__).with_name("tray_icon.bin")
 
 ACTIVE, ATTENTION = "Active", "NeedsAttention"
+MAC = sys.platform == "darwin"
+
+
+def start_hint() -> str:
+    """How to start the agent by hand, for "it isn't running" messages."""
+    if MAC:
+        from . import macos
+        return macos.start_hint()
+    return "systemctl --user start droplet-agent"
 
 # RequestName flags and answers
 ALLOW_REPLACEMENT, REPLACE_EXISTING, DO_NOT_QUEUE = 1, 2, 4
@@ -605,7 +619,7 @@ class Actions:
         try:
             getattr(self, kind.replace("-", "_"))(*args)
         except control.NotRunning:
-            self.notify("droplet agent isn't running", "Start it with: systemctl --user start droplet-agent")
+            self.notify("droplet agent isn't running", f"Start it with: {start_hint()}")
         except Exception as e:
             log.exception("tray: %s failed", kind)
             self.notify("droplet", f"That didn't work: {e}")
@@ -622,6 +636,10 @@ class Actions:
         return ROUTE_TEXT.get(out.get("route"), out.get("route") or "")
 
     def pick_files(self, name: str) -> list:
+        if MAC:
+            # the menu bar picks files itself, on its GUI thread, and passes them in
+            self.notify("Can't pick files", f"Use droplet-agent send-file {name} FILE…")
+            return []
         from . import portal
         try:
             p = portal.Portal(APP_ID)
@@ -711,7 +729,7 @@ class Actions:
         from . import config
         d = config.downloads_dir(config.load())
         d.mkdir(parents=True, exist_ok=True)
-        opener = shutil.which("xdg-open")
+        opener = shutil.which("open" if MAC else "xdg-open")
         if opener is None:
             self.notify("Received files", str(d))
             return
@@ -866,6 +884,9 @@ class Tray:
 
 def stop_running() -> bool:
     """Close the tray running in this session, if there is one. True if there was."""
+    if MAC:
+        from . import macos
+        return macos.stop_menu()
     try:
         from jeepney import message_bus
         from jeepney.io.blocking import open_dbus_connection
@@ -885,6 +906,9 @@ def stop_running() -> bool:
 # --- starting with the desktop -----------------------------------------------------
 
 def autostart_path() -> Path:
+    if MAC:
+        from . import macos
+        return macos.plist_path(macos.MENU_LABEL)
     base = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
     return Path(base) / "autostart" / f"{TRAY_ID}.desktop"
 
@@ -919,6 +943,10 @@ def autostart_entry(command: str) -> str:
 
 
 def enable_autostart() -> Path:
+    if MAC:
+        # a LaunchAgent, loaded at the next login (start_detached starts it now)
+        from . import macos
+        return macos.write_launch_agent(macos.MENU_LABEL, [*macos.agent_program(), "tray"], keep_alive=False)
     path = autostart_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(autostart_entry(agent_command()))
@@ -926,6 +954,10 @@ def enable_autostart() -> Path:
 
 
 def disable_autostart() -> bool:
+    if MAC:
+        from . import macos
+        if autostart_path().exists() and macos.loaded(macos.MENU_LABEL):
+            macos.unload(macos.MENU_LABEL)
     try:
         autostart_path().unlink()
         return True
@@ -941,6 +973,9 @@ def start_detached():
 
 def is_running() -> bool:
     """Whether a tray is up in this desktop session."""
+    if MAC:
+        from . import macos
+        return macos.menu_running()
     try:
         from jeepney import message_bus
         from jeepney.io.blocking import open_dbus_connection
@@ -1002,7 +1037,10 @@ def launcher_entry(command: str) -> str:
 
 
 def install_launcher() -> Path:
-    """Put Droplet in the app menu, with the drop icon."""
+    """Put Droplet in the app menu, with the drop icon (on a Mac: Droplet.app, for Launchpad and Spotlight)."""
+    if MAC:
+        from . import macos
+        return macos.install_app_bundle()
     by_size = {w: (w, h, d) for w, h, d in load_pixmaps()}
     for size, path in zip(ICON_SIZES, icon_paths()):
         if size in by_size:
@@ -1019,6 +1057,9 @@ def install_launcher() -> Path:
 
 
 def remove_launcher() -> bool:
+    if MAC:
+        from . import macos
+        return macos.remove_app_bundle()
     removed = False
     for path in (launcher_path(), *icon_paths()):
         try:
@@ -1031,6 +1072,11 @@ def remove_launcher() -> bool:
 
 def where_text(status: dict | None) -> tuple[str, str]:
     """The notification shown when droplet is opened from the app menu."""
+    if MAC:
+        if status is None:
+            return ("droplet is in your menu bar",
+                    f"Its icon is greyed out because the droplet agent isn't running. Start it with: {start_hint()}")
+        return ("droplet is in your menu bar", f"Click the drop icon near the clock. {build_view(status).tooltip}.")
     if status is None:
         return ("droplet is in your system tray",
                 "Its icon is greyed out because the droplet agent isn't running. "
@@ -1065,4 +1111,12 @@ def open_app() -> int:
 
 
 def run() -> int:
+    if MAC:
+        from . import app
+        if not app.available():
+            print("The menu bar icon needs PySide6, which isn't installed with this agent. Add it with:\n"
+                  f"  {sys.executable} -m pip install 'droplet-agent[app]'", file=sys.stderr)
+            return 1
+        from .macmenu import run as run_menu
+        return run_menu()
     return Tray().run()

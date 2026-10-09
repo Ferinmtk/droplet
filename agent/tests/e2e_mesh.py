@@ -225,7 +225,12 @@ def direct():
         interrupted_at = part_size()
         check("file: interrupted part-way", 0 < interrupted_at < 50 * 1024 * 1024, interrupted_at)
         check("beta comes back", b.start())
-        out, _ = sender.communicate(timeout=180)
+        try:
+            out, _ = sender.communicate(timeout=180)
+        except subprocess.TimeoutExpired:
+            sender.kill()
+            out, _ = sender.communicate()
+            out = "timed out: " + out
         saved = b.downloads() / "big.bin"
         # while beta restarts it may find no route for a moment: then it waits in the outbox
         check("file: the sender reports it delivered, or kept for delivery",
@@ -242,8 +247,11 @@ def direct():
         for msg, want in (
             ({"t": "input", "ev": [{"k": "move", "dx": 3, "dy": 4}, {"k": "key", "key": "ArrowRight"},
                                    {"k": "text", "s": "héllo"}]}, "input (dry run): text héllo"),
-            # no player runs in the throwaway session: the handler answers "nothing is playing"
-            ({"t": "media", "action": "play-pause"}, "media play-pause: nothing is playing"),
+            # no player runs in the throwaway session: the handler answers "nothing is playing".
+            # A Mac has no players to ask: it presses the media key (only logged in a dry run)
+            ({"t": "media", "action": "play-pause"},
+             "media (dry run): media-key MediaPlayPause" if sys.platform == "darwin"
+             else "media play-pause: nothing is playing"),
             ({"t": "cmd", "cmd": "lock"}, "lock (dry run)"),
         ):
             r = a.cli("send", b_id, json.dumps(msg))
@@ -414,6 +422,9 @@ def main():
             return subprocess.Popen(cmdline, env=hub_env, cwd=cwd, stdout=log, stderr=subprocess.STDOUT)
         with_hub(hub.rstrip("/"), pid, restart)
     failed = [n for n, ok in checks if not ok]
+    if failed:
+        for log in sorted(ROOT.glob("*/agent.log")):   # what the agents said, for CI
+            print(f"\n--- {log.parent.name}'s log (the end) ---\n{log.read_text(errors='replace')[-6000:]}")
     print(f"\n{len(checks) - len(failed)}/{len(checks)} passed" + (f"; failed: {failed}" if failed else ""))
     if not failed:
         shutil.rmtree(ROOT, ignore_errors=True)

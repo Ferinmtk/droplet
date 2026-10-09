@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
@@ -75,6 +76,12 @@ def app_icon() -> QIcon:
     for w, h, px in tray.load_pixmaps():
         pm = QPixmap()
         if pm.loadFromData(tray.png(w, h, px), "PNG"):
+            ic.addPixmap(pm)
+    if sys.platform == "darwin":
+        # the Dock shows it large
+        from .. import macos
+        pm = QPixmap(str(macos.ICON_FILE))
+        if not pm.isNull():
             ic.addPixmap(pm)
     return ic
 

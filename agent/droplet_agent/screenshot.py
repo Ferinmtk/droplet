@@ -5,6 +5,9 @@ KDE and GNOME may still ask once), then the desktop's own tool (spectacle on
 KDE, gnome-screenshot on GNOME, niri's on niri, grim on wlroots), then the
 other tools found, and ImageMagick's import on X11. The first that gives a
 PNG wins, and a method that failed isn't tried again until the agent restarts.
+
+On a Mac it's screencapture, which needs Screen Recording permission
+(Privacy & Security): without it, the picture has the desktop but no windows.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import struct
+import sys
 import tempfile
 import threading
 import time
@@ -32,6 +36,9 @@ MAX_BYTES = 200 * 1024 * 1024
 
 def _tool_commands(out: str) -> list[tuple[str, list[str]]]:
     """(name, argv) for each capture tool, writing to `out`."""
+    if sys.platform == "darwin":
+        # -x: no camera sound; the main display (a second screen would be a second file)
+        return [("screencapture", ["screencapture", "-x", "-m", "-t", "png", out])]
     cmds = [
         ("spectacle", ["spectacle", "-b", "-n", "-f", "-o", out]),
         ("gnome-screenshot", ["gnome-screenshot", "-f", out]),
@@ -54,6 +61,8 @@ def methods(configured=None) -> list[str]:
     """Names of the methods that could work here, in the order they're tried. Read-only."""
     if configured:
         return ["configured"] if env.which(str(configured[0])) else []
+    if sys.platform == "darwin":
+        return ["screencapture"] if env.which("screencapture") else []
     out = []
     if env.is_wayland() and xdp.read_property(PORTAL_IFACE, "version") is not None:
         out.append("portal")
@@ -107,6 +116,13 @@ class Screenshotter:
             return None, "; ".join(reasons) or "no screenshot tool found"
 
     def _tool(self, name: str) -> bytes | None:
+        if name == "screencapture":
+            from . import macos
+            if macos.screen_capture_allowed() is False:
+                # asks once, and lists this Python under Screen Recording for the user to switch on
+                macos.screen_capture_allowed(request=True)
+                log.warning("screenshot: allow Screen Recording for Python in System Settings → Privacy & "
+                            "Security; until then the picture shows only the desktop")
         with tempfile.TemporaryDirectory(prefix="droplet-shot-") as d:
             out = os.path.join(d, "shot.png")
             if name == "configured":

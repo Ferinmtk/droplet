@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -45,8 +46,14 @@ def apply_switches(cfg: dict, values: dict) -> dict:
     return cfg
 
 
+MAC = sys.platform == "darwin"
+
+
 def restart_agent() -> tuple[bool, str]:
     """Restart the agent's service so it reads the settings again."""
+    if MAC:
+        from .. import macos
+        return macos.restart_service()
     if not shutil.which("systemctl"):
         return False, "Saved. Restart the agent to use the new settings."
     r = subprocess.run(["systemctl", "--user", "restart", "droplet-agent"], capture_output=True, text=True,
@@ -102,9 +109,10 @@ class SettingsPage(QWidget):
                                 wrap=True)
 
         # the tray
-        self.tray = QCheckBox("Show droplet in the system tray, from when you sign in")
+        self.tray = QCheckBox("Show droplet in the menu bar, from when you log in" if MAC
+                              else "Show droplet in the system tray, from when you sign in")
         self.tray.toggled.connect(self._tray)
-        tray_box = QGroupBox("System tray")
+        tray_box = QGroupBox("Menu bar" if MAC else "System tray")
         tray_box.setLayout(vbox(self.tray, spacing=6, margins=(12, 12, 12, 12)))
 
         # about
@@ -113,7 +121,7 @@ class SettingsPage(QWidget):
         link = label(f'<a href="{GITHUB}">{GITHUB.removeprefix("https://")}</a>')
         link.setOpenExternalLinks(False)
         link.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
-        about.setLayout(vbox(label(f"Droplet {__version__} for Linux", bold=True),
+        about.setLayout(vbox(label(f"Droplet {__version__} for {'Mac' if MAC else 'Linux'}", bold=True),
                              label("Your devices, together, on your own network.", muted=True), link,
                              spacing=4, margins=(12, 12, 12, 12)))
 
@@ -194,10 +202,12 @@ class SettingsPage(QWidget):
                 tray.enable_autostart()
                 if not tray.is_running():
                     tray.start_detached()
-                return "droplet is in the system tray, and starts there when you sign in."
+                return ("droplet is in the menu bar, and starts there when you log in." if MAC
+                        else "droplet is in the system tray, and starts there when you sign in.")
             tray.disable_autostart()
             tray.stop_running()
-            return "The tray icon is closed, and won't start when you sign in."
+            return ("The menu bar icon is closed, and won't start when you log in." if MAC
+                    else "The tray icon is closed, and won't start when you sign in.")
 
         def done(result):
             self.win.say(result if isinstance(result, str) else f"Couldn't change that: {result.error}")

@@ -48,6 +48,13 @@ def server_context(identity: Identity, trusted_pems: list[str]) -> ssl.SSLContex
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(str(identity.cert_path), str(identity.key_path))
     ctx.verify_mode = ssl.CERT_OPTIONAL
+    if ssl.OPENSSL_VERSION.startswith("LibreSSL"):
+        # A Mac's own Python (Xcode's) has LibreSSL, whose verifier won't take a certificate that isn't
+        # a CA (ours aren't: CA:FALSE, no keyCertSign) as a trust anchor even when it's in the store
+        # itself ("unknown ca"). Partial chains let a trusted certificate be its own anchor, as OpenSSL
+        # already does for a self-signed one. It can't vouch for another certificate: that would
+        # still need it to be a CA, and the fingerprint is checked after the handshake anyway.
+        ctx.verify_flags |= getattr(ssl, "VERIFY_X509_PARTIAL_CHAIN", 0x80000)
     pems = "".join(p if p.endswith("\n") else p + "\n" for p in trusted_pems)
     if pems:
         ctx.load_verify_locations(cadata=pems)
