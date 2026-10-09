@@ -495,7 +495,15 @@ python -m venv .venv && .venv/bin/pip install websockets jeepney zeroconf pytest
 .venv/bin/python tests/e2e_mesh.py hub http://127.0.0.1:8861 <hub pid>   # the roster, hub down, mailbox, outbox
 .venv/bin/pip install 'PySide6-Essentials>=6.6'  # then the window's tests run too (offscreen)
 .venv/bin/python -m droplet_agent app --demo     # the window, with pretend devices and no agent
+.venv/bin/python tests/tls_probe.py              # the mesh's mutual TLS on this Python's OpenSSL/LibreSSL
 ```
+
+The same tests run on a Mac (CI's `macos-latest` job runs them, the
+two-agent e2e, and the installer with launchd, on both Apple's Python and a
+python.org one). The Mac's code is `macos.py` (launchd, Droplet.app, the
+system tools, the framework calls through ctypes), `macmenu.py` (the menu
+bar) and `inject/quartz.py` (input); elsewhere it's a `sys.platform ==
+"darwin"` branch beside the Linux code.
 
 `tests/e2e_local.py` links an agent to a throwaway hub with a real link code,
 runs it with the dry-run backends and drives it from a fake controller.

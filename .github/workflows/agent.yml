@@ -182,6 +182,7 @@ jobs:
         run: |
           sh agent/install.sh --wheel dist/droplet-agent.whl
           agent="$HOME/.local/bin/droplet-agent"
+          "$HOME/.local/share/droplet-agent/bin/python" -c 'import ssl, sys; print(sys.version, ssl.OPENSSL_VERSION)'
           launchctl print "gui/$(id -u)/io.github.ferinmtk.DropletAgent" | grep -E 'state|program|pid'
           for _ in $(seq 60); do
             "$agent" peers >/dev/null 2>&1 && break

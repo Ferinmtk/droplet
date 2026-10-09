@@ -245,13 +245,14 @@ main() {
     # --- Python and a venv --------------------------------------------------
     py=""
     if [ "$mac" = 1 ]; then
-        # DROPLET_PYTHON: use this Python instead of the newest one found
+        # DROPLET_PYTHON: use this Python instead of the one picked
         py="${DROPLET_PYTHON:-$(mac_python)}"
         if [ -z "$py" ]; then
             # this asks macOS to offer the Command Line Tools (a window opens), which bring Python 3
             /usr/bin/python3 -c '' >/dev/null 2>&1 </dev/null || true
             die "needs Python 3, which this Mac doesn't have yet. Install Apple's Command Line Tools (a window may have opened offering them; or run: xcode-select --install), or Python from https://www.python.org/downloads/macos/. Then run this command again."
         fi
+        say "Using $py (Python $("$py" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null </dev/null))"
     else
         for c in python3 python; do
             if command -v "$c" >/dev/null 2>&1 &&
