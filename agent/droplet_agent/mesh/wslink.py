@@ -10,9 +10,12 @@ silence, and gives up after 60 s without hearing anything.
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
+import select
 import socket
+import ssl
 import threading
 import time
 
@@ -27,6 +30,8 @@ log = logging.getLogger("droplet_agent.mesh.link")
 
 MAX_FRAME = 1024 * 1024
 IDLE_PING = 20
+SEND_TIMEOUT = 20      # a sender waits this long for room in a full queue
+OUT_LIMIT = 4 * 1024 * 1024
 DEAD_AFTER = 60
 HANDSHAKE_TIMEOUT = 10
 
@@ -43,6 +48,9 @@ def _flush(sock, proto) -> bool:
         else:
             return False
     return True
+
+
+_TRY_AGAIN = (BlockingIOError, InterruptedError, ssl.SSLWantReadError, ssl.SSLWantWriteError)
 
 
 def client_handshake(sock, host: str, port: int, user_agent: str, timeout: float = HANDSHAKE_TIMEOUT):
@@ -109,17 +117,46 @@ class Link:
         self.opened = time.monotonic()
         self.last_used = time.monotonic()
         self._lock = threading.Lock()
+        self._room = threading.Condition(self._lock)   # senders wait here while the queue is full
         self._closed = threading.Event()
         self._parts: list[bytes] = []
         self._pending = list(pending_frames)
         self._last_rx = time.monotonic()
+        self._out = bytearray()        # bytes the protocol wants sent, not yet taken by TLS
+        self._eof_after = False        # the protocol asked to end the connection once _out is sent
+        self._closing = False
+        self._thread: threading.Thread | None = None
+        self._wake_r, self._wake_w = socket.socketpair()
+        self._wake_r.setblocking(False)
+        self._wake_w.setblocking(False)
 
     @property
     def closed(self) -> bool:
         return self._closed.is_set()
 
     def start(self):
-        threading.Thread(target=self._reader, name=f"mesh-link-{self.fp[:8]}", daemon=True).start()
+        """One thread owns the TLS socket and does all its reads and writes: OpenSSL can't
+        have a read and a write in flight on one connection at once, and a sender blocked
+        on a full socket must not keep this side from reading (both ends would stall)."""
+        self._thread = threading.Thread(target=self._run, name=f"mesh-link-{self.fp[:8]}", daemon=True)
+        self._thread.start()
+
+    def _on_io_thread(self) -> bool:
+        return threading.current_thread() is self._thread
+
+    def _queue(self):
+        # with the lock held: take what the protocol wants sent
+        for chunk in self.proto.data_to_send():
+            if chunk:
+                self._out += chunk
+            else:
+                self._eof_after = True
+
+    def _wake(self):
+        try:
+            self._wake_w.send(b"x")
+        except OSError:
+            pass
 
     def send(self, msg: dict) -> bool:
         if self.closed:
@@ -128,38 +165,68 @@ class Link:
         if len(data) > MAX_FRAME:
             log.warning("not sending a %s message of %d bytes: over the frame limit", msg.get("t"), len(data))
             return False
-        try:
-            with self._lock:
+        with self._lock:
+            # back-pressure, except on the link's own thread (it's the one that drains the queue)
+            deadline = time.monotonic() + SEND_TIMEOUT
+            while len(self._out) > OUT_LIMIT and not self.closed and not self._on_io_thread():
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                self._room.wait(left)
+            if self.closed or self.proto.state is not State.OPEN or len(self._out) > OUT_LIMIT * 2:
+                stuck = not self.closed and self.proto.state is State.OPEN
+            else:
                 self.proto.send_text(data)
-                _flush(self.sock, self.proto)
-            self.last_used = time.monotonic()
-            return True
-        except Exception as e:
-            log.debug("sending to %s failed: %s", self.address, e)
-            self.close()
+                self._queue()
+                stuck = None
+        if stuck is not None:
+            if stuck:
+                log.debug("sending to %s failed: the link stopped draining", self.address)
+                self.close()
             return False
+        self._wake()
+        self.last_used = time.monotonic()
+        return True
 
     def close(self, code: int = 1000, reason: str = ""):
         if self._closed.is_set():
             return
-        try:
-            with self._lock:
-                if self.proto.state is State.OPEN:
+        with self._lock:
+            if self.proto.state is State.OPEN:
+                try:
                     self.proto.send_close(code, reason)
-                    _flush(self.sock, self.proto)
-        except Exception:
-            pass
-        self._finish()
+                    self._queue()
+                except Exception:
+                    pass
+            self._closing = True
+        running = self._thread is not None and self._thread.is_alive()
+        if running and not self._on_io_thread():
+            self._wake()
+            self._closed.wait(2)      # the link's thread sends the close frame, then finishes
+        elif not running:
+            try:                      # never started: send what's queued the plain way
+                self.sock.settimeout(2)
+                with self._lock:
+                    if self._out:
+                        self.sock.sendall(bytes(self._out))
+                        self._out.clear()
+            except Exception:
+                pass
+        if not running or not self._on_io_thread():
+            self._finish()
 
     def _finish(self):
         if self._closed.is_set():
             return
         self._closed.set()
-        for fn in (lambda: self.sock.shutdown(socket.SHUT_RDWR), self.sock.close):
+        for fn in (lambda: self.sock.shutdown(socket.SHUT_RDWR), self.sock.close, self._wake_r.close,
+                   self._wake_w.close):
             try:
                 fn()
             except OSError:
                 pass
+        with self._lock:
+            self._room.notify_all()
         try:
             self.on_close(self)
         except Exception:
@@ -189,33 +256,90 @@ class Link:
                     except Exception:
                         log.exception("handling %r from %s", msg.get("t"), self.address)
 
-    def _reader(self):
+    def _drain(self, seconds: float):
+        """Send what's queued (a close frame, a pong) for up to `seconds`, best effort."""
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            with self._lock:
+                if not self._out:
+                    return
+                try:
+                    n = self.sock.send(self._out[:65536])
+                    del self._out[:n]
+                    continue
+                except (_TRY_AGAIN + (OSError,)):
+                    pass
+            try:
+                select.select([], [self.sock], [], max(0.0, end - time.monotonic()))
+            except (OSError, ValueError):
+                return
+
+    def _run(self):
         try:
-            self.sock.settimeout(IDLE_PING)
+            self.sock.setblocking(False)
             self._frames(self._pending)
             self._pending = []
             while not self.closed:
+                with self._lock:
+                    want_write = bool(self._out)
+                    if not want_write and (self._closing or self._eof_after):
+                        break
+                pending = self.sock.pending() > 0
                 try:
-                    data = self.sock.recv(65536)
-                except (socket.timeout, TimeoutError):
+                    r, w, _ = select.select([self.sock, self._wake_r], [self.sock] if want_write else [], [],
+                                            0 if pending else IDLE_PING)
+                except (OSError, ValueError):
+                    break
+                if self._wake_r in r:
+                    try:
+                        while self._wake_r.recv(4096):
+                            pass
+                    except OSError:
+                        pass
+                if not r and not w and not pending:
                     if time.monotonic() - self._last_rx > DEAD_AFTER:
                         log.info("link with %s went quiet; closing it", self.address)
                         break
                     with self._lock:
                         self.proto.send_ping(str(int(time.time())).encode())
-                        _flush(self.sock, self.proto)
+                        self._queue()
                     continue
-                self._last_rx = time.monotonic()
-                with self._lock:
-                    if not data:
-                        self.proto.receive_eof()
-                    else:
-                        self.proto.receive_data(data)
-                    events = self.proto.events_received()
-                    more = _flush(self.sock, self.proto)
-                self._frames(events)
-                if not data or not more or self.proto.state is State.CLOSED:
-                    break
+                if self.sock in w:
+                    with self._lock:
+                        try:
+                            n = self.sock.send(self._out[:65536])
+                            del self._out[:n]
+                            self._room.notify_all()
+                        except _TRY_AGAIN:
+                            pass
+                        except OSError as e:
+                            if e.errno not in (errno.EAGAIN, errno.EWOULDBLOCK):
+                                raise
+                if self.sock in r or pending:
+                    with self._lock:
+                        try:
+                            data = self.sock.recv(65536)
+                        except _TRY_AGAIN:
+                            # a TLS record not complete yet, or one with no data (a session ticket)
+                            data = None
+                        except OSError as e:
+                            if e.errno not in (errno.EAGAIN, errno.EWOULDBLOCK):
+                                raise
+                            data = None
+                        if data is not None:
+                            self._last_rx = time.monotonic()
+                            if not data:
+                                self.proto.receive_eof()
+                            else:
+                                self.proto.receive_data(data)
+                            events = self.proto.events_received()
+                            self._queue()
+                    if data is None:
+                        continue
+                    self._frames(events)
+                    if not data or self.proto.state is State.CLOSED:
+                        self._drain(1)
+                        break
         except Exception as e:
             if not self.closed:
                 log.debug("link with %s ended: %s", self.address, e)

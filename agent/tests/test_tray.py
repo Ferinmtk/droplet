@@ -41,8 +41,9 @@ def find(items, key):
 def test_view_lists_peers_with_their_state_and_actions():
     v = build_view(STATUS)
     assert v.running
-    assert labels(v.items) == ["slim", "friend wants to pair (code 1234)", "phone — connected",
+    assert labels(v.items) == ["Open Droplet", "slim", "friend wants to pair (code 1234)", "phone — connected",
                                "office_pc — nearby", "laptop — not reachable", "Open received files"]
+    assert find(v.items, "open-app").action == ("open-app",)
     header = find(v.items, "header")
     assert not header.enabled and header.action is None
     phone = find(v.items, "peer:p1")
@@ -79,9 +80,24 @@ def test_no_peers_says_so():
 def test_agent_not_running():
     v = build_view(None)
     assert not v.running and v.status == ACTIVE
-    assert labels(v.items) == ["droplet agent isn't running", "Open received files"]
+    assert labels(v.items) == ["Open Droplet", "droplet agent isn't running", "Open received files"]
     assert not find(v.items, "not-running").enabled
     assert v.tooltip == "droplet agent isn't running"
+
+
+def test_without_the_window_there_is_no_open_droplet():
+    for status in (STATUS, None):
+        v = build_view(status, app=False)
+        assert find(v.items, "open-app") is None
+        assert labels(v.items)[0] in ("slim", "droplet agent isn't running")
+        assert not v.items[0].separator
+
+
+def test_open_droplet_starts_the_window(monkeypatch):
+    started = []
+    monkeypatch.setattr(tray.subprocess, "Popen", lambda argv, **kw: started.append(argv))
+    Actions(lambda *a, **k: {}, lambda *a: None).open_app()
+    assert started and started[0][1:] == ["-m", "droplet_agent", "app"]
 
 
 def test_menu_ids_stay_put_and_revision_moves_only_on_change():
@@ -180,7 +196,7 @@ def test_menu_methods_serialise(objects):
     menu = objects.menu
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetLayout", "iias", (0, -1, []))
     rev, (root, _, kids) = reply.body
-    assert rev == menu.revision and root == 0 and len(kids) == 9
+    assert rev == menu.revision and root == 0 and len(kids) == 11   # Open Droplet and its separator first
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetGroupProperties", "aias", ([1, 2, 3], ["label"]))
     assert [i for i, _ in reply.body[0]] == [1, 2, 3]
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetProperty", "is", (menu.id_of("header"), "label"))
@@ -298,3 +314,81 @@ def test_badge_paints_inside_the_icon():
     corner = (7 * 8 + 6) * 4
     assert data[corner] > 0          # opaque-ish dot near the bottom-right corner
     assert data[0] == 0              # top-left untouched
+
+
+# --- Droplet in the app menu ---------------------------------------------------------------
+
+def test_png_from_argb_decodes_back_to_the_same_pixels():
+    import struct as _struct, zlib as _zlib
+    from droplet_agent import tray
+    argb = bytes([0xFF, 0x10, 0x20, 0x30, 0x80, 0xAA, 0xBB, 0xCC,
+                  0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF])          # 2x2
+    data = tray.png(2, 2, argb)
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    w, h, depth, colour = _struct.unpack(">IIBB", data[16:26])
+    assert (w, h, depth, colour) == (2, 2, 8, 6)                              # RGBA, 8 bits
+    idat_len = _struct.unpack(">I", data[33:37])[0]
+    assert data[37:41] == b"IDAT"
+    raw = _zlib.decompress(data[41:41 + idat_len])
+    assert raw == bytes([0, 0x10, 0x20, 0x30, 0xFF, 0xAA, 0xBB, 0xCC, 0x80,
+                         0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF])
+
+
+def test_the_launcher_and_its_icons_are_installed_and_removed(tmp_path, monkeypatch):
+    from droplet_agent import tray
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr(tray, "agent_command", lambda: '"/opt/droplet agent/bin/droplet-agent"')
+    path = tray.install_launcher()
+    text = path.read_text()
+    assert path == tmp_path / "applications" / "io.github.ferinmtk.Droplet.desktop"
+    assert "Name=Droplet\n" in text and 'Exec="/opt/droplet agent/bin/droplet-agent" open\n' in text
+    assert "Icon=io.github.ferinmtk.Droplet\n" in text and "Terminal=false\n" in text
+    icons = [p for p in tray.icon_paths() if p.exists()]
+    assert len(icons) == 4 and all(p.read_bytes()[:4] == b"\x89PNG" for p in icons)
+    assert (tmp_path / "icons/hicolor/64x64/apps/io.github.ferinmtk.Droplet.png").exists()
+    assert tray.remove_launcher() and not path.exists() and not any(p.exists() for p in icons)
+    assert not tray.remove_launcher()
+
+
+def test_opening_droplet_opens_the_window_when_it_can(monkeypatch):
+    from droplet_agent import app, tray
+    opened, notified = [], []
+    monkeypatch.setattr(tray, "is_running", lambda: True)
+    monkeypatch.setattr(app, "available", lambda: True)
+    monkeypatch.setattr(app, "run", lambda argv: opened.append(argv) or 0)
+    from droplet_agent.mesh import desktop
+    monkeypatch.setattr(desktop.Desktop, "notify", lambda self, *a, **k: notified.append(a))
+    assert tray.open_app() == 0 and opened == [[]] and not notified
+    # no PySide6: the notification saying where the tray is, as before
+    monkeypatch.setattr(app, "available", lambda: False)
+    from droplet_agent.mesh import control
+    monkeypatch.setattr(control, "call", lambda *a, **k: (_ for _ in ()).throw(control.NotRunning("no")))
+    assert tray.open_app() == 0 and opened == [[]]
+    assert notified and "system tray" in notified[0][0]
+
+
+def test_opening_droplet_says_where_the_tray_is():
+    from droplet_agent import tray
+    title, body = tray.where_text(None)
+    assert "system tray" in title and "isn't running" in body
+    status = {"name": "slim", "peers": [{"id": "1", "name": "phone", "fp": "ab" * 32, "link": "lan 1.2.3.4",
+                                         "on_lan": True, "os": "android"}], "incoming": [], "nearby": []}
+    title, body = tray.where_text(status)
+    assert "drop icon near the clock" in body and "1 device connected" in body
+
+
+def test_no_command_from_the_desktop_opens_droplet_and_from_a_terminal_shows_help(monkeypatch, capsys):
+    from droplet_agent import cli, tray
+    opened = []
+    monkeypatch.setattr(tray, "open_app", lambda: opened.append(1) or 0)
+
+    class Stream:
+        def __init__(self, tty): self.tty = tty
+        def isatty(self): return self.tty
+        def write(self, s): return len(s)
+        def flush(self): pass
+    monkeypatch.setattr(cli.sys, "stdin", Stream(False))
+    monkeypatch.setattr(cli.sys, "stdout", Stream(False))
+    assert cli.main([]) == 0 and opened == [1]
+    monkeypatch.setattr(cli.sys, "stdin", Stream(True))
+    assert cli.main([]) == 2 and opened == [1]

@@ -10,6 +10,11 @@
 
 Both packages are built in memory from the agent/ directory, and rebuilt
 when a file there changes.
+
+The same wheel goes into GitHub releases, for installing without a hub
+(.github/workflows/agent.yml):
+
+    python agent_dist.py wheel DIR    # writes DIR/droplet_agent-<version>-py3-none-any.whl
 """
 
 import base64
@@ -21,9 +26,8 @@ import tarfile
 import threading
 import time
 import zipfile
+import sys
 from pathlib import Path
-
-from flask import Response, abort, request
 
 AGENT_DIR = Path(__file__).parent / "agent"
 PACKAGE = AGENT_DIR / "droplet_agent"
@@ -47,6 +51,16 @@ def _dependencies() -> list[str]:
     text = (AGENT_DIR / "pyproject.toml").read_text()
     m = re.search(r"^dependencies = \[(.*?)\]", text, re.M | re.S)
     return re.findall(r'"([^"]+)"', m.group(1)) if m else []
+
+
+def _extras() -> dict[str, list[str]]:
+    """[project.optional-dependencies]: {extra: [requirement, ...]}."""
+    text = (AGENT_DIR / "pyproject.toml").read_text()
+    m = re.search(r"^\[project\.optional-dependencies\]\n(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    if not m:
+        return {}
+    return {name: re.findall(r'"([^"]+)"', reqs)
+            for name, reqs in re.findall(r"^(\w[\w-]*) = \[(.*?)\]", m.group(1), re.M | re.S)}
 
 
 def _requires_python() -> str:
@@ -79,6 +93,8 @@ def build_wheel() -> bytes:
         "Summary: Lets your other devices control this Linux computer through droplet",
         f"Requires-Python: {_requires_python()}",
         *[f"Requires-Dist: {d}" for d in _dependencies()],
+        *[line for extra, reqs in _extras().items()
+          for line in (f"Provides-Extra: {extra}", *(f'Requires-Dist: {r}; extra == "{extra}"' for r in reqs))],
         "Description-Content-Type: text/markdown",
         "",
         readme,
@@ -144,6 +160,8 @@ def hub_url() -> str:
     Behind `tailscale serve`, requests arrive over loopback with
     X-Forwarded-Proto: https and the tailnet name as Host.
     """
+    from flask import request
+
     scheme = request.scheme
     if request.remote_addr in ("127.0.0.1", "::1") and request.headers.get("X-Forwarded-Proto") in ("http", "https"):
         scheme = request.headers["X-Forwarded-Proto"]
@@ -171,6 +189,8 @@ def render_install_script() -> str:
 
 
 def register(ctx):
+    from flask import Response, abort
+
     app = ctx.app
 
     @app.route("/agent/install.sh")
@@ -195,3 +215,13 @@ def register(ctx):
         resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
         resp.headers["Cache-Control"] = "no-cache"
         return resp
+
+
+if __name__ == "__main__":
+    # the release workflow builds the wheel this way; flask isn't needed for it
+    if len(sys.argv) != 3 or sys.argv[1] != "wheel":
+        sys.exit("usage: python agent_dist.py wheel DIR")
+    out = Path(sys.argv[2])
+    out.mkdir(parents=True, exist_ok=True)
+    (out / wheel_name()).write_bytes(build_wheel())
+    print(out / wheel_name())

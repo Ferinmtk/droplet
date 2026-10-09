@@ -624,7 +624,15 @@ public sealed class WatcherTests
         var clip = new FakeClipboard();
         var sync = new ClipboardSync();
         var on = false;
-        await using var watcher = new ClipboardWatcher(clip, sync, () => on);
+        var seenOn = 0;
+        await using var watcher = new ClipboardWatcher(clip, sync, () =>
+        {
+            if (Volatile.Read(ref on))
+            {
+                Interlocked.Increment(ref seenOn);
+            }
+            return Volatile.Read(ref on);
+        });
         var sent = new System.Collections.Concurrent.ConcurrentQueue<string>();
         watcher.Copied += t =>
         {
@@ -635,8 +643,10 @@ public sealed class WatcherTests
         clip.Copy("while off");
         await Task.Delay(1200);
         Assert.Empty(sent);
-        on = true;
-        await Task.Delay(700);   // what's there when sync starts isn't news
+        Volatile.Write(ref on, true);
+        // what's there when sync starts isn't news: copy only once the watcher has seen sync
+        // turned on and gone round again, so the copy can't be taken for what was already there
+        await Wait.For(() => Volatile.Read(ref seenOn) >= 2, 5, "the watcher to see sync turned on");
         clip.Copy("a password?");
         await Wait.For(() => sent.Count == 1, 5, "the copy to be sent");
         Assert.Equal("a password?", sent.Single());

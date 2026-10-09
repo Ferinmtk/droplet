@@ -532,11 +532,28 @@ def cmd_send(args) -> int:
     return 0
 
 
-# --- the tray ----------------------------------------------------------------
+# --- the window and the tray ---------------------------------------------------
+
+def cmd_app(args) -> int:
+    from . import app
+    if not app.available():
+        print(app.missing_text(), file=sys.stderr)
+        return 1
+    return app.run((["--page", args.page] if args.page else []) + (["--demo"] if args.demo else []))
+
+
+def cmd_open(args) -> int:
+    from . import tray
+    if args.install:
+        print(f"Droplet is in the app menu ({tray.install_launcher()}).")
+        return 0
+    return tray.open_app()
+
 
 def cmd_tray(args) -> int:
     from . import tray
     if args.autostart:
+        tray.install_launcher()
         path = tray.enable_autostart()
         tray.start_detached()
         print(f"The tray is starting, and starts with your desktop from now on ({path}).")
@@ -737,7 +754,13 @@ def cmd_doctor(args) -> int:
     caps = _probe_caps(cfg)
     problems = 0
     print("droplet-agent doctor\n")
-    if not config.is_set_up(cfg):
+    mesh_on = (cfg.get("mesh") or {}).get("enabled", True) is not False
+    if not config.is_set_up(cfg) and mesh_on and not cfg.get("pending"):
+        # a hub is optional: the mesh works without one
+        print("• No hub: your devices pair with this computer directly (droplet-agent pair, or")
+        print("  Pair a device in droplet on the phone). To link a droplet hub as well, if you")
+        print("  have one: droplet-agent setup\n")
+    elif not config.is_set_up(cfg):
         problems += 1
         print("• Not linked to a hub. Run droplet-agent setup: it finds the hub on this network")
         print("  and asks one of your devices to let this computer in. Or, from droplet in this")
@@ -823,6 +846,7 @@ def cmd_uninstall(args) -> int:
     if env.which("systemctl"):
         env.run(["systemctl", "--user", "disable", "--now", SERVICE], timeout=30)
     tray.stop_running()
+    tray.remove_launcher()
     for t in targets:
         try:
             if t.is_symlink() or t.is_file():
@@ -846,7 +870,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="droplet-agent",
                                 description="Lets your other devices control this computer through droplet.")
     p.add_argument("--version", action="version", version=f"droplet-agent {__version__}")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd")
 
     s = sub.add_parser("setup", help="link this computer to a droplet hub",
                        description="Link this computer to a droplet hub. With no --hub, looks for hubs on "
@@ -905,6 +929,21 @@ def main(argv=None) -> int:
     sn.add_argument("peer")
     sn.add_argument("message", help='JSON, e.g. \'{"t":"input","ev":[{"k":"key","key":"ArrowRight"}]}\'')
     sn.set_defaults(func=cmd_send)
+    ap = sub.add_parser("app", help="open Droplet's window: your devices, pairing, messages, received files",
+                        description="Open Droplet's window (it needs PySide6: pip install 'droplet-agent[app]'). "
+                                    "If it's open already, it comes to the front.")
+    ap.add_argument("--page", choices=["devices", "pair", "messages", "received", "settings"],
+                    help="open on this page")
+    ap.add_argument("--demo", action="store_true", help=argparse.SUPPRESS)
+    ap.set_defaults(func=cmd_app)
+    op = sub.add_parser("open", help="what Droplet in the app menu does: open its window (and start the tray)",
+                        description="Start the tray if it isn't running, and open Droplet's window. Without "
+                                    "PySide6 there's no window: a notification says where the tray's icon is "
+                                    "instead. Running droplet-agent with no command from the desktop (not a "
+                                    "terminal) does the same.")
+    op.add_argument("--install", action="store_true",
+                    help="only put Droplet in the app menu (the launcher entry and its icon)")
+    op.set_defaults(func=cmd_open)
     ty = sub.add_parser("tray", help="show droplet in the system tray",
                         description="Show droplet in the system tray (KDE Plasma, and other desktops that show "
                                     "StatusNotifierItem icons): send files, the clipboard or a ring to your "
@@ -923,6 +962,12 @@ def main(argv=None) -> int:
     u.set_defaults(func=cmd_uninstall)
 
     args = p.parse_args(argv)
+    if args.cmd is None:
+        if sys.stdin.isatty() or sys.stdout.isatty():
+            p.print_help()
+            return 2
+        # started from the desktop (the app menu, a launcher): show droplet rather than fail silently
+        args = p.parse_args(["open"])
     # setup and status say what matters themselves; `run` sets up real logging
     logging.getLogger("droplet_agent").addHandler(logging.NullHandler())
     try:

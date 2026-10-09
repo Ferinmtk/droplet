@@ -1,0 +1,143 @@
+# The Linux agent (agent/): test it on every change, and on a v* tag attach it to that
+# tag's GitHub release, so it installs with no hub at all:
+#
+#   curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
+#
+# A release gets:
+#   droplet_agent-<version>-py3-none-any.whl   the wheel, built by agent_dist.py exactly as a hub
+#                                              serves it (version: droplet_agent/__init__.py)
+#   droplet-agent.whl                          the same file under a name that never changes,
+#                                              which install-agent.sh downloads
+#   install-agent.sh                           agent/install.sh, pinned to this release
+# and their SHA-256s are added to the release's SHA256SUMS.txt (lines for these files are
+# replaced, the rest kept). The release must exist, or appear within 15 minutes of the tag:
+# `gh release create vX.Y.Z droplet-android.apk droplet-windows.exe SHA256SUMS.txt` makes
+# both. Uploading SHA256SUMS.txt again afterwards would drop the agent's lines; to redo
+# them, run this workflow by hand with the tag.
+name: agent
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'agent/**'
+      - 'agent_dist.py'
+      - '.github/workflows/agent.yml'
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'agent/**'
+      - 'agent_dist.py'
+      - '.github/workflows/agent.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Attach the agent to this existing release (a tag like v1.2.0); empty only tests'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-${{ github.ref }}-${{ inputs.tag || '' }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install the agent and pytest
+        run: python -m pip install --disable-pip-version-check -q pytest ./agent
+
+      - name: Tests
+        # a failing test shows the agent's own log, not only the assertion
+        run: >-
+          python -m pytest -q --log-level=DEBUG
+          -o 'log_format=%(relativeCreated)6.0fms %(threadName)s %(name)s: %(message)s'
+          agent/tests
+
+      - name: Check install.sh
+        if: matrix.python == '3.12'
+        run: |
+          sh -n agent/install.sh
+          shellcheck -s sh agent/install.sh
+
+  release:
+    name: Attach to the release
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the wheel and the installer
+        run: |
+          mkdir dist
+          wheel="$(python agent_dist.py wheel dist)"
+          cp "$wheel" dist/droplet-agent.whl
+          # the tray's icon is package data: make sure it's in
+          python -m zipfile -l dist/droplet-agent.whl | grep -q 'droplet_agent/tray_icon.bin'
+          sed "s|^DROPLET_RELEASE=''  # .*|DROPLET_RELEASE='$TAG'  # the GitHub release that ships this script|" \
+            agent/install.sh > dist/install-agent.sh
+          grep -q "^DROPLET_RELEASE='$TAG'" dist/install-agent.sh
+          ls -l dist
+          echo "Agent version: $(basename "$wheel"), release $TAG"
+
+      - name: Install it as a user would, without a hub
+        run: |
+          home="$(mktemp -d)"
+          HOME="$home" sh dist/install-agent.sh --wheel dist/droplet-agent.whl --no-service --no-tray
+          "$home/.local/bin/droplet-agent" --help >/dev/null
+          test -f "$home/.local/share/applications/io.github.ferinmtk.DropletAgent.desktop"
+          test ! -e "$home/.config/droplet-agent/config.json"
+
+      - name: Wait for the release
+        run: |
+          for _ in $(seq 90); do
+            gh release view "$TAG" >/dev/null 2>&1 && exit 0
+            sleep 10
+          done
+          echo "::error::There's no release for $TAG. Create it, then run this workflow by hand with the tag."
+          exit 1
+
+      - name: Upload
+        run: |
+          cd dist
+          gh release upload "$TAG" droplet_agent-*.whl droplet-agent.whl install-agent.sh --clobber
+          # add ours to the release's checksums, replacing older lines for the same files
+          mkdir sums
+          gh release download "$TAG" -p SHA256SUMS.txt -D sums 2>/dev/null || touch sums/SHA256SUMS.txt
+          ours="$(ls droplet_agent-*.whl droplet-agent.whl install-agent.sh)"
+          awk -v ours="$ours" 'BEGIN { n = split(ours, a, "\n"); for (i = 1; i <= n; i++) skip[a[i]] = 1 }
+            { f = $2; sub(/^\*/, "", f) } !(f in skip)' sums/SHA256SUMS.txt > SHA256SUMS.txt
+          sha256sum $ours >> SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --clobber

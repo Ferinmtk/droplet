@@ -61,6 +61,8 @@ RETRY_EVERY = 15       # the outbox looks for routes this often (and at once whe
 PAIR_GRACE = 120
 PAIR_RETRY = 2
 MAX_TEXT = 64 * 1024
+MAX_CHAT = 500          # messages one `chat` answer holds at most
+MAX_ANSWER = 768 * 1024  # and bytes (a control answer is one line, read up to control.MAX_LINE)
 LIVE = ("input", "media", "cmd")
 TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
 TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
@@ -141,17 +143,23 @@ class Chat:
                 f.write(json.dumps(entry) + "\n")
             return True
 
-    def recent(self, n: int = 50) -> list[dict]:
+    def recent(self, n: int = 50, fp: str | None = None) -> list[dict]:
+        """The last `n` messages, oldest first; only those with peer `fp` if it's given."""
         try:
-            lines = self.path.read_text(encoding="utf-8").splitlines()[-n:]
+            lines = self.path.read_text(encoding="utf-8").splitlines()
         except OSError:
             return []
         out = []
-        for line in lines:
+        for line in reversed(lines):
+            if len(out) >= n:
+                break
             try:
-                out.append(json.loads(line))
+                m = json.loads(line)
             except ValueError:
-                pass
+                continue
+            if isinstance(m, dict) and (fp is None or m.get("fp") == fp):
+                out.append(m)
+        out.reverse()
         return out
 
 
@@ -1001,6 +1009,43 @@ class MeshNode:
             "refused": self.server.refused if self.server else 0,
         }
 
+    def chat_history(self, fp: str | None = None, n: int = 100) -> list[dict]:
+        """Messages to and from peers, oldest first: those delivered or received, then the ones
+        still waiting to go (state "queued" or "sending") and the ones that failed."""
+        n = max(1, min(int(n), MAX_CHAT))
+        out = []
+        for m in self.chat.recent(n, fp):
+            out.append({k: m.get(k) for k in ("id", "dir", "fp", "peer", "name", "body", "ts", "route")}
+                       | {"state": "sent" if m.get("dir") == "out" else "received"})
+        jobs = [j for j in self.outbox.queued() + self.outbox.failed()
+                if j["kind"] == "text" and (fp is None or j["fp"] == fp)]
+        for j in jobs:
+            entry = self.trust.get(j["fp"]) or {}
+            out.append({"id": j["id"], "dir": "out", "fp": j["fp"], "peer": entry.get("id"),
+                        "name": entry.get("name") or j["peer"], "body": j["body"], "ts": j["created"],
+                        "route": None, "state": j["state"], "why": j.get("error")})
+        out.sort(key=lambda m: m["ts"] if isinstance(m["ts"], (int, float)) else 0)
+        out = out[-n:]
+        # one answer is one line, and the CLI reads at most MAX_LINE of it
+        while len(out) > 1 and len(json.dumps(out)) > MAX_ANSWER:
+            out.pop(0)
+        return out
+
+    def received(self, n: int = 50) -> dict:
+        """The files received directly, newest first, and where they're saved."""
+        n = max(1, min(int(n), 200))
+        files = []
+        for x in self.completed.recent(n):
+            entry = self.trust.get(x.get("fp")) or {}
+            path = Path(str(x.get("path") or ""))
+            try:
+                size = path.stat().st_size if path.is_file() else None
+            except OSError:
+                size = None
+            files.append({"name": path.name, "path": str(path), "fp": x.get("fp"), "from": entry.get("name"),
+                          "ts": x.get("ts"), "size": size, "exists": size is not None})
+        return {"folder": str(self.downloads), "files": files}
+
     def handle_control(self, req: dict) -> dict:
         cmd = req.get("cmd")
         try:
@@ -1028,13 +1073,18 @@ class MeshNode:
                 return {"route": self.ring(self.resolve(str(req.get("peer") or ""))["fp"], bool(req.get("stop")))}
             if cmd == "clip":
                 return {"route": self.clip(self.resolve(str(req.get("peer") or ""))["fp"], req.get("text"))}
+            if cmd == "chat":
+                fp = self.resolve(str(req["peer"]))["fp"] if req.get("peer") else None
+                return {"messages": self.chat_history(fp, req.get("n") or 100)}
+            if cmd == "received":
+                return self.received(req.get("n") or 50)
             if cmd == "send":
                 msg = req.get("msg")
                 if not isinstance(msg, dict) or msg.get("t") not in LIVE:
                     raise ValueError(f"only {', '.join(LIVE)} messages can be sent this way")
                 return {"route": self.send_live(self.resolve(str(req.get("peer") or ""))["fp"], msg)}
             return {"error": f"unknown command {cmd!r}"}
-        except (ValueError, NoRoute) as e:
+        except (ValueError, TypeError, NoRoute) as e:
             return {"error": str(e)}
 
     def _job_answer(self, jid: str, wait: float) -> dict:

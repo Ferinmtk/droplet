@@ -70,7 +70,8 @@ def make_node(tmp_path, name, port=0, host=None, retry_every=0.3):
     base = tmp_path / name
     n = MeshNode(host, config_dir=base / "cfg", data_dir=base / "data", downloads=base / "dl", port=port,
                  announce=False, control=False, retry_every=retry_every, local_addresses=lambda: ["127.0.0.1"],
-                 dry_run=True)
+                 dry_run=True, gateways=lambda: [])   # never the test machine's own router
+
     n.start()
     return n
 
@@ -721,3 +722,96 @@ def test_the_notify_cap_follows_the_setting():
     # an older config without the setting: on
     del cfg["mesh"]["phone_notifications"]
     assert "notify" in host.mesh_caps()
+
+
+def test_a_link_survives_reads_and_writes_overlapping_from_both_sides(nodes):
+    """The reader and the senders share one TLS socket; an overlapping read can come back
+    "try again" (EAGAIN). That isn't the end of the link (it was, under load in CI)."""
+    a, b = nodes("a"), nodes("b")
+    trust_each_other(a, b)
+    la = a.direct(b.identity.fp)
+    assert la is not None and wait_for(lambda: b.open_link(a.identity.fp) is not None)
+    lb = b.open_link(a.identity.fp)
+    stop = time.monotonic() + 3
+
+    def pump(link, pad):
+        while time.monotonic() < stop and not link.closed:
+            link.send({"t": "ping", "pad": pad * 2000})
+            time.sleep(0.002)
+    threads = [threading.Thread(target=pump, args=(link, pad))
+               for link, pad in ((la, "x"), (lb, "y"), (la, "z"), (lb, "w"))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not la.closed and not lb.closed
+
+
+# --- what the desktop app asks the control socket ------------------------------------------
+
+def test_chat_lists_messages_both_ways_and_the_ones_still_waiting(nodes):
+    a, b, c = nodes("a"), nodes("b"), nodes("c")
+    trust_each_other(a, b)
+    trust_each_other(a, c)
+    job = a.send_text(b.identity.fp, "hi b")
+    assert a.outbox.wait(job["id"], lambda j: j["state"] == DONE, 5)["state"] == DONE
+    reply = b.send_text(a.identity.fp, "hi a")
+    assert b.outbox.wait(reply["id"], lambda j: j["state"] == DONE, 5)["state"] == DONE
+    assert wait_for(lambda: len(a.chat.recent()) == 2)
+    # c goes away: a message to it waits in the outbox
+    c.close()
+    waiting = a.send_text(c.identity.fp, "are you there?")
+    assert wait_for(lambda: a.outbox.get(waiting["id"])["attempts"] > 0
+                    and a.outbox.get(waiting["id"])["state"] == QUEUED)
+
+    out = a.handle_control({"cmd": "chat"})
+    # (the outbox keeps trying c, so its message is queued or, for a moment, sending)
+    assert [(m["dir"], m["body"], m["state"].replace("sending", "queued"), m["name"])
+            for m in out["messages"]] == [
+        ("out", "hi b", "sent", "b"), ("in", "hi a", "received", "b"), ("out", "are you there?", "queued", "c")]
+    assert out["messages"][0]["route"] == "lan"
+    # one peer's, by name, id or fingerprint
+    for who in ("b", b.peer_id, b.identity.fp):
+        got = a.handle_control({"cmd": "chat", "peer": who})["messages"]
+        assert [m["body"] for m in got] == ["hi b", "hi a"]
+    assert [m["body"] for m in a.handle_control({"cmd": "chat", "n": 1})["messages"]] == ["are you there?"]
+    assert "error" in a.handle_control({"cmd": "chat", "peer": "nobody"})
+    assert "error" in a.handle_control({"cmd": "chat", "n": "lots"})
+    # a message that failed for good is listed as failed
+    a.outbox.update(waiting["id"], state="failed", error="that peer isn't trusted any more")
+    last = a.handle_control({"cmd": "chat", "peer": "c"})["messages"]
+    assert [(m["body"], m["state"], m["why"]) for m in last] == [
+        ("are you there?", "failed", "that peer isn't trusted any more")]
+
+
+def test_chat_answers_fit_on_one_control_line(tmp_path):
+    chat = mesh_node.Chat(tmp_path / "chat.jsonl")
+    for i in range(30):
+        chat.add({"id": f"m{i}", "dir": "in", "fp": "f" * 64, "peer": "p", "name": "p",
+                  "body": str(i % 10) * 60_000, "ts": i})
+    node = MeshNode.__new__(MeshNode)
+    node.chat, node.outbox = chat, Outbox(tmp_path / "outbox.json")
+    node.trust = TrustList(tmp_path / "trust.json", "0" * 64)
+    out = node.chat_history(None, 500)
+    assert 1 <= len(out) < 30 and out[-1]["id"] == "m29"
+    assert len(json.dumps(out)) <= mesh_node.MAX_ANSWER
+
+
+def test_received_lists_files_newest_first_with_the_sender(nodes, tmp_path):
+    a, b = nodes("a"), nodes("b")
+    trust_each_other(a, b)
+    for name in ("first.txt", "second.jpg"):
+        src = tmp_path / name
+        src.write_bytes(name.encode() * 100)
+        j = a.send_file(b.identity.fp, src)
+        assert a.outbox.wait(j["id"], lambda j: j["state"] == DONE, 10)["state"] == DONE
+    out = b.handle_control({"cmd": "received"})
+    assert out["folder"] == str(tmp_path / "b" / "dl")
+    assert [(f["name"], f["from"], f["exists"]) for f in out["files"]] == [
+        ("second.jpg", "a", True), ("first.txt", "a", True)]
+    assert out["files"][0]["size"] == len(b"second.jpg") * 100 and out["files"][0]["fp"] == a.identity.fp
+    # a file removed since is still listed, as gone
+    Path(out["files"][1]["path"]).unlink()
+    assert [f["name"] for f in b.handle_control({"cmd": "received", "n": 1})["files"]] == ["second.jpg"]
+    gone = b.handle_control({"cmd": "received"})["files"][1]
+    assert gone["exists"] is False and gone["size"] is None

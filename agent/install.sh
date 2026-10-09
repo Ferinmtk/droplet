@@ -1,12 +1,20 @@
 #!/bin/sh
 # Installs (or upgrades) the droplet agent for the current user. No sudo.
 #
+# No hub needed: the agent comes from droplet's latest GitHub release, and
+# your devices pair with it directly.
+#
+#   curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
+#
+# With a droplet hub (optional), the hub serves this script too, fills in its
+# own address below, and the agent is downloaded from that hub:
+#
 #   curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 123456
 #   curl -fsSL https://<hub's tailnet name>/agent/install.sh | sh -s -- --code 123456
 #
-# The hub fills in its own address below when it serves this script, and
-# the agent itself is downloaded from that hub. Only the agent's small
-# dependencies (websockets, jeepney, zeroconf, cryptography) come from PyPI.
+# Either way only the agent's dependencies (websockets, jeepney, zeroconf,
+# cryptography, and for Droplet's window PySide6) come from PyPI. A release's wheel is checked
+# against the release's SHA256SUMS.txt.
 #
 # Fetched over the LAN's plain http, the agent reads the hub's certificate
 # fingerprint from it, then switches to the hub's LAN HTTPS with that
@@ -19,8 +27,15 @@
 #                   computer's name): one of your devices allows it in
 #   --pin PIN       join with the hub's PIN instead of waiting to be allowed
 #   --hub URL       the hub, if this copy of the script didn't come from it
+#                   (--code, --name and --pin need a hub; without one,
+#                   pair with your devices directly)
+#   --release TAG   install the agent from this GitHub release (v1.2.0)
+#                   instead of the latest one
+#   --wheel FILE    install this agent wheel (a path or a URL)
 #   --no-service    don't install the systemd user service
 #   --no-tray       don't put droplet in the system tray
+#   --no-app        don't install Droplet's window (PySide6, about 80 MB from
+#                   PyPI; installed only from a desktop session)
 #
 # Re-running it upgrades the agent and keeps the settings.
 
@@ -28,16 +43,26 @@ set -eu
 
 DROPLET_HUB=''  # filled in by the hub that serves this script
 DROPLET_WHEEL=''  # likewise
+DROPLET_RELEASE=''  # filled in by the GitHub release that ships this script
+# where releases are published; the variable is for testing
+RELEASES="${DROPLET_RELEASES_URL:-https://github.com/Ferinmtk/droplet/releases}"
+RELEASE_WHEEL='droplet-agent.whl'  # each release's wheel, under a name that doesn't change
 
 say() { printf '%s\n' "$*"; }
 usage() {
-    say "usage: install.sh [--code 123456 | --name NAME] [--pin PIN] [--hub URL] [--no-service] [--no-tray]"
+    say "usage: install.sh [--hub URL [--code 123456 | --name NAME] [--pin PIN]]"
+    say "                  [--release TAG | --wheel FILE] [--no-service] [--no-tray] [--no-app]"
+    say "  Without a hub, the agent comes from droplet's latest GitHub release and"
+    say "  pairs with your devices directly."
+    say "  --hub      a droplet hub to link to (optional)"
     say "  --code     link to this computer's droplet device (browser: Devices, Link an app)"
     say "  --name     or join as a new device (default: this computer's name)"
     say "  --pin      join with the hub's PIN instead of waiting to be allowed"
-    say "  --hub      the hub, when this script didn't come from it"
+    say "  --release  install from this GitHub release (a tag like v1.2.0), not the latest"
+    say "  --wheel    install this agent wheel (a path or a URL)"
     say "  --no-service   don't install the systemd user service"
     say "  --no-tray      don't put droplet in the system tray"
+    say "  --no-app       don't install Droplet's window (PySide6, about 80 MB)"
 }
 die() { printf 'droplet-agent install: %s\n' "$*" >&2; exit 1; }
 
@@ -52,16 +77,20 @@ fetch() {  # fetch URL FILE
 }
 
 main() {
-    hub="$DROPLET_HUB" code="" name="" pin="" service=1 tray=1
-    # a copy that wasn't served by a hub gets the hub's own copy and runs that
+    hub="$DROPLET_HUB" code="" name="" pin="" service=1 tray=1 app=1
+    release="$DROPLET_RELEASE" wheel="" source=""
     prev=""
     for a in "$@"; do
-        [ "$prev" = "--hub" ] && hub="$a"
+        case "$prev" in
+            --hub) hub="$a" ;;
+            --release|--wheel) source="$a" ;;
+        esac
         prev="$a"
     done
     hub="${hub%/}"
-    [ -n "$hub" ] || die "which hub? Add --hub https://<your hub>"
-    if [ -z "$DROPLET_WHEEL" ]; then
+    # a copy that wasn't served by a hub gets the hub's own copy and runs that,
+    # so the agent matches the hub (unless --release or --wheel says otherwise)
+    if [ -n "$hub" ] && [ -z "$DROPLET_WHEEL" ] && [ -z "$source" ]; then
         tmp="$(mktemp)"
         fetch "$hub/agent/install.sh" "$tmp" || die "can't download the installer from $hub"
         grep -q "^DROPLET_WHEEL='droplet_agent-" "$tmp" || die "$hub didn't serve a usable installer"
@@ -74,17 +103,23 @@ main() {
     while [ $# -gt 0 ]; do
         case "$1" in
             --hub) [ $# -ge 2 ] || die "--hub needs a URL"; shift 2 ;;
+            --release) [ $# -ge 2 ] || die "--release needs a tag, like v1.2.0"; release="$2"; shift 2 ;;
+            --wheel) [ $# -ge 2 ] || die "--wheel needs a file or URL"; wheel="$2"; shift 2 ;;
             --code) [ $# -ge 2 ] || die "--code needs the six-digit code"; code="$2"; shift 2 ;;
             --name) [ $# -ge 2 ] || die "--name needs a name"; name="$2"; shift 2 ;;
             --pin) [ $# -ge 2 ] || die "--pin needs the PIN"; pin="$2"; shift 2 ;;
             --no-service) service=0; shift ;;
             --no-tray) tray=0; shift ;;
+            --no-app) app=0; shift ;;
             -h|--help) usage; exit 0 ;;
             *) die "unknown option $1" ;;
         esac
     done
     [ -z "$code" ] || [ -z "$name" ] || die "use --code or --name, not both"
     [ -z "$code" ] || [ -z "$pin" ] || die "use --code or --pin, not both"
+    if [ -z "$hub" ] && [ -n "$code$name$pin" ]; then
+        die "--code, --name and --pin link to a hub: add --hub https://<your hub>, or leave them out and pair with your devices directly"
+    fi
 
     # --- Python and a venv --------------------------------------------------
     py=""
@@ -99,6 +134,62 @@ main() {
         die "Python can't make a virtual environment here. On Debian/Ubuntu: sudo apt install python3-venv"
     fi
 
+    # --- the agent itself ---------------------------------------------------
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' EXIT
+    if [ -n "$wheel" ]; then
+        case "$wheel" in
+            http://*|https://*|file://*)
+                say "Downloading the agent from $wheel"
+                fetch "$wheel" "$tmpdir/download.whl" || die "can't download $wheel" ;;
+            *)
+                [ -f "$wheel" ] || die "no such file: $wheel"
+                cp "$wheel" "$tmpdir/download.whl" ;;
+        esac
+    elif [ -n "$hub" ] && [ -n "$DROPLET_WHEEL" ] && [ -z "$release" ]; then
+        say "Downloading the agent from $hub"
+        fetch "$hub/agent/$DROPLET_WHEEL" "$tmpdir/download.whl" || die "can't download $hub/agent/$DROPLET_WHEEL"
+    else
+        if [ -n "$release" ]; then
+            from="$RELEASES/download/$release"
+        else
+            from="$RELEASES/latest/download"
+        fi
+        say "Downloading the agent from $from"
+        fetch "$from/$RELEASE_WHEEL" "$tmpdir/download.whl" ||
+            die "can't download $from/$RELEASE_WHEEL (does that release have the Linux agent?)"
+        # the release's checksums, when it has them: a wheel that doesn't match is refused
+        if fetch "$from/SHA256SUMS.txt" "$tmpdir/SHA256SUMS.txt" 2>/dev/null; then
+            want="$(awk -v f="$RELEASE_WHEEL" '$2 == f || $2 == "*" f { print $1; exit }' "$tmpdir/SHA256SUMS.txt")"
+            if [ -n "$want" ]; then
+                got="$("$py" -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+                    "$tmpdir/download.whl" </dev/null)"
+                [ "$got" = "$want" ] ||
+                    die "the download doesn't match the release's SHA256SUMS.txt (got $got, expected $want). Nothing was installed."
+                say "Checked its SHA-256 against the release's SHA256SUMS.txt"
+            else
+                say "The release's SHA256SUMS.txt doesn't list $RELEASE_WHEEL, so the download wasn't checked"
+            fi
+        else
+            say "The release has no SHA256SUMS.txt, so the download wasn't checked"
+        fi
+    fi
+    # pip wants a wheel's real file name (name-version-tags.whl): read it from inside
+    whl="$("$py" -c '
+import sys, zipfile
+try:
+    names = zipfile.ZipFile(sys.argv[1]).namelist()
+except Exception:
+    sys.exit(1)
+for n in names:
+    d = n.split("/")[0]
+    if d.startswith("droplet_agent-") and d.endswith(".dist-info") and n == d + "/METADATA":
+        print(d[: -len(".dist-info")] + "-py3-none-any.whl")
+        sys.exit(0)
+sys.exit(1)
+' "$tmpdir/download.whl" </dev/null)" || die "that download isn't the droplet agent"
+    mv "$tmpdir/download.whl" "$tmpdir/$whl"
+
     data="${XDG_DATA_HOME:-$HOME/.local/share}/droplet-agent"
     config="${XDG_CONFIG_HOME:-$HOME/.config}"
     if ! "$data/bin/python" -c 'import sys' 2>/dev/null; then
@@ -108,16 +199,25 @@ main() {
         "$py" -m venv "$data" </dev/null
     fi
 
-    tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
-    say "Downloading the agent from $hub"
-    fetch "$hub/agent/$DROPLET_WHEEL" "$tmpdir/$DROPLET_WHEEL" || die "can't download $hub/agent/$DROPLET_WHEEL"
     say "Installing (its dependencies come from PyPI)"
     pip() { "$data/bin/python" -m pip --disable-pip-version-check --quiet "$@" </dev/null; }
-    pip install --upgrade "$tmpdir/$DROPLET_WHEEL"
+    pip install --upgrade "$tmpdir/$whl"
     # same version number, newer code: install it anyway
-    pip install --force-reinstall --no-deps "$tmpdir/$DROPLET_WHEEL"
+    pip install --force-reinstall --no-deps "$tmpdir/$whl"
     agent="$data/bin/droplet-agent"
+
+    # Droplet's window (Qt, through PySide6): only where there's a desktop to show it on.
+    # Without it the agent, the tray and the commands work the same.
+    if [ "$app" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+        say "Installing Droplet's window (PySide6, about 80 MB from PyPI)"
+        if pip install "${tmpdir}/${whl}[app]" &&
+            "$data/bin/python" -c 'import PySide6.QtWidgets' 2>/dev/null </dev/null; then
+            say "Droplet's window is installed: open Droplet from your app menu."
+        else
+            say "Couldn't install Droplet's window; the tray and the commands work without it."
+            say "To try again: $data/bin/python -m pip install 'droplet-agent[app]'"
+        fi
+    fi
 
     mkdir -p "$HOME/.local/bin"
     ln -sf "$agent" "$HOME/.local/bin/droplet-agent"
@@ -153,14 +253,24 @@ EOF
         rm -f "$autostart"
     fi
 
-    # --- link to the hub -----------------------------------------------------
+    # --- link to the hub (only with one) ---------------------------------------
     # a plain http:// LAN hub is fine here: setup reads the hub's certificate
     # fingerprint from it and carries on over the pinned LAN HTTPS
-    if [ -n "$code" ]; then
-        "$agent" setup --hub "$hub" --code "$code" </dev/null
-    elif [ -n "$name" ] || [ -n "$pin" ] || ! "$data/bin/python" -c \
+    linked=0
+    if "$data/bin/python" -c \
         'import sys; from droplet_agent import config; sys.exit(not config.is_set_up(config.load()))' \
         2>/dev/null </dev/null; then
+        linked=1
+    fi
+    if [ -z "$hub" ]; then
+        if [ "$linked" = 1 ]; then
+            say "Keeping the existing link ($config/droplet-agent/config.json)"
+        else
+            say "No hub: this computer pairs with your devices directly."
+        fi
+    elif [ -n "$code" ]; then
+        "$agent" setup --hub "$hub" --code "$code" </dev/null
+    elif [ -n "$name" ] || [ -n "$pin" ] || [ "$linked" = 0 ]; then
         # not linked yet (or still waiting to be let in): join as a new
         # device, and wait for one of yours to allow it (or use the PIN)
         set -- --hub "$hub"
@@ -207,6 +317,11 @@ EOF
         say "Service not installed. Start the agent with: $agent run"
     fi
 
+    # Droplet in the app menu: opens its window (or, without one, says where the tray is)
+    if [ "$tray" = 1 ]; then
+        "$agent" open --install >/dev/null 2>&1 </dev/null || true
+    fi
+
     # start (or restart, after an upgrade) the tray in this desktop session
     if [ "$tray" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
         nohup "$agent" tray >/dev/null 2>&1 </dev/null &
@@ -217,6 +332,12 @@ EOF
     "$agent" doctor </dev/null || true
     say ""
     say "Done. Check it any time with: droplet-agent status"
+    if [ -z "$hub" ] && [ "$linked" = 0 ]; then
+        say ""
+        say "Pair with your phone: open droplet on the phone, tap Pair a device and pick"
+        say "this computer, then accept here (the tray asks), or run: droplet-agent pair"
+        say "Your devices: droplet-agent peers"
+    fi
 }
 
 main "$@"
