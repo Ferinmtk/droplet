@@ -3,7 +3,7 @@
 Every text frame is one JSON object; binary frames carry file data. The
 computer speaks first, as soon as the channel opens:
 
-    S → {"t":"server-hello","v":1,"id","name","os":"linux","fp":<mesh fp>,"nonce":nS}
+    S → {"t":"server-hello","v":1,"id","name","os":<OS_NAME>,"fp":<mesh fp>,"nonce":nS}
 
 **A paired browser proves who it is** (its key never leaves it: WebCrypto,
 non-extractable, in IndexedDB):
@@ -60,6 +60,7 @@ import secrets
 import time
 from pathlib import Path
 
+from ..mesh import OS_NAME
 from ..mesh.files import safe_name, unique_path
 from ..mesh.identity import key_fingerprint, p256_spki, verify_key
 from . import PROTOCOL_VERSION
@@ -153,7 +154,7 @@ class Conn:
     def opened(self):
         info = self.host.server_info()
         self.send({"t": "server-hello", "v": PROTOCOL_VERSION, "id": info["id"], "name": info["name"],
-                   "os": "linux", "fp": info["fp"], "nonce": self.nonce})
+                   "os": OS_NAME, "fp": info["fp"], "nonce": self.nonce})
         asyncio.get_event_loop().call_later(AUTH_TIMEOUT, self._auth_deadline)
 
     def _auth_deadline(self):
@@ -225,7 +226,7 @@ class Conn:
             return
         self.fp, self.name = fp, entry["name"]
         self.pairing = None
-        self.send({"t": "welcome", "v": PROTOCOL_VERSION, "id": info["id"], "name": info["name"], "os": "linux",
+        self.send({"t": "welcome", "v": PROTOCOL_VERSION, "id": info["id"], "name": info["name"], "os": OS_NAME,
                    "caps": []})
         log.info("webrtc: %s connected from %s", entry["name"], self.address)
         self.host.authenticated(self)

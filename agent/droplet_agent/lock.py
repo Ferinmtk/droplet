@@ -4,12 +4,19 @@ Desktops with their own lock screen (KDE, GNOME, Cinnamon, …) lock when
 logind asks, so `loginctl lock-session` is right there. Compositors like niri
 and sway have nothing listening for that, so a screen locker is started
 directly, in a way that outlives the agent (see env.spawn_detached).
+
+A Mac locks through the login framework's SACLockScreenImmediate (what the
+menu bar's Lock Screen does), in a separate process; CGSession -suspend on
+systems that still have it; or, failing both, by putting the display to
+sleep, which locks when a password is required after sleep.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
+from pathlib import Path
 
 from . import env
 
@@ -34,6 +41,47 @@ X11_LOCKERS = (
 
 LOGIND = "loginctl"
 
+# macOS
+MAC_LOGIN_FRAMEWORK = Path("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login")
+MAC_CGSESSION = Path("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession")
+MAC_LOCK = "lock-screen"   # SACLockScreenImmediate, through MAC_LOGIN_FRAMEWORK
+
+
+def _can_lock_screen() -> bool:
+    """Whether the login framework's SACLockScreenImmediate is there. Since macOS 11 system
+    frameworks live in the dyld cache, not as files, so it's asked, not looked for."""
+    import ctypes
+    try:
+        return hasattr(ctypes.cdll.LoadLibrary(str(MAC_LOGIN_FRAMEWORK)), "SACLockScreenImmediate")
+    except OSError:
+        return False
+
+
+def _detect_mac() -> tuple[list[str] | None, str]:
+    if _can_lock_screen():
+        return [MAC_LOCK], "the login framework's lock screen"
+    if MAC_CGSESSION.exists():
+        return [str(MAC_CGSESSION), "-suspend"], "CGSession"
+    if env.which("pmset"):
+        return ["pmset", "displaysleepnow"], "display sleep (locks if a password is required right after sleep)"
+    return None, "no way to lock this Mac found"
+
+
+def _lock_mac(command: list[str]) -> str | None:
+    if command == [MAC_LOCK]:
+        # its own process: a crash in a private framework can't take the agent with it
+        code = ("import ctypes, sys; "
+                f"ctypes.cdll.LoadLibrary({str(MAC_LOGIN_FRAMEWORK)!r}).SACLockScreenImmediate()")
+        argv = [sys.executable, "-c", code]
+    else:
+        argv = command
+    r = env.run(argv, timeout=10)
+    if r is None:
+        return f"{argv[0]} didn't run"
+    if r.returncode != 0:
+        return r.stderr.decode(errors="replace").strip() or f"exit status {r.returncode}"
+    return None
+
 
 def detect(configured=None) -> tuple[list[str] | None, str]:
     """(command, how it was chosen); command None when there's no way to lock."""
@@ -44,6 +92,8 @@ def detect(configured=None) -> tuple[list[str] | None, str]:
         if not env.which(configured[0]):
             return None, f"the configured locker {configured[0]} isn't installed"
         return list(configured), "from the config"
+    if sys.platform == "darwin":
+        return _detect_mac()
     desks = env.desktops()
     if desks & LOGIND_DESKTOPS and env.which("loginctl"):
         return [LOGIND], f"loginctl ({'/'.join(sorted(desks & LOGIND_DESKTOPS))} listens for it)"
@@ -70,6 +120,8 @@ def display_session() -> str | None:
 
 def lock(command: list[str]) -> str | None:
     """Lock the screen. Returns why it failed, or None."""
+    if sys.platform == "darwin" and command and command[0] in (MAC_LOCK, str(MAC_CGSESSION), "pmset"):
+        return _lock_mac(command)
     if command == [LOGIND]:
         sid = display_session()
         argv = ["loginctl", "lock-session"] + ([sid] if sid else [])

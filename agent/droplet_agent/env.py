@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 # process names of compositors and desktops, as /proc/<pid>/comm shows them
@@ -111,7 +112,9 @@ def _running_compositors() -> set[str]:
 
 
 def desktops() -> set[str]:
-    """Lower-case desktop names: {"kde"}, {"gnome"}, {"niri"}, … (may be empty)."""
+    """Lower-case desktop names: {"kde"}, {"gnome"}, {"niri"}, … (may be empty). A Mac: {"macos"}."""
+    if sys.platform == "darwin":
+        return {"macos"}
     names = set()
     for part in (os.environ.get("XDG_CURRENT_DESKTOP") or "").split(":"):
         part = part.strip().lower()

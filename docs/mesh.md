@@ -62,7 +62,7 @@ directly. The mesh brings that to droplet:
   | `id` | peer id |
   | `fp` | certificate fingerprint |
   | `name` | device name |
-  | `os` | `android`, `windows` or `linux` |
+  | `os` | `android`, `windows`, `linux` or `macos` |
   | `caps` | comma-separated, same names as `docs/remote.md`, plus `notify` (§9.4) |
   | `hub` | the id of the hub it belongs to, or empty |
   | `v` | protocol version, `1` |

@@ -3,7 +3,8 @@
 Notifications go to org.freedesktop.Notifications over D-Bus (jeepney), so
 a mirrored notification can be replaced and closed by its key. The ring
 plays the freedesktop incoming-call sound a few times, at the current volume.
-In a dry run both are only logged.
+On a Mac, notifications go through osascript (Notification Centre) and the
+ring is a system sound played with afplay. In a dry run both are only logged.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -19,6 +21,9 @@ log = logging.getLogger("droplet_agent.mesh.desktop")
 RING_SOUND = Path("/usr/share/sounds/freedesktop/stereo/phone-incoming-call.oga")
 RING_REPEATS = 6
 PLAYERS = (("pw-play", []), ("paplay", []), ("canberra-gtk-play", ["-f"]))
+if sys.platform == "darwin":
+    RING_SOUND = Path("/System/Library/Sounds/Glass.aiff")
+    PLAYERS = (("afplay", []),)
 
 
 class Desktop:
@@ -37,6 +42,12 @@ class Desktop:
         title, body = str(title)[:200], str(body)[:1000]
         if self.dry_run:
             log.info("notification (dry run): %s: %s", title, body[:120])
+            return
+        if sys.platform == "darwin":
+            # Notification Centre can't replace or close one from osascript: each is shown once
+            from .. import macos
+            if not macos.notify(title, body):
+                log.debug("couldn't show a notification")
             return
         try:
             from jeepney import DBusAddress, new_method_call
@@ -65,7 +76,7 @@ class Desktop:
     def close_notification(self, key: str) -> None:
         with self._lock:
             nid = self._ids.pop(key, None)
-        if nid is None or self.dry_run:
+        if nid is None or self.dry_run or sys.platform == "darwin":
             return
         try:
             from jeepney import DBusAddress, new_method_call
@@ -89,7 +100,8 @@ class Desktop:
             return
         player = next(((n, a) for n, a in PLAYERS if shutil.which(n)), None)
         if player is None or not RING_SOUND.exists():
-            log.warning("can't ring: no sound player (pw-play, paplay) or no sound file")
+            log.warning("can't ring: no sound player (%s) or no sound file",
+                        ", ".join(n for n, _ in PLAYERS))
             return
         self._ring_stop.clear()
         self._ring_thread = threading.Thread(target=self._ring, args=(player,), name="ring", daemon=True)

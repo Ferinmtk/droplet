@@ -1,6 +1,7 @@
 """The local socket the CLI uses to talk to the running agent.
 
-`$XDG_RUNTIME_DIR/droplet-agent/control.sock`: a Unix socket in a directory
+`$XDG_RUNTIME_DIR/droplet-agent/control.sock` (on a Mac, which has no runtime dir,
+`~/.config/droplet-agent/control.sock`): a Unix socket in a directory
 only this user can open (700), and each connection's peer is checked to be
 this same user (SO_PEERCRED). One JSON request per line, one JSON answer
 per line.
@@ -13,6 +14,7 @@ import logging
 import os
 import socket
 import struct
+import sys
 import threading
 from pathlib import Path
 
@@ -33,7 +35,17 @@ class NotRunning(Exception):
     pass
 
 
+SOL_LOCAL, LOCAL_PEERCRED = 0, 1   # macOS's <sys/un.h>: the peer's struct xucred
+
+
 def _peer_uid(conn: socket.socket) -> int | None:
+    if sys.platform == "darwin":
+        # struct xucred { u_int cr_version; uid_t cr_uid; short cr_ngroups; gid_t cr_groups[16]; }
+        try:
+            creds = conn.getsockopt(SOL_LOCAL, LOCAL_PEERCRED, 76)
+            return struct.unpack_from("Ii", creds)[1]
+        except (OSError, struct.error):
+            return None
     try:
         creds = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
         return struct.unpack("3i", creds)[1]

@@ -1,6 +1,6 @@
-# droplet agent (Linux)
+# droplet agent (Linux and macOS)
 
-Lets your phone and other devices control a Linux computer through droplet:
+Lets your phone and other devices control a Linux computer or a Mac through droplet:
 mouse and keyboard, the presentation remote, media playback and volume,
 locking, screenshots and clipboard sync. The protocol is
 [docs/remote.md](../docs/remote.md).
@@ -48,6 +48,8 @@ Running it again upgrades the agent and keeps your settings and pairings.
 
 Needs Python 3.9 or newer, with `venv` (on Debian and Ubuntu:
 `sudo apt install python3-venv`), and curl or wget.
+
+On a Mac it's the same command: see [On a Mac](#on-a-mac).
 
 ### With a droplet hub (optional)
 
@@ -286,6 +288,82 @@ droplet-agent tray --no-autostart   # stop that, and close it
 
 Starting it again replaces the one running, so there's only ever one.
 
+## On a Mac
+
+Free, and no Apple developer account or App Store needed. Open **Terminal**
+(in Applications → Utilities) and paste:
+
+```sh
+curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
+```
+
+It needs Python 3 (3.9 or newer). On a Mac without it, macOS offers to
+install Apple's Command Line Tools, which bring it (or run
+`xcode-select --install`, a few minutes); Python from
+[python.org](https://www.python.org/downloads/macos/) works too. Then run the
+command again. It uses python.org's Python if there is one, then Apple's, then
+any other (Homebrew's): the first two keep the permissions you give the agent
+across their updates, while after a Homebrew Python upgrade macOS asks again
+(and the installer should be run again).
+
+What it sets up, all in your own user account (no admin password):
+
+- the agent, in `~/.local/share/droplet-agent`, and `droplet-agent` in
+  `~/.local/bin` (added to your PATH in `~/.zprofile` for new Terminal windows);
+- a **LaunchAgent**, `~/Library/LaunchAgents/io.github.ferinmtk.DropletAgent.plist`,
+  which starts the agent now and every time you log in, and restarts it if
+  it stops (`--no-service` leaves it unloaded). Its log is
+  `~/Library/Logs/droplet-agent.log`;
+- droplet in the **menu bar**, with the same menu as the Linux tray (your
+  devices, Send files…, Send clipboard, Ring, pairing requests with Accept
+  and Decline, Open received files), started now and at login by a second
+  LaunchAgent (`…DropletAgent.Menu.plist`). It has a **Quit** item; it comes
+  back at the next login, or with `droplet-agent tray --autostart`;
+- **Droplet** in Launchpad and Spotlight: `~/Applications/Droplet.app`, a
+  small app the installer writes on your Mac (so macOS doesn't quarantine
+  it), which opens [Droplet's window](#droplets-window).
+
+The menu bar icon and the window are Qt (PySide6, about 80 MB from PyPI),
+installed by default on a Mac (`--no-app` leaves them out, and Droplet.app
+with them; `--no-tray` leaves out the menu bar and Droplet.app). If PySide6
+can't be installed (a Python too old for it), the agent and the commands
+still work.
+
+**Allow what you want your devices to do.** macOS asks for some things once,
+under **System Settings → Privacy & Security**. The agent runs on Python, so
+that's the name listed there:
+
+- **Accessibility**: remote control (mouse, keyboard, typing) and the media
+  keys. The first time the agent runs, macOS asks and lists Python there;
+  switch it on, and remote control starts working a few seconds later. If
+  Python isn't listed, add it with **+**.
+- **Screen Recording** (or Screen & System Audio Recording): screenshots.
+  Without it, a screenshot shows the desktop picture but no windows.
+- If the firewall is on and macOS asks whether Python may **accept incoming
+  network connections**, say **Allow**: that's how your phone reaches the Mac.
+
+`droplet-agent doctor` says which of these are still missing.
+
+What works on a Mac:
+
+| | how |
+|---|---|
+| **pairing, chat, files, ring, clipboard** | the same as on Linux (the mesh). Files land in `~/Downloads/droplet`; a ring plays the Glass sound; notifications appear in Notification Centre |
+| **input** | Quartz events (after Accessibility is allowed); text is typed as Unicode, so any character works |
+| **media** | volume and mute, and play/pause, next and previous through the media keys. macOS doesn't let other apps read what's playing, so there's no title or artwork |
+| **lock** | locks the screen, like the menu bar's Lock Screen |
+| **screenshot** | `screencapture` (after Screen Recording is allowed) |
+| **clipboard** | text, checked once a second; text a password manager marks as concealed is never sent |
+| **battery** | from `pmset` |
+
+Commands are the same as on Linux. `droplet-agent status` shows the
+LaunchAgent's state; to restart the agent:
+`launchctl kickstart -k gui/$(id -u)/io.github.ferinmtk.DropletAgent`.
+
+**Uninstall:** `droplet-agent uninstall` stops the agent and the menu bar
+icon and removes both LaunchAgents, Droplet.app, the agent and its settings.
+Then switch Python off under Privacy & Security if you like.
+
 ## Commands
 
 | command | what it does |
@@ -304,7 +382,7 @@ Starting it again replaces the one running, so there's only ever one.
 | `droplet-agent tray` | droplet in the system tray: see [the tray](#the-tray). `--autostart` / `--no-autostart` |
 | `droplet-agent uninstall` | stop the service and the tray, and remove the agent, its settings, the service file and the tray's autostart entry |
 
-Logs: `journalctl --user -u droplet-agent -f`.
+Logs: `journalctl --user -u droplet-agent -f` (on a Mac: `~/Library/Logs/droplet-agent.log`).
 
 ## What it can do, and how
 
@@ -389,7 +467,7 @@ acceleration to the virtual mouse.
   trust a new certificate, run `droplet-agent setup`.
 - **pending**: `true` while this computer waits to be let in.
 - **caps**: set any to `false` and the agent neither offers it nor acts on it.
-- **input_backend**: `auto`, `portal`, `uinput`, `x11`, or `log` (does nothing).
+- **input_backend**: `auto`, `portal`, `uinput`, `x11`, `quartz` (a Mac's), or `log` (does nothing).
 - **uinput_text**: `auto` (use wtype when installed) or `ascii`.
 - **lock_command**: e.g. `["swaylock", "-f"]`. `null` picks one.
 - **screenshot_command**: e.g. `["grim", "{out}"]`, where `{out}` is the PNG
@@ -403,7 +481,8 @@ acceleration to the virtual mouse.
   `phone_notifications: false` stops showing a paired phone's notifications
   here, and tells the phone not to send them (the `notify` cap goes).
 
-Restart the service after editing: `systemctl --user restart droplet-agent`.
+Restart the service after editing: `systemctl --user restart droplet-agent` (on a Mac:
+`launchctl kickstart -k gui/$(id -u)/io.github.ferinmtk.DropletAgent`).
 
 ## Security
 
@@ -441,7 +520,15 @@ python -m venv .venv && .venv/bin/pip install websockets jeepney zeroconf pytest
 .venv/bin/python tests/e2e_mesh.py hub http://127.0.0.1:8861 <hub pid>   # the roster, hub down, mailbox, outbox
 .venv/bin/pip install 'PySide6-Essentials>=6.6'  # then the window's tests run too (offscreen)
 .venv/bin/python -m droplet_agent app --demo     # the window, with pretend devices and no agent
+.venv/bin/python tests/tls_probe.py              # the mesh's mutual TLS on this Python's OpenSSL/LibreSSL
 ```
+
+The same tests run on a Mac (CI's `macos-latest` job runs them, the
+two-agent e2e, and the installer with launchd, on both Apple's Python and a
+python.org one). The Mac's code is `macos.py` (launchd, Droplet.app, the
+system tools, the framework calls through ctypes), `macmenu.py` (the menu
+bar) and `inject/quartz.py` (input); elsewhere it's a `sys.platform ==
+"darwin"` branch beside the Linux code.
 
 `tests/e2e_local.py` links an agent to a throwaway hub with a real link code,
 runs it with the dry-run backends and drives it from a fake controller.

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from droplet_agent.mesh import discovery, files, identity, pairing, tlsctx
+from droplet_agent.mesh import OS_NAME, discovery, files, identity, pairing, tlsctx
 from droplet_agent.mesh import node as mesh_node
 from droplet_agent.mesh.node import Host, MeshNode, NoRoute
 from droplet_agent.mesh.outbox import DONE, QUEUED, Outbox
@@ -141,11 +141,11 @@ def test_txt_records_round_trip():
     fp = "ab" * 32
     txt = discovery.txt_records(peer_id="0123456789abcdef", fp=fp, name="  slim\n laptop ",
                                 caps=["media", "input", "bad cap!"], hub_id="9b16173d305cd15a")
-    assert txt == {"id": "0123456789abcdef", "fp": fp, "name": "slim laptop", "os": "linux",
+    assert txt == {"id": "0123456789abcdef", "fp": fp, "name": "slim laptop", "os": OS_NAME,
                    "caps": "input,media", "hub": "9b16173d305cd15a", "v": "1"}
     wire = {k.encode(): v.encode() for k, v in txt.items()}
     got = discovery.parse_txt(wire)
-    assert got == {"id": "0123456789abcdef", "fp": fp, "name": "slim laptop", "os": "linux",
+    assert got == {"id": "0123456789abcdef", "fp": fp, "name": "slim laptop", "os": OS_NAME,
                    "caps": ["input", "media"], "hub": "9b16173d305cd15a", "v": 1}
     assert discovery.parse_txt({**wire, b"hub": b""})["hub"] == ""
     assert discovery.parse_txt({**wire, b"os": b"beos"})["os"] == ""

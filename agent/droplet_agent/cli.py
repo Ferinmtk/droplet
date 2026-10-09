@@ -19,6 +19,19 @@ from .inject import manager as input_manager
 
 SERVICE = "droplet-agent.service"
 DISCOVER_FOR = 3  # seconds setup listens for hubs on the LAN
+MAC = sys.platform == "darwin"
+
+
+def restart_hint() -> str:
+    if MAC:
+        from . import macos
+        return macos.restart_hint()
+    return "systemctl --user restart droplet-agent"
+
+
+def start_hint() -> str:
+    from .tray import start_hint as hint
+    return hint()
 
 
 def data_dir() -> Path:
@@ -136,7 +149,7 @@ def _refresh_identity(cfg: dict) -> int:
             print(f"Its LAN certificate changed: pinned {new['fingerprint']} (was {old_fp}).")
         elif new["fingerprint"]:
             print(f"LAN certificate pinned: {new['fingerprint']}")
-        print("Restart the agent to use it: systemctl --user restart droplet-agent")
+        print(f"Restart the agent to use it: {restart_hint()}")
         return 0
     print("Couldn't reach the hub over a route that proves who it is (its tailnet URL, or this\n"
           "machine if it's the hub). To pair again over the LAN instead:\n"
@@ -312,7 +325,7 @@ def _ask_agent(request: dict, timeout: float = 30) -> dict | None:
         out = control.call(request, timeout=timeout)
     except control.NotRunning:
         print("The agent isn't running, and these commands go through it. Start it with:\n"
-              "  systemctl --user start droplet-agent     (or: droplet-agent run)", file=sys.stderr)
+              f"  {start_hint()}     (or: droplet-agent run)", file=sys.stderr)
         return None
     except (OSError, ValueError) as e:
         print(f"Couldn't talk to the agent: {e}", file=sys.stderr)
@@ -639,13 +652,36 @@ def _probe_caps(cfg: dict) -> dict[str, tuple[bool, str]]:
     out["screenshot"] = (bool(shots), "tries " + ", ".join(shots) if shots else "no screenshot tool found")
     mode, why = clip.detect()
     out["clipboard"] = (mode is not None, why)
+    if MAC:
+        _mac_running_input(out)
     for cap in config.CAPS:
         if not config.enabled(cfg, cap):
             out[cap] = (False, "switched off in the config")
     return out
 
 
+def _mac_running_input(out: dict):
+    """macOS grants Accessibility per app: a command in Terminal has Terminal's, the agent
+    (started by launchd) its own. So when the agent runs, ask it."""
+    from .mesh import control
+    try:
+        st = control.call({"cmd": "status"}, timeout=5)
+    except (control.NotRunning, OSError, ValueError):
+        return
+    caps = st.get("caps")
+    if not isinstance(caps, list):
+        return
+    if "input" in caps:
+        out["input"] = (True, "quartz: the running agent is allowed (Accessibility)")
+    else:
+        out["input"] = (False, "the running agent isn't allowed yet: switch on Python in System Settings → "
+                               "Privacy & Security → Accessibility")
+
+
 def _service_state() -> str:
+    if MAC:
+        from . import macos
+        return f"{macos.service_state()} (launchd: {macos.plist_path()})"
     if not env.which("systemctl"):
         return "no systemd"
     r = env.run(["systemctl", "--user", "is-active", SERVICE])
@@ -691,8 +727,12 @@ def cmd_status(args) -> int:
         print("not set up: run droplet-agent setup")
     print(f"service:  {_service_state()}")
     _mesh_status(cfg)
-    print(f"desktop:  {', '.join(sorted(env.desktops())) or 'unknown'}"
-          f" ({'Wayland' if env.is_wayland() else 'X11' if env.x11_display() else 'no display'})")
+    if MAC:
+        import platform
+        print(f"desktop:  macOS {platform.mac_ver()[0] or ''}".rstrip())
+    else:
+        print(f"desktop:  {', '.join(sorted(env.desktops())) or 'unknown'}"
+              f" ({'Wayland' if env.is_wayland() else 'X11' if env.x11_display() else 'no display'})")
     print()
     for cap, (ok, why) in _probe_caps(cfg).items():
         print(f"  {'✓' if ok else '✗'} {cap:<10} {why}")
@@ -801,6 +841,8 @@ def cmd_doctor(args) -> int:
     caps = _probe_caps(cfg)
     problems = 0
     print("droplet-agent doctor\n")
+    if MAC:
+        return _doctor_mac(cfg, caps)
     mesh_on = (cfg.get("mesh") or {}).get("enabled", True) is not False
     if not config.is_set_up(cfg) and mesh_on and not cfg.get("pending"):
         # a hub is optional: the mesh works without one
@@ -878,10 +920,50 @@ def cmd_doctor(args) -> int:
     return 0 if not problems else 1
 
 
+def _doctor_mac(cfg: dict, caps: dict) -> int:
+    from . import app, macos
+    problems = 0
+    if not config.is_set_up(cfg) and not cfg.get("pending"):
+        print("• No hub: your devices pair with this Mac directly (droplet-agent pair, or")
+        print("  Pair a device in droplet on the phone).\n")
+    settings = "System Settings → Privacy & Security"
+    if config.enabled(cfg, "input") and not caps["input"][0]:
+        problems += 1
+        print("• Remote control (mouse and keyboard) needs your permission. Open")
+        print(f"  {settings} → Accessibility and switch on Python (the agent")
+        print("  runs on it; if it isn't listed, add it with +). It starts working a few seconds later.\n")
+    elif config.enabled(cfg, "input"):
+        print("• Remote control is allowed (Accessibility).\n")
+    if config.enabled(cfg, "screenshot"):
+        # like Accessibility, granted per app: the agent's own grant can't be seen from here
+        print(f"• Screenshots need {settings} → Screen Recording (or Screen & System")
+        print("  Audio Recording): switch on Python. Without it they show only the desktop picture.\n")
+    state = macos.service_state()
+    if state != "running":
+        problems += 1
+        print(f"• The agent's service is {state}. Start it with:")
+        print(f"    {macos.start_hint() if state != 'not installed' else 'droplet-agent run'}\n")
+    if not app.available():
+        print("• Droplet's window and the menu bar icon need PySide6:")
+        print(f"    {sys.executable} -m pip install 'droplet-agent[app]'\n")
+    elif macos.service_state(macos.MENU_LABEL) == "not installed":
+        print("• The menu bar icon doesn't start when you log in: droplet-agent tray --autostart\n")
+    fw = Path("/usr/libexec/ApplicationFirewall/socketfilterfw")
+    if fw.exists():
+        r = env.run([str(fw), "--getglobalstate"], timeout=5)
+        if r is not None and b"enabled" in r.stdout.lower() and b"disabled" not in r.stdout.lower():
+            print("• The firewall is on. If macOS asks whether Python may accept incoming network")
+            print("  connections, say Allow, so your other devices can reach this Mac directly.\n")
+    print("Everything looks fine." if not problems else f"{problems} thing(s) to fix above.")
+    return 0 if not problems else 1
+
+
 # --- uninstall ---------------------------------------------------------------
 
 def cmd_uninstall(args) -> int:
     from . import tray
+    if MAC:
+        return _uninstall_mac(args)
     targets = [unit_path(), desktop_file_path(), tray.autostart_path(), Path.home() / ".local/bin/droplet-agent",
                config.config_dir(), data_dir()]
     if not args.yes:
@@ -908,6 +990,30 @@ def cmd_uninstall(args) -> int:
     if Path(UDEV_RULE_FILE).exists():
         print(f"The uinput rule stays; remove it with: sudo rm {UDEV_RULE_FILE} "
               "/etc/modules-load.d/droplet-uinput.conf")
+    return 0
+
+
+def _uninstall_mac(args) -> int:
+    from . import macos
+    targets = [macos.plist_path(macos.AGENT_LABEL), macos.plist_path(macos.MENU_LABEL), macos.app_bundle_path(),
+               Path.home() / ".local/bin/droplet-agent", config.config_dir(), data_dir()]
+    if not args.yes:
+        print("This stops the agent and removes:")
+        for t in targets:
+            print(f"  {t}")
+        if input("Go ahead? [y/N] ").strip().lower() not in ("y", "yes"):
+            return 1
+    macos.uninstall()
+    for t in targets:
+        try:
+            if t.is_symlink() or t.is_file():
+                t.unlink()
+            elif t.is_dir():
+                shutil.rmtree(t)
+        except OSError as e:
+            print(f"couldn't remove {t}: {e}", file=sys.stderr)
+    print("Removed. Your devices still list this Mac until you unpair it there. If you allowed Python")
+    print("under Privacy & Security (Accessibility, Screen Recording), you can switch it off there.")
     return 0
 
 
@@ -994,9 +1100,11 @@ def main(argv=None) -> int:
     op.add_argument("--install", action="store_true",
                     help="only put Droplet in the app menu (the launcher entry and its icon)")
     op.set_defaults(func=cmd_open)
-    ty = sub.add_parser("tray", help="show droplet in the system tray",
-                        description="Show droplet in the system tray (KDE Plasma, and other desktops that show "
-                                    "StatusNotifierItem icons): send files, the clipboard or a ring to your "
+    ty = sub.add_parser("tray", help="show droplet in the menu bar" if MAC else "show droplet in the system tray",
+                        description=("Show droplet in the menu bar" if MAC else
+                                     "Show droplet in the system tray (KDE Plasma, and other desktops that show "
+                                     "StatusNotifierItem icons)")
+                                    + ": send files, the clipboard or a ring to your "
                                     "devices, and answer pairing requests. Starting it again replaces the one "
                                     "running.")
     g = ty.add_mutually_exclusive_group()

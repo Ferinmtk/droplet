@@ -68,7 +68,7 @@ def _requires_python() -> str:
     return m.group(1) if m else ">=3.9"
 
 
-PACKAGE_DATA = ("tray_icon.bin",)  # matches [tool.setuptools.package-data] in agent/pyproject.toml
+PACKAGE_DATA = ("tray_icon.bin", "app_icon.png")  # matches [tool.setuptools.package-data] in agent/pyproject.toml
 
 
 def package_files() -> list[tuple[str, Path]]:

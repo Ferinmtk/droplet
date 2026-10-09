@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 CAPS = ("input", "media", "lock", "screenshot", "clipboard")
-INPUT_BACKENDS = ("auto", "portal", "uinput", "x11", "log")
+INPUT_BACKENDS = ("auto", "portal", "uinput", "x11", "quartz", "log")
 UINPUT_TEXT_MODES = ("auto", "wtype", "ascii")
 
 # who the hub is, so the agent can find it on any network and know it's the
@@ -37,7 +37,7 @@ DEFAULTS: dict = {
     # each capability can be switched off here; the agent then neither
     # advertises it nor acts on it
     "caps": {c: True for c in CAPS},
-    # "auto" picks the first that works: portal, then uinput, then x11
+    # "auto" picks the first that works: portal, then uinput, then x11 (on a Mac, quartz)
     "input_backend": "auto",
     # how the uinput backend types characters a US keyboard can't:
     # "auto" uses wtype when it's installed, "ascii" drops accents and skips the rest

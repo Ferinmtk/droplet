@@ -162,7 +162,7 @@ class Hub:
 
         # helpers publish state; a browser tab (platform "web", no caps) can't.
         # A helper with every capability switched off still reports battery.
-        if t == "state" and (conn.caps or conn.platform in ("linux", "windows", "android")):
+        if t == "state" and (conn.caps or conn.platform in ("linux", "macos", "windows", "android")):
             kind = str(msg.get("kind") or "")[:20]
             data = msg.get("data")
             with self._lock:

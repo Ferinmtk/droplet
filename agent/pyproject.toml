@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 license = "GPL-3.0-or-later"
 name = "droplet-agent"
 dynamic = ["version"]
-description = "Lets your other devices control this Linux computer through droplet"
+description = "Lets your other devices control this computer (Linux or macOS) through droplet"
 readme = "README.md"
 requires-python = ">=3.9"
 # websockets and jeepney are pure Python. zeroconf (finding the hub on the
@@ -22,8 +22,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Droplet's window (`droplet-agent app`). Only Qt's essential modules: Core, Gui, Widgets,
-# Network (one window at a time) and DBus (showing a file in the file manager).
+# Droplet's window (`droplet-agent app`), and on a Mac the menu bar icon. Only Qt's essential
+# modules: Core, Gui, Widgets, Network (one window at a time) and DBus (showing a file in the
+# file manager). On macOS nothing else is needed: remote control, the clipboard's change count
+# and the permission checks call the system frameworks through ctypes.
 app = ["PySide6-Essentials>=6.6"]
 # The iPhone link (docs/iphone.md): aiortc for DTLS and SCTP data channels, segno to draw
 # the QR code. aiortc also pulls in PyAV (FFmpeg, ~100 MB) for media it never uses here;
@@ -39,8 +41,9 @@ packages = ["droplet_agent", "droplet_agent.app", "droplet_agent.inject", "dropl
             "droplet_agent.webrtc"]
 
 [tool.setuptools.package-data]
-# the tray icon's pixels, made by tools/make_tray_icon.py (agent_dist.py ships it too)
-droplet_agent = ["tray_icon.bin"]
+# the tray icon's pixels, made by tools/make_tray_icon.py, and the 512 px drop for Droplet.app
+# on a Mac (static/icon-512.png); agent_dist.py ships them too
+droplet_agent = ["tray_icon.bin", "app_icon.png"]
 
 [tool.setuptools.dynamic]
 version = { attr = "droplet_agent.__version__" }

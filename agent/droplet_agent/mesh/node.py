@@ -26,11 +26,13 @@ import mimetypes
 import re
 import secrets
 import socket
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
 
-from . import DEFAULT_PORT, PROTOCOL_VERSION
+from . import DEFAULT_PORT, OS_NAME, PROTOCOL_VERSION
 from .control import ControlServer
 from .desktop import Desktop
 from .discovery import Directory, txt_records
@@ -165,6 +167,8 @@ class Chat:
 
 def default_gateways(route_table: str = "/proc/net/route") -> list[str]:
     """This computer's IPv4 default gateways. On a phone's hotspot, that's the phone."""
+    if sys.platform == "darwin" and route_table == "/proc/net/route":
+        return _mac_default_gateway()
     out = []
     try:
         with open(route_table) as f:
@@ -182,6 +186,32 @@ def default_gateways(route_table: str = "/proc/net/route") -> list[str]:
     except (OSError, ValueError):
         pass
     return out
+
+
+def mac_gateway_from_route(text: str) -> list[str]:
+    """`route -n get default` → [the gateway], unless the default route is a VPN's or a tailnet's."""
+    gw = iface = ""
+    for line in text.splitlines():
+        key, _, value = line.strip().partition(":")
+        if key == "gateway":
+            gw = value.strip()
+        elif key == "interface":
+            iface = value.strip()
+    if iface.startswith(("utun", "ipsec", "ppp", "tun", "tap", "bridge")):
+        return []
+    try:
+        return [str(ipaddress.IPv4Address(gw))]
+    except ValueError:
+        return []
+
+
+def _mac_default_gateway() -> list[str]:
+    try:
+        r = subprocess.run(["route", "-n", "get", "default"], capture_output=True, text=True, timeout=5,
+                           stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return mac_gateway_from_route(r.stdout) if r.returncode == 0 else []
 
 
 class MeshNode:
@@ -244,14 +274,14 @@ class MeshNode:
                            caps=self.host.mesh_caps(), hub_id=self.host.hub_id())
 
     def hello(self, t: str = "hello") -> dict:
-        return {"t": t, "id": self.peer_id, "name": self.name, "caps": self.host.mesh_caps(), "os": "linux",
+        return {"t": t, "id": self.peer_id, "name": self.name, "caps": self.host.mesh_caps(), "os": OS_NAME,
                 "v": PROTOCOL_VERSION, "port": self.port}
 
     def announce_body(self) -> dict:
         """What the hub's roster needs from this device (POST /api/mesh/announce)."""
         lan = [a for a in self.local_addresses() if not is_tailnet(a)]
         return {"fp": self.identity.fp, "cert_pem": self.identity.cert_pem, "port": self.port,
-                "lan": clean_addresses(lan), "os": "linux",
+                "lan": clean_addresses(lan), "os": OS_NAME,
                 "caps": self.host.mesh_caps(), "v": PROTOCOL_VERSION}
 
     # --- lifecycle --------------------------------------------------------------
@@ -1021,6 +1051,7 @@ class MeshNode:
             "outbox": [{k: j.get(k) for k in ("id", "kind", "peer", "state", "error", "name", "attempts")}
                        for j in self.outbox.queued()],
             "refused": self.server.refused if self.server else 0,
+            "caps": self.host.mesh_caps(),   # what this device offers right now
             "webrtc": self.webrtc.status() if self.webrtc is not None else None,
         }
 
