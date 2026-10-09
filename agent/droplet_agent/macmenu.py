@@ -36,21 +36,27 @@ def _icon(pixmaps: list) -> QIcon:
     return ic
 
 
-def fill(menu: QMenu, items: list, trigger) -> None:
-    """The view's items as Qt menu entries; `trigger(action)` when one is picked."""
+def fill(menu: QMenu, items: list, trigger, keep: list) -> None:
+    """The view's items as Qt menu entries; `trigger(action)` when one is picked.
+
+    Every QMenu and QAction made is put in `keep`: some PySide6 versions delete one whose
+    Python wrapper goes away, even with a parent, which would empty the submenus."""
     for it in items:
         if it.separator:
             menu.addSeparator()
         elif it.children:
-            sub = menu.addMenu(it.label)
+            sub = QMenu(it.label, menu)
             sub.setEnabled(it.enabled)
-            fill(sub, it.children, trigger)
+            menu.addMenu(sub)
+            keep.append(sub)
+            fill(sub, it.children, trigger, keep)
         else:
             act = QAction(it.label, menu)
             act.setEnabled(it.enabled and it.action is not None)
             if it.action is not None:
                 act.triggered.connect(lambda _=False, a=it.action: trigger(a))
             menu.addAction(act)
+            keep.append(act)
 
 
 class MenuBar(QObject):
@@ -73,6 +79,7 @@ class MenuBar(QObject):
         self.got.connect(self.show)
         self.view = None
         self._shape = None
+        self._made: list = []   # the menu's entries and submenus, kept alive (see fill)
         self._busy = threading.Lock()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.kick)
@@ -120,11 +127,16 @@ class MenuBar(QObject):
             return
         self._shape = shape
         self.menu.clear()
-        fill(self.menu, view.items, self.trigger)
+        for old in self._made:
+            if isinstance(old, QMenu):
+                old.deleteLater()   # clear() lets go of submenus, but they're still its children
+        self._made = []
+        fill(self.menu, view.items, self.trigger, self._made)
         self.menu.addSeparator()
         quit_ = QAction("Quit droplet's menu bar icon", self.menu)
         quit_.triggered.connect(QApplication.quit)
         self.menu.addAction(quit_)
+        self._made.append(quit_)
 
     # --- what the menu does ---
     def pick_files(self, name: str) -> list:
