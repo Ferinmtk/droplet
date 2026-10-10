@@ -64,7 +64,7 @@ public sealed class DotNetPeer : IAsyncDisposable
     public static readonly IReadOnlySet<string> AllCaps = new HashSet<string>(Caps.All);
 
     public static async Task<DotNetPeer> StartAsync(string root, string name, FakePlatform? fakes = null, int? port = null, long maxRate = 0,
-        IMeshHost? host = null, TestLog? log = null, TimeSpan? retryEvery = null)
+        IMeshHost? host = null, TestLog? log = null, TimeSpan? retryEvery = null, bool announce = true)
     {
         fakes ??= new FakePlatform();
         log ??= new TestLog();
@@ -78,6 +78,9 @@ public sealed class DotNetPeer : IAsyncDisposable
             MaxRate = maxRate,
             RetryEvery = retryEvery ?? TimeSpan.FromSeconds(2),
             LoggerFactory = log,
+            // on loopback alone (no mDNS, no gateway): many of these can run side by side
+            Announce = announce,
+            Gateways = announce ? Common.Addresses.Gateways : () => [],
         }, dispatcher, fakes.Services);
         await node.StartAsync();
         return new DotNetPeer(root, node, dispatcher, fakes, log);

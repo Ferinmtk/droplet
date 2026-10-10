@@ -332,7 +332,10 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         if (fp is not null)
         {
             hello["caps"] = Json.Array(CapsFor(fp));
-            hello["perm"] = PermFor(fp);
+            if (SendsPerm)
+            {
+                hello["perm"] = PermFor(fp);
+            }
         }
         return hello;
     }
@@ -370,6 +373,10 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     public void MaySend(string fp, JsonObject msg, TrustEntry? entry = null)
     {
         ArgumentNullException.ThrowIfNull(msg);
+        if (SendRegardless)
+        {
+            return;
+        }
         entry ??= Trust.Get(fp);
         var name = entry?.Name ?? "that device";
         if (Perms.Check(entry, msg, PausedAll, outgoing: true) is { } no)
@@ -384,6 +391,15 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             throw new RefusedException(Perms.RefusalText(name, why, cap), why, cap, local: false);
         }
     }
+
+    /// <summary>For tests: send whatever is asked, as an older or misbehaving peer would, so only the receiver's own checks stand in the way.</summary>
+    internal bool SendRegardless { get; set; }
+
+    /// <summary>For tests: false leaves <c>perm</c> out of hello and welcome, as an older peer does.</summary>
+    internal bool SendsPerm { get; set; } = true;
+
+    /// <summary>For tests: a remote-control message (input, media, cmd, clip, rpc) from a peer, as it's handed to the dispatcher.</summary>
+    internal event Action<JsonObject>? Dispatched;
 
     bool Permits(string fp, JsonObject msg)
     {
@@ -1171,6 +1187,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 }
             case "input" or "media" or "cmd" or "clip" or "rpc":
                 {
+                    Dispatched?.Invoke(msg);
                     if (dispatcher is null)
                     {
                         break;
