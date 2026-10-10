@@ -3,7 +3,7 @@
 The page people land on when you send them droplet. One static file, no build step,
 no framework: `index.html` with the styles and script inline, the screenshots in `shots/`,
 `og.png` for link previews, and `_redirects` for the short links. The only thing it loads
-from elsewhere is the heading font (Bricolage Grotesque, from Google Fonts).
+from elsewhere is its font (Plus Jakarta Sans, from Google Fonts).
 
 `app/` is droplet for iPhone: a web app (no build step either) that connects straight to
 your computers over WebRTC, with no server. It's served from here once, then kept by its
@@ -57,6 +57,16 @@ in WebKit. They're WebP, 540 px wide for phones, each well under 50 KB; convert 
 
 `og.png` (1200×630) is the picture WhatsApp, X and the rest show for a link. It's the hero
 artwork with the headline, rendered from HTML with Playwright.
+
+## The hero
+
+The picture at the top is a small demo you can play with: tap **Send** on the phone (or drag
+the item towards the laptop) and it turns into a droplet, flies over and lands in the laptop's
+Received tray. Untouched, it plays by itself every few seconds while it's on screen, and the
+headline's word follows what's being passed (photos, links, PDFs, notes). It's inline SVG and
+the last block of the script in `index.html`; the items are the `ITEMS` list and the
+`it-*` symbols. With reduced motion it doesn't play by itself, and a tap just swaps the
+picture without the flight.
 
 ## Editing it
 
