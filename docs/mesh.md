@@ -6,11 +6,15 @@
   reference the other apps follow: identity, mDNS, the mutual-TLS port,
   the trust list, direct pairing, every message below, routing with the
   outbox, and the `droplet-agent peers | pair | unpair | text | send-file |
-  ring | clip | send | allow | pause | resume` commands.
+  ring | clip | send | allow | pause | resume | transfers | cancel | open-link |
+  rename | nickname` commands.
 - **Per-device permissions and Pause** (§9.9): your device or someone
   else's, a switch per capability, Pause per device and for everything;
   each device enforces its own, both ways. Linux and Mac agent and the
   iPhone web app; Windows and Android next.
+- **Progress and Cancel, links, rename and nicknames, several devices at
+  once** (§9.10): Linux and Mac agent and the iPhone web app; Windows and
+  Android next.
 - **The hub's roster** (`mesh.py`): §3.1 and §9.
 - **The Android app is a peer** (`android/app/src/main/java/dev/droplet/app/mesh/`
   and `Mesh.kt`): the same protocol, tested against the Linux agent both
@@ -137,7 +141,10 @@ once. A directly paired peer stays `paired` even if the roster also lists it.
     for notification mirroring;
   - added while building: `{"t":"ack","id"}` also answers a completed file,
     `{"t":"nack","id","error"}` refuses a text or file for good, and
-    `{"t":"unpair"}` tells a peer it was unpaired (§9.4).
+    `{"t":"unpair"}` tells a peer it was unpaired (§9.4);
+  - added later (§9.10): `{"t":"cancel","id"}` stops a file either way,
+    `{"t":"link","id","url","ts"}` is a web link to open, and
+    `{"t":"rename","name"}` says the sender has a new name.
 - **Pairing endpoint:** `POST https://<peer>:<port>/mesh/pair`, then
   `/confirm`, then `GET /mesh/pair/<request>` polls for the answer (§9.3).
 
@@ -368,6 +375,9 @@ TLS. `from` in a message is ignored and replaced; `to` isn't needed.
 | `{"t":"ping"}` → `{"t":"pong"}` | app-level liveness, as with the hub |
 | `{"t":"perm","paused","allow","caps"}` | how the sender treats you now: a hint for your UI (§9.9) (*added*) |
 | `{"t":"refused","re","id"?,"cap","why","error"}` | the sender didn't take your `re` message: `why` is `"paused"` or `"denied"` (§9.9) (*added*) |
+| `{"t":"cancel","id"}` | stop the file `id` (an `offer`'s id), sent or received; partial data is deleted (§9.10) (*added*) |
+| `{"t":"link","id","url","ts"}` | a web link: opened on your own device, an Open button on someone else's. Answered with `ack`/`nack` (§9.10) (*added*) |
+| `{"t":"rename","name"}` | the sender is called `name` now (§9.10) (*added*) |
 
 A `cmd` `screenshot` over a link goes back to the requester as an `offer`
 over the mesh, not an upload to the hub.
@@ -454,8 +464,11 @@ and never trusts its own.
 
 `droplet-agent peers`, `pair [<peer> | --accept | --deny] [--own | --other]`, `unpair`,
 `text`, `send-file`, `ring [--stop]`, `clip [--text]`, `send <peer> <json>`,
-`allow <peer> <capability> on|off` (or `allow <peer> own|other`), and
-`pause`/`resume <peer> | --all` (§9.9)
+`allow <peer> <capability> on|off` (or `allow <peer> own|other`),
+`pause`/`resume <peer> | --all` (§9.9), and `transfers`, `cancel <id>`,
+`open-link`, `rename <name>`, `nickname <peer> [<nickname>]` (§9.10); `text`,
+`send-file`, `clip` and `open-link` take several devices (`a,b`, `--to` again
+and again, or `--all`)
 talk to the running agent over `$XDG_RUNTIME_DIR/droplet-agent/control.sock`
 (owner-only, and the peer's uid is checked). Without a hub, `droplet-agent
 run` runs the mesh alone. See `agent/README.md`.
@@ -649,3 +662,130 @@ and `resume` with `{peer}` or `{all: true}`; `pair-answer` and
 `pair-confirm` take `relation`; `status` lists `paused_all`,
 `capabilities`, and for each peer `relation`, `allow`, `paused`, `remote`
 (its last `perm`, while linked) and `refused` (its last refusal).
+
+### 9.10 Progress and Cancel, links, rename and nicknames, several devices (*added*)
+
+GitHub issues #4 and #5. Nothing here changes `v` (still 1). A peer says
+which of these it understands in its `hello`/`welcome` (and the iPhone in
+its `auth`/`welcome`, docs/iphone.md §3.3):
+
+```json
+{"t":"hello", …, "features":["cancel","link","rename"]}
+```
+
+No `features` means an older peer: it gets none of the new messages it
+couldn't use (a link goes as a chat message instead), and ignores the ones
+it doesn't know (`cancel`, `rename`), as §9.4 says of unknown types. The
+Linux and Mac agent is the reference (`mesh/node.py`, `mesh/transfers.py`,
+`mesh/links.py`); the Windows and Android apps follow this section.
+
+**Progress** is local: each side counts its own bytes, nothing is sent for
+it. The sender of a mesh file counts what it has served (the furthest byte
+of `GET /mesh/files/<id>`, so a resumed transfer starts where it was); the
+receiver what it has saved; over the iPhone's data channel, what was
+written and what arrived. From those, the speed is the bytes of the last
+few seconds over their time, and the time left is what's left at that
+speed (none when nothing moved for 3 seconds: it's stalled). A UI shows at
+most 4 updates a second. Through the hub (routes 3–4) there are no byte
+counts: it shows as going, then sent. The agent's control socket has
+`transfers` → `{"transfers":[{"id","dir":"out"|"in","fp","peer","name",
+"size","done","percent","rate","eta","state","error","route"}],"queued":[…]}`
+(`state` `active`, `done`, `failed`, `cancelled` or `waiting`; finished
+ones stay listed for 2 minutes), and `status` carries `transfers` too.
+
+**Cancel**, `{"t":"cancel","id"}`, always allowed (like `ack`: it only
+stops something, so a paused peer can still send it):
+
+- The **sender** cancels: it stops serving the offer at once (a request in
+  progress is cut off, and from then on `GET /mesh/files/<id>` answers
+  404), marks the job `cancelled` ("cancelled here") so it's never offered
+  again, and sends `cancel` on an open link. The receiver stops fetching,
+  deletes its partial file (the `.part` and its `.json`) and shows
+  "Cancelled: <sender> cancelled it". It doesn't answer.
+- The **receiver** cancels: it stops fetching, deletes the partial file,
+  and sends `cancel`. The sender stops serving and marks the job
+  `cancelled` ("<receiver> cancelled it"); it doesn't offer it again. An
+  older sender ignores the `cancel`, sees the transfer stall (§9.5) and
+  offers the same `id` again later: the receiver remembers what it
+  cancelled and answers that offer with
+  `{"t":"nack","id","error":"<name> cancelled it","why":"cancelled"}`, so it
+  fails for good there too.
+- Only the peer at the other end of a transfer can cancel it: a `cancel`
+  for an id offered to someone else is ignored.
+- A send still waiting in the outbox (the peer away or paused) is cancelled
+  the same way, without sending anything.
+- On the iPhone's channel (docs/iphone.md §3.3) the same `cancel` stops
+  the `file` frames either way; the receiver drops what came, the sender
+  stops sending, and neither sends `file-end` or an answer for it.
+
+Control socket: `cancel {"id"}` (the id, or its first 6+ characters) →
+`{"id","dir","name","peer"}`.
+
+**Links**, `{"t":"link","id","url","ts"}`, `id` as `text`'s (8–64 of
+`[0-9A-Za-z_-]`), answered with `ack` or `nack` like `text`:
+
+- Needs the capability `chat` (both ways, §9.9): off, it's refused with a
+  `nack` as `text` is; paused, with `refused`, and the sender keeps it as a
+  chat message (`text` with the URL as its body), which waits in the outbox
+  and goes on resume.
+- `url` must be `http` or `https`, with a host, no whitespace or control
+  characters (nor the invisible formatting ones: U+200B–U+200F,
+  U+202A–U+202E, U+2066–U+2069, U+FEFF, U+00AD), at most 2048 characters.
+  Anything else (`file:`, `javascript:`, `data:`, `intent:`, an app's own
+  scheme) is refused with a `nack` when it arrives, refused before it's
+  sent, and never opened.
+- The receiver opens it in the default browser **only if the sender's
+  `relation` is `own`** (your own device, §9.9), and at most 5 a minute from
+  one device. From someone else's device it's never opened by itself: it's
+  stored as a message and shown with an **Open** button (and a
+  notification "<name> sent a link"). Either way it's in the chat history
+  with `"kind":"link"`.
+- The sender sends `link` only to a peer that listed `link` in its
+  `features` on the open link. Otherwise (an older peer, or no link open)
+  it sends the URL as a `text` message, through the outbox like any chat,
+  which also reaches it through the hub.
+- A received chat message that is nothing but an http(s) link also gets
+  an **Open** button. It's never opened by itself either.
+- A web app (the iPhone) can't open a link without a tap: it shows an
+  Open button for every link.
+
+Control socket: `link {"peer","url","wait"?}` → `{"how":"link","route"}`, or
+`{"how":"message", …the text job's answer}`.
+
+**Rename**, `{"t":"rename","name"}`, always allowed:
+
+- A name is 1 to 40 characters once runs of white space are made one
+  space, with no control characters (nor the invisible ones above). The
+  same rule for a nickname, which may also be empty.
+- Renaming this device: kept locally (Linux: `"device": {"name"}` in
+  config.json), announced in mDNS (the TXT `name`) and in every later
+  `hello`, and sent as `rename` on every open link at once.
+- With a hub, the hub names its devices: the device renames itself there
+  first (`POST /api/device {"name"}` with its token: the hub's rules, 40
+  characters and no name twice, a 409 otherwise), and the hub's roster
+  tells the others (`{"t":"roster"}`). If the hub refuses or can't be
+  reached, the name isn't changed.
+- Receiving `rename` (or a new name in a `hello`): a peer paired directly
+  (`paired`) or a browser (`browser`) is renamed in the trust list; a
+  `roster` peer isn't (the hub names it; the next roster brings it). An
+  invalid name is ignored. The iPhone's `auth` carries its name too, so a
+  rename made while it was away arrives when it connects.
+
+Control socket: `rename {"name"}` → `{"name","told"}` (how many linked
+devices were told at once).
+
+**Nicknames** are only local: a trust entry's `nickname` (empty for none),
+set by this device's owner, shown everywhere instead of the peer's own
+name, with the real one shown small beside it, and used to find the peer
+(`droplet-agent text "Brian's laptop" …`). **Never sent**: not in `hello`,
+mDNS, the roster, `perm` or anything else. A roster fetch keeps it, like
+the switches. Control socket: `nickname {"peer","nickname"}` →
+`{"name","fp","nickname"}`; `status` lists each peer's `nickname`.
+
+**Several devices at once** is local too: each device gets its own job and
+its own result, exactly as if it were sent to it alone, so permissions,
+Pause and routes apply to each (sent; waiting, paused or away, in the
+outbox; or refused). "All my devices" means the peers whose `relation` is
+`own` and that have the capability on here (paused ones included: theirs
+waits). If one device's job has to wait for a route, the jobs queued
+behind it for that device say so at once (`waiting: …`) instead of nothing.

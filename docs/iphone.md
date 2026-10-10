@@ -206,6 +206,19 @@ mesh node (`droplet_agent/webrtc/bridge.py`): its route is `webrtc`.
   (Droplet's Messages page, `chat.jsonl`) and notifies.
 - `{"t":"ping"}` → `{"t":"pong"}`; `{"t":"ring"}` (the app shows it);
   `{"t":"unpair"}` both ways.
+- *Added* (docs/mesh.md §9.10): the app's `auth` and the computer's
+  `welcome` carry `"features":["cancel","link","rename"]`.
+  `{"t":"link","id","url","ts"}` → `ack`/`nack` both ways: the computer
+  opens it if the iPhone is your own device, else shows it with an Open
+  button; the app always shows an Open button (it can't open a link
+  without a tap). To a computer without `link` in its features, the app
+  sends the URL as a `text`. `{"t":"rename","name"}` both ways: the app
+  sends it when it's renamed (and its `auth` has its name, so a rename made
+  while away arrives on connect); the computer when it is.
+  `{"t":"cancel","id"}` stops a `file` either way: the receiver drops what
+  came, the sender stops sending, and nothing else is sent for it. Both
+  sides show each file's progress (bytes, %, speed, time left) with
+  Cancel.
 - **Files** go over the channel itself (a browser can't serve the mesh's
   HTTPS file endpoint):
 

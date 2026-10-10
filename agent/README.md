@@ -292,9 +292,17 @@ Windows app's:
   what's off; a paused one says **Paused** (or *Paused by* it, when it
   paused this computer), and what can't be used is greyed out. **⋯** has
   Stop ringing, **Permissions…** (whose device it is, and a switch for each
-  capability with a line on what it does), About this device and Unpair.
+  capability with a line on what it does), **Send a link…**,
+  **Nickname…** (what you call it here, shown instead of its own name, which
+  stays small beside it; never sent), About this device and Unpair.
   Drop files on a card to send them; the card says when they've arrived,
-  failed, or wait in the outbox.
+  failed, or wait in the outbox. Each file on its way to or from a device
+  shows on its card as it goes: its name, a progress bar, *45% · 12 s left
+  · 3.2 MB/s*, and **Cancel** (the other device is told, and what came of
+  it is deleted there). **Select** picks several devices (or **All my
+  devices**) and sends them all the same files, clipboard, message or link:
+  each gets its own copy, and the status line says how it went for each
+  (sent, waiting because it's paused or away, or refused).
 - **Pair a device**: **Pair an iPhone** first (a QR code to scan with
   droplet's web app on the iPhone), then the droplet devices on this
   network, or one by its address. Both screens show the same four digits:
@@ -304,10 +312,15 @@ Windows app's:
   **Accept** (which asks: my device, or someone else's?) / **Decline**.
 - **Messages**: a chat with each device, newest at the bottom. Enter sends
   (Shift+Enter for a new line); a message to a device that can't be reached
-  waits and goes when it can.
+  waits and goes when it can. A link (or a message that's only a link) has
+  an **Open** button. A link from your own device opens in your browser by
+  itself; from someone else's, only when you press Open. Only `http` and
+  `https` links ever open.
 - **Received**: the latest files your devices sent, to open or show in the
   folder.
-- **Settings**: this computer's name, id and fingerprint; **Pause
+- **Settings**: this computer's name (**Rename…**: your devices see the
+  new name at once; with a hub, the hub renames it too), id and
+  fingerprint; **Pause
   everything** (at once, no restart; a banner on every page says so, with
   **Resume everything**); clipboard sync, your phone's notifications and
   what your devices may control here (saved to `config.json`, and the agent
@@ -331,13 +344,19 @@ Without PySide6, Droplet in the app menu starts the tray and says where it is.
 - **Open Droplet**: [the window](#droplets-window), when it's installed;
 - **Pair an iPhone…**: the window, showing the code an iPhone scans (without
   the window, a notification says to run `droplet-agent pair --qr`);
-- this computer's name, and **Pause everything** (or **Resume everything**);
+- this computer's name, **Rename this computer…** (the window's Settings, or a
+  desktop dialog without it), and **Pause everything** (or **Resume everything**);
+- **Transfers**, while files are on their way: each with how far it has got
+  and its speed and time left, and **Cancel**;
+- **Send files to all my devices…**, when you have more than one;
 - each trusted device with how it can be reached (*connected*, *nearby* on
   the LAN, *not reachable*, or *paused*; *(someone else's)* after the name
   of one). Each has **Send files…** (the desktop's file picker; a
   notification says when they've arrived, failed, or are waiting in the
-  outbox), **Send clipboard**, **Ring**, and **Pause** / **Resume**; what
-  that device can't have right now is greyed out;
+  outbox), **Send clipboard**, **Send link from clipboard** (when the
+  clipboard holds a web link when the menu opens), **Ring**, and **Pause** /
+  **Resume**; what that device can't have right now is greyed out. A device
+  with a nickname is listed by it;
 - each device **asking to pair**, with its code, and **Accept: it's my
   device**, **Accept: it's someone else's** / **Decline**. While one is
   waiting the icon gets an orange dot and asks for attention;
@@ -454,8 +473,12 @@ Then switch Python off under Privacy & Security if you like.
 | `droplet-agent unpair PEER` | stop trusting a directly paired device |
 | `droplet-agent allow PEER CAPABILITY on\|off` | switch what a device may do (`files`, `chat`, `clipboard`, `notify`, `control`, `ring`, `access`); `allow PEER own\|other` starts again from those defaults. See [your devices and someone else's](#your-devices-and-someone-elses) |
 | `droplet-agent pause PEER`, `resume PEER` | stop sharing anything with a device until resumed; `--all` for everything |
-| `droplet-agent text`, `send-file`, `ring`, `clip`, `send` | send to a device: see [the mesh](#the-mesh-talking-to-your-devices-directly) |
-| `droplet-agent app` | open [Droplet's window](#droplets-window) (`--page` opens it on a page: `devices`, `pair`, `messages`, `received` or `settings`), or bring it to the front |
+| `droplet-agent text`, `send-file`, `ring`, `clip`, `send` | send to a device: see [the mesh](#the-mesh-talking-to-your-devices-directly). `text`, `send-file` and `clip` take several devices: `pixel,t15`, `--to pixel --to t15`, or `--all` (all your own devices that take it); each gets its own result. `send-file` shows how far it has got in a terminal |
+| `droplet-agent open-link PEER URL` | open a web link on another device: it opens in the browser of your own device, and waits with an Open button on someone else's. Only `http` and `https` |
+| `droplet-agent transfers`, `cancel ID` | files being sent and received, with how far each has got; cancel one (the other device is told, and what came of it is deleted) |
+| `droplet-agent rename NAME` | give this computer a new name: your devices see it at once (with a hub, the hub renames it too, under its rules) |
+| `droplet-agent nickname PEER [NICKNAME]` | call a device something else on this computer only (never sent); with no nickname, back to its own name |
+| `droplet-agent app` | open [Droplet's window](#droplets-window) (`--page` opens it on a page: `devices`, `pair`, `messages`, `received`, `settings`, or `rename`, which asks for this computer's new name), or bring it to the front |
 | `droplet-agent open` | what Droplet in the app menu runs: starts the tray if it isn't running, and opens the window (without PySide6, says where the tray is). `--install` only adds Droplet to the app menu |
 | `droplet-agent tray` | droplet in the system tray: see [the tray](#the-tray). `--autostart` / `--no-autostart` |
 | `droplet-agent uninstall` | stop the service and the tray, and remove the agent, its settings, the service file and the tray's autostart entry |
