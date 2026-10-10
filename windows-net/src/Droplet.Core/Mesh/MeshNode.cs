@@ -54,6 +54,12 @@ public interface IMeshHost
 
     /// <summary>Rings a device through the hub's ring API (which also reaches a closed app by push).</summary>
     Task HubRingAsync(string deviceId, bool stopRing, CancellationToken ct);
+
+    /// <summary>Pause everything (docs/mesh.md §9.9): nothing is shared with any device. Kept by the host, so it survives a restart.</summary>
+    bool PausedEverything { get; }
+
+    /// <summary>Pauses (or resumes) everything, and keeps it.</summary>
+    void SetPausedEverything(bool on);
 }
 
 /// <summary>A host with no hub: the mesh alone.</summary>
@@ -92,6 +98,14 @@ public class NoHubHost(string deviceName, IReadOnlyList<string>? caps = null) : 
 
     /// <inheritdoc/>
     public virtual Task HubRingAsync(string deviceId, bool stopRing, CancellationToken ct) => throw new NoRouteException("no hub");
+
+    bool pausedEverything;
+
+    /// <inheritdoc/>
+    public virtual bool PausedEverything => Volatile.Read(ref pausedEverything);
+
+    /// <inheritdoc/>
+    public virtual void SetPausedEverything(bool on) => Volatile.Write(ref pausedEverything, on);
 }
 
 /// <summary>How a mesh node is set up.</summary>
@@ -185,6 +199,9 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     readonly ConcurrentDictionary<string, OutgoingPairing> outgoing = new();
     readonly ConcurrentDictionary<string, DateTimeOffset> accepted = new();   // fp → when this device accepted its pairing request
     readonly ConcurrentDictionary<string, ConcurrentDictionary<string, JsonNode?>> peerState = new();
+    readonly ConcurrentDictionary<string, RemotePerm> remotePerm = new();   // what each linked peer said about how it treats this device: a hint
+    readonly ConcurrentDictionary<string, Refusal> refusals = new();        // fp → the last thing it refused from this device, and why
+    readonly Dictionary<(string Fp, string T), long> refusedAt = [];        // when this device last told a peer no, per type; under gate
     readonly HashSet<(string, string)> downloading = [];
     readonly HashSet<string> workers = [];
     readonly HashSet<(string Gateway, string Fp)> gatewayMisses = []; // a gateway that wasn't that peer; under gate
@@ -272,6 +289,12 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     /// <summary>A peer published state: (fp, kind, data).</summary>
     public event Action<string, string, JsonNode?>? PeerStateChanged;
 
+    /// <summary>
+    /// What's shared with a peer changed (its fingerprint), or with every peer (null): a switch
+    /// or pause here, what it said about how it treats this device, or something it refused.
+    /// </summary>
+    public event Action<string?>? SharingChanged;
+
     // --- lifecycle -----------------------------------------------------------------------
 
     /// <summary>Opens the mesh port, announces this device, and starts delivering.</summary>
@@ -288,19 +311,282 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
         Track(Task.Run(DeliverLoopAsync, CancellationToken.None));
         Track(Task.Run(HousekeepingAsync, CancellationToken.None));
-        Track(Task.Run(ProbeGatewaysQuietlyAsync, CancellationToken.None));
+        // the gateways as they are now: a probe the thread pool starts late mustn't look at a network joined since
+        var gateways = options.Gateways();
+        Track(Task.Run(() => ProbeGatewaysQuietlyAsync(gateways), CancellationToken.None));
         Kick();
     }
 
     List<KeyValuePair<string, string>> Txt() =>
         PeerDirectory.TxtRecords(PeerId, Identity.Fingerprint, Name, host.MeshCaps, host.HubId);
 
-    /// <summary>The hello (or welcome) this device sends on a link.</summary>
-    public JsonObject Hello(string t = "hello") => new()
+    /// <summary>
+    /// The hello (or welcome) this device sends on a link. To the peer <paramref name="fp"/>:
+    /// only the caps it may use, and how this device treats it (<c>perm</c>, docs/mesh.md §9.9).
+    /// </summary>
+    public JsonObject Hello(string t = "hello", string? fp = null)
     {
-        ["t"] = t, ["id"] = PeerId, ["name"] = Name, ["caps"] = Json.Array(host.MeshCaps), ["os"] = MeshProtocol.Os,
-        ["v"] = MeshProtocol.Version, ["port"] = Port,
-    };
+        var hello = new JsonObject
+        {
+            ["t"] = t, ["id"] = PeerId, ["name"] = Name, ["caps"] = Json.Array(host.MeshCaps), ["os"] = MeshProtocol.Os,
+            ["v"] = MeshProtocol.Version, ["port"] = Port,
+        };
+        if (fp is not null)
+        {
+            hello["caps"] = Json.Array(CapsFor(fp));
+            if (SendsPerm)
+            {
+                hello["perm"] = PermFor(fp);
+            }
+        }
+        return hello;
+    }
+
+    // --- permissions (docs/mesh.md §9.9) -----------------------------------------------------
+
+    /// <summary>Pause everything: nothing is shared with any device.</summary>
+    public bool PausedAll => host.PausedEverything;
+
+    /// <summary>The caps a peer is told about: only what it may use here (none while paused).</summary>
+    public List<string> CapsFor(string fp)
+    {
+        var entry = Trust.Get(fp);
+        if (entry is null || entry.Paused || PausedAll)
+        {
+            return [];
+        }
+        return host.MeshCaps.Where(c => !Perms.CapNeeds.TryGetValue(c, out var need) || Perms.Allowed(entry, need)).ToList();
+    }
+
+    /// <summary>How this device treats a peer, as it tells it (<c>perm</c>): <c>{"paused", "allow"}</c>.</summary>
+    public JsonObject PermFor(string fp) => Perms.RemoteView(Trust.Get(fp), PausedAll);
+
+    /// <summary>What a peer said about how it treats this device, while a link with it is open (its word counts only then); null otherwise, or for an older peer.</summary>
+    public RemotePerm? RemotePermOf(string fp) => OpenLink(fp) is not null ? remotePerm.GetValueOrDefault(fp) : null;
+
+    /// <summary>The last thing a peer refused from this device, or null.</summary>
+    public Refusal? LastRefusal(string fp) => refusals.GetValueOrDefault(fp);
+
+    /// <summary>
+    /// Throws <see cref="RefusedException"/> unless <paramref name="msg"/> may go to the peer:
+    /// by this device's settings, then by what the peer said it would take (a hint, so nothing
+    /// goes that it would only refuse).
+    /// </summary>
+    public void MaySend(string fp, JsonObject msg, TrustEntry? entry = null)
+    {
+        ArgumentNullException.ThrowIfNull(msg);
+        if (SendRegardless)
+        {
+            return;
+        }
+        entry ??= Trust.Get(fp);
+        var name = entry?.Name ?? "that device";
+        if (Perms.Check(entry, msg, PausedAll, outgoing: true) is { } no)
+        {
+            throw new RefusedException(Perms.LocalText(name, no.Why, no.Cap, PausedAll), no.Why, no.Cap, local: true);
+        }
+        // only while a link is open: its hello brought the peer's latest word, and a peer that
+        // changed its mind while away says so in the hello of the next link
+        var cap = Perms.Capability(msg);
+        if (Perms.RemoteRefuses(RemotePermOf(fp), cap) is { } why && !Perms.Always.Contains(msg.Str("t") ?? ""))
+        {
+            throw new RefusedException(Perms.RefusalText(name, why, cap), why, cap, local: false);
+        }
+    }
+
+    /// <summary>For tests: send whatever is asked, as an older or misbehaving peer would, so only the receiver's own checks stand in the way.</summary>
+    internal bool SendRegardless { get; set; }
+
+    /// <summary>For tests: false leaves <c>perm</c> out of hello and welcome, as an older peer does.</summary>
+    internal bool SendsPerm { get; set; } = true;
+
+    /// <summary>For tests: a remote-control message (input, media, cmd, clip, rpc) from a peer, as it's handed to the dispatcher.</summary>
+    internal event Action<JsonObject>? Dispatched;
+
+    bool Permits(string fp, JsonObject msg)
+    {
+        try
+        {
+            MaySend(fp, msg);
+            return true;
+        }
+        catch (RefusedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Chat and files: refused at once when a switch says no; a pause only makes them wait.</summary>
+    void MayQueue(string fp, string t, TrustEntry entry)
+    {
+        try
+        {
+            MaySend(fp, Perms.Message(t), entry);
+        }
+        catch (RefusedException e) when (e.Why == Perms.WhyPaused)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Changes what the owner decided about a peer (its relation, switches, pause), and tells it
+    /// if it's linked. Throws <see cref="ArgumentException"/> for an unknown peer, relation or capability.
+    /// </summary>
+    public TrustEntry SetPerms(string fp, string? relation = null, IReadOnlyDictionary<string, bool>? allow = null, bool? paused = null)
+    {
+        var entry = Trust.SetPerms(fp, relation, allow, paused);
+        var off = string.Join(", ", Perms.Off(entry));
+        var whose = entry.IsOther ? "someone else's" : "your own";
+        log.LogInformation("mesh: {Who}: {State}{Switches}", entry.Name, entry.Paused ? "paused" : "sharing",
+            relation is not null || allow is not null ? $" ({whose}; off: {(off.Length > 0 ? off : "nothing")})" : "");
+        Track(TellPermsAsync([fp]));
+        SharingChanged?.Invoke(fp);
+        return entry;
+    }
+
+    /// <summary>Pauses (or resumes) sharing with every device at once, kept across restarts, and tells the linked ones.</summary>
+    public void PauseEverything(bool on)
+    {
+        host.SetPausedEverything(on);
+        log.LogInformation("mesh: {What}", on ? "everything paused" : "everything resumed");
+        List<string> fps;
+        lock (gate)
+        {
+            fps = [.. links.Keys];
+        }
+        Track(TellPermsAsync(fps));
+        SharingChanged?.Invoke(null);
+    }
+
+    /// <summary>Tells linked peers how they're treated now (<c>perm</c>), and sends what waited for a resume.</summary>
+    async Task TellPermsAsync(List<string> fps)
+    {
+        foreach (var fp in fps)
+        {
+            if (OpenLink(fp) is { } link)
+            {
+                var view = PermFor(fp);
+                await link.SendAsync(new JsonObject
+                {
+                    ["t"] = "perm", ["paused"] = view["paused"]?.DeepClone(), ["allow"] = view["allow"]?.DeepClone(), ["caps"] = Json.Array(CapsFor(fp)),
+                }).ConfigureAwait(false);
+            }
+        }
+        Kick();
+    }
+
+    /// <summary>
+    /// Says no to the sender, so it can show why. Acknowledged messages get an answer for that
+    /// id: a nack for good when the capability is off, <c>refused</c> when paused (it waits, and
+    /// goes on resume). The rest get one <c>refused</c> every few seconds at most.
+    /// </summary>
+    async Task RefuseAsync(MeshLink link, TrustEntry entry, JsonObject msg, string why, string cap)
+    {
+        var t = msg.Str("t") ?? "";
+        var text = Perms.RefusalText(Name, why, cap);
+        var mid = msg.Str("id") is { Length: <= 64 } id ? id : null;
+        if (mid is not null && t is "text" or "offer" or "clip" or "file")
+        {
+            log.LogInformation("mesh: refused {T} from {Who}: {Why}", t, entry.Name, why == Perms.WhyPaused ? "paused" : $"{cap} is off");
+            await link.SendAsync(why == Perms.WhyDenied
+                ? new JsonObject { ["t"] = "nack", ["id"] = mid, ["error"] = text, ["cap"] = cap, ["why"] = why }
+                : new JsonObject { ["t"] = "refused", ["re"] = t, ["id"] = mid, ["cap"] = cap, ["why"] = why, ["error"] = text }).ConfigureAwait(false);
+            return;
+        }
+        var now = Environment.TickCount64;
+        lock (gate)
+        {
+            if (refusedAt.TryGetValue((link.Fp, t), out var at) && now - at < 5000)
+            {
+                return;
+            }
+            refusedAt[(link.Fp, t)] = now;
+        }
+        log.LogInformation("mesh: refused {T} from {Who}: {Why}", t, entry.Name, why == Perms.WhyPaused ? "paused" : $"{cap} is off");
+        await link.SendAsync(new JsonObject { ["t"] = "refused", ["re"] = t, ["cap"] = cap, ["why"] = why, ["error"] = text }).ConfigureAwait(false);
+    }
+
+    void LearnRemotePerm(string fp, JsonNode? perm)
+    {
+        var got = Perms.ParseRemote(perm);
+        if (got is null)
+        {
+            remotePerm.TryRemove(fp, out _); // an older peer: it takes everything, as before
+        }
+        else
+        {
+            remotePerm[fp] = got;
+            if (!got.Paused && refusals.TryGetValue(fp, out var old) && old.Why == Perms.WhyPaused)
+            {
+                refusals.TryRemove(fp, out _);
+            }
+        }
+        SharingChanged?.Invoke(fp);
+    }
+
+    void GotRefused(MeshLink link, TrustEntry entry, JsonObject msg)
+    {
+        var why = msg.Str("why") == Perms.WhyPaused ? Perms.WhyPaused : Perms.WhyDenied;
+        var cap = msg.Str("cap") is { } c && Perms.Capabilities.Contains(c) ? c : null;
+        var text = msg.Str("error") is { Length: > 0 } error ? error : Perms.RefusalText(entry.Name, why, cap);
+        text = text.Length > 200 ? text[..200] : text;
+        var re = msg.Str("re") ?? "";
+        refusals[link.Fp] = new Refusal(re.Length > 20 ? re[..20] : re, cap, why, text, DateTimeOffset.UtcNow);
+        log.LogInformation("mesh: {Who} refused: {Text}", entry.Name, text);
+        if (msg.Str("id") is { } oid)
+        {
+            if (acks.TryGetValue(oid, out var w) && w.Fp == link.Fp)
+            {
+                w.Waiter.TrySetResult((false, $"{why}: {text}"));
+            }
+            if (offers.TryGetValue(oid, out var o) && o.Fp == link.Fp)
+            {
+                o.Finish(false, $"{why}: {text}");
+            }
+        }
+        SharingChanged?.Invoke(link.Fp);
+    }
+
+    /// <summary>
+    /// A message that came through the hub: why it's refused ("paused" or "denied"), or null.
+    /// The sender is the hub's device <c>from.id</c>; one this device trusts gets its own
+    /// switches, and any other device of the hub's counts as your own (the same user's hub),
+    /// except that Pause everything stops all of it.
+    /// </summary>
+    public string? CheckHubMessage(JsonObject msg)
+    {
+        ArgumentNullException.ThrowIfNull(msg);
+        var sender = (msg["from"] as JsonObject)?.Str("id");
+        var entry = sender is null ? null : Trust.All().FirstOrDefault(e => e.Id == sender);
+        if (entry is null)
+        {
+            return PausedAll && !Perms.Always.Contains(msg.Str("t") ?? "") ? Perms.WhyPaused : null;
+        }
+        return Perms.Check(entry, msg, PausedAll)?.Why;
+    }
+
+    /// <summary>
+    /// Whether a broadcast (clip, state) may go to the hub, which hands it to every device it
+    /// has. Not while everything is paused, and a clipboard not while any device the hub lists
+    /// is paused or has the clipboard off here.
+    /// </summary>
+    public bool HubMayShare(JsonObject msg)
+    {
+        ArgumentNullException.ThrowIfNull(msg);
+        if (PausedAll)
+        {
+            return false;
+        }
+        if (Perms.Capability(msg) != Perms.Clipboard)
+        {
+            return true;
+        }
+        var hubId = host.HubId;
+        return !Trust.All().Any(e => !string.IsNullOrEmpty(hubId) && e.Hub == hubId && (e.Paused || !Perms.Allowed(e, Perms.Clipboard)));
+    }
+
+    /// <inheritdoc/>
+    public bool MayFetch(string fp) => Perms.Check(Trust.Get(fp), Perms.Message("offer"), PausedAll, outgoing: true) is null;
 
     /// <summary>What the hub's roster needs from this device (<c>POST /api/mesh/announce</c>).</summary>
     public JsonObject AnnounceBody() => new()
@@ -353,11 +639,11 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
     }
 
-    async Task ProbeGatewaysQuietlyAsync()
+    async Task ProbeGatewaysQuietlyAsync(IReadOnlyList<string>? gateways = null)
     {
         try
         {
-            await ProbeGatewaysAsync().ConfigureAwait(false);
+            await ProbeGatewaysAsync(gateways).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -376,9 +662,10 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     /// device whose certificate is pinned for that peer gets one. A gateway that turned out
     /// not to be a peer isn't tried for it again until the network changes. Returns the link, or null.
     /// </summary>
-    public async Task<MeshLink?> ProbeGatewaysAsync()
+    /// <param name="gateways">The gateways to look at; null for this machine's now.</param>
+    public async Task<MeshLink?> ProbeGatewaysAsync(IReadOnlyList<string>? gateways = null)
     {
-        var gateways = options.Gateways();
+        gateways ??= options.Gateways();
         lock (gate)
         {
             gatewayMisses.RemoveWhere(m => !gateways.Contains(m.Gateway));
@@ -660,7 +947,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         var link = new MeshLink(ws, entry.Fp, address, outbound: true, OnMessageAsync, OnClose, log, invoker) { Kind = kind, Port = port };
         AddLink(link);
         Track(link.RunAsync());
-        await link.SendAsync(Hello()).ConfigureAwait(false);
+        await link.SendAsync(Hello("hello", entry.Fp)).ConfigureAwait(false);
         var ok = await Task.WhenAny(link.Ready, Task.Delay(MeshProtocol.HelloTimeout, stop.Token)).ConfigureAwait(false) == link.Ready &&
                  link.Ready.IsCompletedSuccessfully;
         if (!ok)
@@ -745,9 +1032,10 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
     }
 
-    /// <summary>Sends to every peer with an open link (state, clipboard). Returns whether any got it.</summary>
+    /// <summary>Sends to every peer with an open link that may have it (state, clipboard). Returns whether any got it.</summary>
     public async Task<bool> BroadcastAsync(JsonObject msg)
     {
+        ArgumentNullException.ThrowIfNull(msg);
         List<string> fps;
         lock (gate)
         {
@@ -756,7 +1044,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         var sent = false;
         foreach (var fp in fps)
         {
-            if (OpenLink(fp) is { } link)
+            if (OpenLink(fp) is { } link && Permits(fp, msg))
             {
                 sent |= await link.SendAsync((JsonObject)msg.DeepClone()).ConfigureAwait(false);
             }
@@ -784,19 +1072,45 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 link.Hello = msg;
                 Trust.Learn(link.Fp, link.Outbound ? null : link.Address, msg.Int("port"), msg.Str("name"), msg.Str("id"), msg.Str("os"),
                     msg["caps"] is JsonArray ? msg.Strings("caps") : null, link.Kind == "tailnet");
+                LearnRemotePerm(link.Fp, msg["perm"]);
                 if (t == "hello")
                 {
-                    await link.SendAsync(Hello("welcome")).ConfigureAwait(false);
+                    await link.SendAsync(Hello("welcome", link.Fp)).ConfigureAwait(false);
                     log.LogInformation("mesh: {Who} connected from {Address}", entry.Name, link.Address);
                 }
                 link.MarkReady();
                 foreach (var (kind, data) in host.LastStates)
                 {
-                    await link.SendAsync(new JsonObject { ["t"] = "state", ["kind"] = kind, ["data"] = data?.DeepClone() }).ConfigureAwait(false);
+                    var state = new JsonObject { ["t"] = "state", ["kind"] = kind, ["data"] = data?.DeepClone() };
+                    if (Perms.Check(entry, state, PausedAll, outgoing: true) is null)
+                    {
+                        await link.SendAsync(state).ConfigureAwait(false);
+                    }
                 }
                 Kick();
             }
             return; // nothing else counts before the hello
+        }
+        if (t == "perm")
+        {
+            // how the peer treats this device now: a hint for the UI, and a resume lets what waited go
+            LearnRemotePerm(link.Fp, msg);
+            if (msg["caps"] is JsonArray)
+            {
+                Trust.Learn(link.Fp, caps: msg.Strings("caps"));
+            }
+            Kick();
+            return;
+        }
+        if (t == "refused")
+        {
+            GotRefused(link, entry, msg);
+            return;
+        }
+        if (Perms.Check(entry, msg, PausedAll) is { } no)
+        {
+            await RefuseAsync(link, entry, msg, no.Why, no.Cap).ConfigureAwait(false);
+            return;
         }
         switch (t)
         {
@@ -876,6 +1190,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 }
             case "input" or "media" or "cmd" or "clip" or "rpc":
                 {
+                    Dispatched?.Invoke(msg);
                     if (dispatcher is null)
                     {
                         break;
@@ -1019,6 +1334,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             throw new ArgumentException($"only {string.Join(", ", Live)} messages can be sent this way", nameof(msg));
         }
         var entry = EntryOf(fp);
+        MaySend(fp, msg, entry);
         if (await DirectAsync(fp).ConfigureAwait(false) is { } link && await link.SendAsync(msg).ConfigureAwait(false))
         {
             return link.Kind;
@@ -1039,6 +1355,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     public async Task<string> RingAsync(string fp, bool stopRing = false)
     {
         var entry = EntryOf(fp);
+        MaySend(fp, Perms.Message("ring"), entry);
         if (await DirectAsync(fp).ConfigureAwait(false) is { } link &&
             await link.SendAsync(new JsonObject { ["t"] = stopRing ? "ring-stop" : "ring" }).ConfigureAwait(false))
         {
@@ -1063,12 +1380,15 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         {
             throw new ArgumentException("clipboard text must be 1 byte to 256 KB", nameof(text));
         }
-        if (await DirectAsync(fp).ConfigureAwait(false) is { } link &&
-            await link.SendAsync(new JsonObject { ["t"] = "clip", ["text"] = text }).ConfigureAwait(false))
+        var msg = new JsonObject { ["t"] = "clip", ["text"] = text };
+        MaySend(fp, msg, entry);
+        if (await DirectAsync(fp).ConfigureAwait(false) is { } link && await link.SendAsync(msg).ConfigureAwait(false))
         {
             return link.Kind;
         }
-        if (HubHasItLive(entry) && await host.HubSendAsync(new JsonObject { ["t"] = "clip", ["text"] = text }).ConfigureAwait(false))
+        // the hub has no addressed clipboard message: it goes to all your devices' clipboards,
+        // so not while any of them shouldn't have it
+        if (HubHasItLive(entry) && HubMayShare(msg) && await host.HubSendAsync(new JsonObject { ["t"] = "clip", ["text"] = text }).ConfigureAwait(false))
         {
             return "hub";
         }
@@ -1085,6 +1405,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         {
             throw new ArgumentException("a message must be 1 byte to 64 KB of text", nameof(body));
         }
+        MayQueue(fp, "text", entry);
         var job = Outbox.AddText(fp, entry.Name, body);
         Kick();
         return job;
@@ -1099,6 +1420,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         {
             throw new ArgumentException($"{full} isn't a file", nameof(path));
         }
+        MayQueue(fp, "offer", entry);
         var job = Outbox.AddFile(fp, entry.Name, full, SafeName.Of(Path.GetFileName(full)), MimeTypes.Of(full));
         Kick();
         return job;
@@ -1108,6 +1430,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     public OutboxJob SendBytes(string fp, string name, byte[] data, string mime)
     {
         var entry = EntryOf(fp);
+        MayQueue(fp, "offer", entry);
         var dir = Path.Combine(options.DataDir, "sending");
         AtomicFile.CreatePrivateDirectory(dir);
         var p = Path.Combine(dir, $"{Hex.Random(4)}-{SafeName.Of(name)}");
@@ -1245,6 +1568,21 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             Finish(job, JobState.Failed, error: why);
             return "done";
         }
+        try
+        {
+            MaySend(job.Fp, Perms.Message(job.Kind == "text" ? "text" : "offer"), entry);
+        }
+        catch (RefusedException e)
+        {
+            if (e.Why == Perms.WhyPaused)
+            {
+                // paused, here or there: it waits, and goes on resume (its perm, or Resume here)
+                Outbox.Update(job.Id, j => j with { State = JobState.Queued, Attempts = j.Attempts + 1, Retry = false, Error = $"waiting: {e.Message}" });
+                return "wait";
+            }
+            Finish(job, JobState.Failed, error: e.Message);
+            return "done";
+        }
         Outbox.Update(job.Id, j => j with { State = JobState.Sending, Attempts = j.Attempts + 1 });
         var direct = await DirectAsync(job.Fp).ConfigureAwait(false);
         if (direct is null && JustAccepted(job.Fp))
@@ -1259,6 +1597,14 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             {
                 Finish(job, JobState.Done, route: link.Kind);
                 return "done";
+            }
+            if (got.StartsWith("paused:", StringComparison.Ordinal))
+            {
+                // the peer paused sharing with this device: wait for its perm saying it resumed
+                Outbox.Update(job.Id, j => j with { State = JobState.Queued, Error = $"waiting: {got["paused:".Length..].Trim()}", Retry = false });
+                remotePerm.AddOrUpdate(job.Fp, _ => new RemotePerm(true, new Dictionary<string, bool>()), (_, old) => old with { Paused = true });
+                SharingChanged?.Invoke(job.Fp);
+                return "wait";
             }
             if (got.StartsWith("refused:", StringComparison.Ordinal))
             {
@@ -1301,6 +1647,10 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         return "wait";
     }
 
+    /// <summary>"ok"; "paused: …" when the peer paused sharing with this device (it waits); else "refused: …" for good.</summary>
+    static string Outcome(bool ok, string error) =>
+        ok ? "ok" : error.StartsWith("paused:", StringComparison.Ordinal) ? error : $"refused: {error}";
+
     async Task<string> DirectTextAsync(MeshLink link, OutboxJob job)
     {
         var waiter = new TaskCompletionSource<(bool Ok, string Error)>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1314,7 +1664,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             try
             {
                 var (ok, error) = await waiter.Task.WaitAsync(AckTimeout, stop.Token).ConfigureAwait(false);
-                return ok ? "ok" : $"refused: {error}";
+                return Outcome(ok, error);
             }
             catch (TimeoutException)
             {
@@ -1344,7 +1694,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 try
                 {
                     var (ok, error) = await offer.Done.WaitAsync(TimeSpan.FromSeconds(1), stop.Token).ConfigureAwait(false);
-                    return ok ? "ok" : $"refused: {error}";
+                    return Outcome(ok, error);
                 }
                 catch (TimeoutException)
                 {
@@ -1475,10 +1825,12 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     }
 
     /// <summary>
-    /// The owner here says whether the codes match. Yes: wait (in the background) for the
-    /// peer's answer, and trust it only when it accepts too. No: cancel.
+    /// The owner here says whether the codes match, and whether the other device is theirs
+    /// (<see cref="Perms.Own"/>) or someone else's (<see cref="Perms.Other"/>), which sets what
+    /// it may do (docs/mesh.md §9.9). Yes: wait (in the background) for the peer's answer, and
+    /// trust it only when it accepts too. No: cancel.
     /// </summary>
-    public async Task<string> PairConfirmAsync(string request, bool yes)
+    public async Task<string> PairConfirmAsync(string request, bool yes, string relation = Perms.Own)
     {
         if (!outgoing.TryGetValue(request, out var og))
         {
@@ -1490,6 +1842,11 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             og.State = PairState.Cancelled;
             return og.State;
         }
+        if (!Perms.Relations.Contains(relation))
+        {
+            throw new ArgumentException("relation must be \"own\" or \"other\"", nameof(relation));
+        }
+        og.Relation = relation;
         og.LocalOk = true;
         Track(Task.Run(() => PairWaitAsync(og)));
         return og.State;
@@ -1519,9 +1876,9 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 {
                     var tailnet = Addresses.IsTailnet(og.Host);
                     var entry = TrustEntry.Make(og.PeerId, og.PeerName, og.PeerCertPem, TrustSource.Paired, tailnet ? [] : [og.Host], og.Port,
-                        tailnet ? og.Host : null, og.PeerOs);
+                        tailnet ? og.Host : null, og.PeerOs, relation: og.Relation);
                     Trust.AddPaired(entry);
-                    log.LogInformation("mesh: paired with {Who} ({Fp})", entry.Name, entry.Fp);
+                    log.LogInformation("mesh: paired with {Who} ({Fp}), {Whose}", entry.Name, entry.Fp, entry.IsOther ? "someone else's" : "your own device");
                     og.State = PairState.Accepted;
                     Paired?.Invoke(entry);
                 }
@@ -1564,9 +1921,17 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         return false;
     }
 
-    /// <summary>The owner's answer to a request another device made. Returns the peer when accepted.</summary>
-    public TrustEntry? PairAnswer(string request, bool accept)
+    /// <summary>
+    /// The owner's answer to a request another device made: and, accepting, whether it's
+    /// theirs (<see cref="Perms.Own"/>) or someone else's (<see cref="Perms.Other"/>). Returns
+    /// the peer when accepted.
+    /// </summary>
+    public TrustEntry? PairAnswer(string request, bool accept, string relation = Perms.Own)
     {
+        if (accept && !Perms.Relations.Contains(relation))
+        {
+            throw new ArgumentException("relation must be \"own\" or \"other\"", nameof(relation));
+        }
         var r = Incoming.Answer(request, accept) ?? throw new ArgumentException("no such pairing request waiting (it may have expired)");
         services.Notifications?.Clear($"pair-{request}");
         if (!accept)
@@ -1574,10 +1939,10 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             log.LogInformation("mesh: refused to pair with {Who}", r.Info.Name);
             return null;
         }
-        var entry = TrustEntry.Make(r.Info.Id, r.Info.Name, Certificates.ToPem(r.Der), TrustSource.Paired, os: r.Info.Os);
+        var entry = TrustEntry.Make(r.Info.Id, r.Info.Name, Certificates.ToPem(r.Der), TrustSource.Paired, os: r.Info.Os, relation: relation);
         Trust.AddPaired(entry);
         accepted[entry.Fp] = DateTimeOffset.UtcNow;
-        log.LogInformation("mesh: paired with {Who} ({Fp})", entry.Name, entry.Fp);
+        log.LogInformation("mesh: paired with {Who} ({Fp}), {Whose}", entry.Name, entry.Fp, entry.IsOther ? "someone else's" : "your own device");
         Paired?.Invoke(entry);
         return entry;
     }
@@ -1645,12 +2010,18 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             o.Remove("cert_pem");
             o["link"] = link is null ? null : $"{link.Kind} {link.Address}";
             o["on_lan"] = seen.Any(s => s.Fp == e.Fp);
+            // what it said about how it treats this device (a hint), and its last no
+            o["remote"] = RemotePermOf(e.Fp) is { } rp ? RemoteJson(rp) : null;
+            o["refused"] = LastRefusal(e.Fp) is { } r
+                ? new JsonObject { ["re"] = r.Re, ["cap"] = r.Cap, ["why"] = r.Why, ["text"] = r.Text, ["ts"] = r.At.ToUnixTimeMilliseconds() / 1000.0 }
+                : null;
             peers.Add(o);
         }
         var trusted = Trust.All().Select(e => e.Fp).ToHashSet();
         return new JsonObject
         {
-            ["id"] = PeerId, ["name"] = Name, ["fp"] = Identity.Fingerprint, ["port"] = Port, ["peers"] = peers,
+            ["id"] = PeerId, ["name"] = Name, ["fp"] = Identity.Fingerprint, ["port"] = Port, ["paused_all"] = PausedAll,
+            ["capabilities"] = Json.Array(Perms.Capabilities), ["peers"] = peers,
             ["nearby"] = new JsonArray(seen.Where(s => !trusted.Contains(s.Fp)).Select(s => (JsonNode)new JsonObject
             {
                 ["id"] = s.Id, ["name"] = s.Name, ["fp"] = s.Fp, ["os"] = s.Os, ["addresses"] = Json.Array(s.Addresses), ["port"] = s.Port,
@@ -1659,6 +2030,16 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             ["outbox"] = JsonSerializer.SerializeToNode(Outbox.Queued()),
             ["refused"] = Refused,
         };
+    }
+
+    static JsonObject RemoteJson(RemotePerm p)
+    {
+        var allow = new JsonObject();
+        foreach (var (c, on) in p.Allow)
+        {
+            allow[c] = on;
+        }
+        return new JsonObject { ["paused"] = p.Paused, ["allow"] = allow };
     }
 
     /// <summary>A message's source when it came over a direct link: replies and files go back to that peer.</summary>

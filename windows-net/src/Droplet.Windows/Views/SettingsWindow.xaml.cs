@@ -76,11 +76,44 @@ public partial class SettingsWindow : Window
         ShowStatus();
     }
 
+    void PausedAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (loading)
+        {
+            return;
+        }
+        try
+        {
+            Host.SetPausedAll(PausedAll.IsChecked == true);
+        }
+        catch (InvalidOperationException ex)
+        {
+            App.ShowError(ex.Message);
+        }
+        ShowStatus();
+    }
+
+    void ResumeAll_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Host.SetPausedAll(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            App.ShowError(ex.Message);
+        }
+        ShowStatus();
+    }
+
     /// <summary>The parts that change on their own: the hub's state and the mesh.</summary>
     void ShowStatus()
     {
         var c = Host.Config;
         var t = Host.Tray;
+        var pausedAll = Host.PausedAll;
+        PausedBanner.Visibility = pausedAll ? Visibility.Visible : Visibility.Collapsed;
+        PausedAll.IsChecked = pausedAll;
         var hubName = Core.Polling.HubPoller.HubName(c);
         HubDetails.Visibility = c.Hub is null && c.RemoteUrl.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         HubSummary.Text = c switch

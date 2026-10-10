@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Droplet.Core.Common;
 using Droplet.Core.Config;
 using Droplet.Core.LocalFirst;
 using Droplet.Core.Mesh;
@@ -66,6 +67,10 @@ public sealed class DropletEngine : IAsyncDisposable
         Live = new HubLiveSession(LiveParams, Dispatcher, o.App, lf.CreateLogger("droplet.live"));
         States = new StatePublisher(o.Services.Media, () => Dispatcher.Offered().Contains(Caps.Media), lf.CreateLogger("droplet.state"));
         Bridge = new HubMeshBridge(Store, Routes, Live, Dispatcher, States, lf.CreateLogger("droplet.mesh.hub"));
+        // through the hub, the sender's switches here apply as on a direct link (docs/mesh.md §9.9)
+        Live.Refuse = msg => Mesh is { } m
+            ? m.CheckHubMessage(msg)
+            : Bridge.PausedEverything && !Perms.Always.Contains(msg.Str("t") ?? "") ? Perms.WhyPaused : null;
         Poller = new HubPoller(Store, Routes, Setup, o.Services, lf.CreateLogger("droplet.poll"));
         if (o.Services.Clipboard is { } clipboard)
         {
@@ -225,12 +230,16 @@ public sealed class DropletEngine : IAsyncDisposable
         return new LiveParams(r.Base, r.Handler(), cfg.DeviceToken!, cfg.Session, cfg.DeviceName ?? "", Dispatcher.Offered());
     }
 
-    /// <summary>A local clipboard change: to the hub (which passes it to your other devices) and to every linked peer.</summary>
+    /// <summary>A local clipboard change: to the hub (which passes it to your other devices) and to every linked peer that may have it.</summary>
     Task ToEveryoneAsync(string text) => ToEveryoneAsync(new JsonObject { ["t"] = "clip", ["text"] = text });
 
     async Task ToEveryoneAsync(JsonObject msg)
     {
-        await Live.SendAsync((JsonObject)msg.DeepClone()).ConfigureAwait(false);
+        // the hub hands a broadcast to every device it has: not while one of them shouldn't have it
+        if (Mesh?.HubMayShare(msg) ?? !Bridge.PausedEverything)
+        {
+            await Live.SendAsync((JsonObject)msg.DeepClone()).ConfigureAwait(false);
+        }
         if (Mesh is { } m)
         {
             await m.BroadcastAsync(msg).ConfigureAwait(false);

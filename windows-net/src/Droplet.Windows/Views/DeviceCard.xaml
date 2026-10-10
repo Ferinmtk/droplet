@@ -1,0 +1,29 @@
+<UserControl x:Class="Droplet.Windows.Views.DeviceCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- one device in the Devices window: how it's reached, what's shared with it, and what to do -->
+    <StackPanel>
+        <WrapPanel>
+            <TextBlock x:Name="DetailName" Style="{StaticResource SectionTitle}" FontSize="20" Margin="0,0,10,6" />
+            <Border x:Name="OtherBadge" Style="{StaticResource Badge}" Visibility="Collapsed"
+                    ToolTip="Someone else's device: you chose what it may do, under Permissions">
+                <TextBlock Text="Someone else's" FontSize="12" />
+            </Border>
+            <Border x:Name="PausedBadge" Style="{StaticResource Badge}" Visibility="Collapsed"
+                    Background="{DynamicResource DropletWarnSoftBrush}" BorderBrush="{DynamicResource DropletWarnBrush}">
+                <TextBlock x:Name="PausedBadgeText" FontSize="12" />
+            </Border>
+        </WrapPanel>
+        <TextBlock x:Name="DetailRoute" Style="{StaticResource Caption}" Margin="0,0,0,12" />
+        <WrapPanel>
+            <Button x:Name="SendFilesButton" Content="Send files…" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" ToolTipService.ShowOnDisabled="True" />
+            <Button x:Name="MessageButton" Content="Message…" Style="{StaticResource PlainButton}" Margin="0,0,8,8" ToolTipService.ShowOnDisabled="True" />
+            <Button x:Name="ClipboardButton" Content="Send clipboard" Style="{StaticResource PlainButton}" Margin="0,0,8,8" ToolTipService.ShowOnDisabled="True" />
+            <Button x:Name="RingButton" Content="Ring" Style="{StaticResource PlainButton}" Margin="0,0,8,8" ToolTipService.ShowOnDisabled="True" />
+            <Button x:Name="PauseButton" Content="Pause" Style="{StaticResource PlainButton}" Margin="0,0,8,8" />
+            <Button x:Name="PermissionsButton" Content="Permissions…" Style="{StaticResource PlainButton}" Margin="0,0,8,8" />
+            <Button x:Name="UnpairButton" Content="Unpair" Style="{StaticResource PlainButton}" Margin="0,0,8,8" />
+        </WrapPanel>
+        <TextBlock x:Name="DetailNote" Style="{StaticResource Caption}" Margin="0,4,0,0" />
+    </StackPanel>
+</UserControl>

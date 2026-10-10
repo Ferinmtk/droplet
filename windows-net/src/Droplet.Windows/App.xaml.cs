@@ -25,6 +25,7 @@ public partial class App : Application
     readonly Command initial;
     readonly SingleInstance instance;
     readonly Dictionary<string, ChatWindow> chats = [];
+    readonly Dictionary<string, PermissionsWindow> permissions = [];
     FileLog? fileLog;
     ILoggerFactory? logs;
     ILogger log = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
@@ -94,6 +95,8 @@ public partial class App : Application
         }
         host.NeedsSettings += ShowSettings;
         host.PairingRequested += _ => devices?.Refresh();
+        // a pairing accepted from its notification: whose device it is, asked over the devices window when it's open
+        host.AskRelation = name => RelationWindow.Ask(devices, name);
         await HandleAsync(PackagedActivation(initial), Environment.CurrentDirectory);
     }
 
@@ -303,6 +306,30 @@ public partial class App : Application
             w = new ChatWindow(this, d);
             chats[d.Key] = w;
             w.Closed += (_, _) => chats.Remove(d.Key);
+        }
+        Front(w);
+    }
+
+    /// <summary>A device's permissions (one window per device).</summary>
+    internal void ShowPermissions(string fp, Window? owner = null)
+    {
+        if (host?.Engine?.Mesh?.Trust.Get(fp) is null)
+        {
+            return;
+        }
+        if (!permissions.TryGetValue(fp, out var w))
+        {
+            w = new PermissionsWindow(host.PermsOf(fp));
+            if (owner is { IsVisible: true })
+            {
+                w.Owner = owner;
+            }
+            else
+            {
+                w.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            }
+            permissions[fp] = w;
+            w.Closed += (_, _) => permissions.Remove(fp);
         }
         Front(w);
     }

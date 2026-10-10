@@ -28,6 +28,7 @@ public sealed class HubMeshBridge : IMeshHost, IAsyncDisposable
     readonly CancellationTokenSource stop = new();
     Task? loop;
     int again;
+    bool pausedEverything;
 
     /// <summary>Creates a bridge; set <see cref="Node"/> once the node exists, then <see cref="Start"/>.</summary>
     public HubMeshBridge(ConfigStore store, RouteManager routes, HubLiveSession? live, RemoteDispatcher? dispatcher,
@@ -39,6 +40,8 @@ public sealed class HubMeshBridge : IMeshHost, IAsyncDisposable
         this.dispatcher = dispatcher;
         this.states = states;
         log = logger ?? NullLogger.Instance;
+        pausedEverything = store.Get().Mesh.Paused;
+        store.Changed += c => Volatile.Write(ref pausedEverything, c.Mesh.Paused);
         if (live is not null)
         {
             live.Connected += () => RosterSoon(announceAgain: true);
@@ -91,6 +94,17 @@ public sealed class HubMeshBridge : IMeshHost, IAsyncDisposable
 
     /// <inheritdoc/>
     public Task<bool> HubSendAsync(JsonObject message) => live?.SendAsync(message) ?? Task.FromResult(false);
+
+    /// <inheritdoc/>
+    /// <remarks><c>"mesh": {"paused": true}</c> in the config, as on Linux.</remarks>
+    public bool PausedEverything => Volatile.Read(ref pausedEverything);
+
+    /// <inheritdoc/>
+    public void SetPausedEverything(bool on)
+    {
+        Volatile.Write(ref pausedEverything, on);
+        store.Update(c => c.Mesh.Paused = on);
+    }
 
     async Task<HubClient> ClientAsync(CancellationToken ct)
     {

@@ -72,6 +72,12 @@ clipboard and ring never queue.
   contents are never logged.
 - **Received files** get safe, unique names (no paths, hidden names, Windows
   device names or forbidden characters), and a download never overwrites.
+- **Per-device permissions** ([`docs/mesh.md` §9.9](../docs/mesh.md)): each
+  trusted device is your own or someone else's, with a switch per capability
+  and a pause, and Pause everything stops all of it. The node checks every
+  path itself, both ways (links, live sends, broadcasts, the outbox, file
+  fetches and the hub's routes); what a peer says about its own switches only
+  greys out the UI and saves sending what it would refuse.
 
 ## The Windows app
 
@@ -79,17 +85,19 @@ clipboard and ring never queue.
 |---|---|
 | `Services/AppHost.cs` | the running app: the platform services, the engine (restarted when a mesh setting changes), and what the tray and windows show, kept up to date on the UI thread. One list of destinations: the hub, mesh peers and hub-only devices, each once |
 | `Tray/` | a small `Shell_NotifyIcon` wrapper (see [Choices](#choices)), the menu, and the tooltip's wording |
-| `Views/` | Devices (the main window: routes, send, message, ring, clipboard, unpair, pairing both ways), Settings, first-run Setup, Chat |
+| `Views/` | Devices (the main window: routes, send, message, ring, clipboard, pause, permissions, unpair, pairing both ways, asking whose device it is), Permissions, Settings, first-run Setup, Chat |
 | `Platform/` | `IInput` (SendInput), `IMedia` (media sessions and Core Audio), `IClipboard`, `INotifications` (toasts), `IScreenshot`, `ILock`, `ISound`, DPAPI |
 | `Shell/` | single instance, the command line, `droplet:` links, registration, Start with Windows, Send To, packaging detection, the log |
 
-**Tray menu:** Open droplet · Send files to ▸ · Send clipboard to ▸ · Ring ▸ ·
-Devices… · Open downloads folder · Pause notifications · Pause remote
-control · Settings… · Quit droplet. The tooltip says how the hub is reached
+**Tray menu:** Pause (Resume) everything · Pause a device ▸ · Open droplet ·
+Send files to ▸ · Send clipboard to ▸ · Ring ▸ · Devices… · Open downloads
+folder · Pause notifications · Pause remote control · Settings… · Quit
+droplet. A send a device won't take is greyed, with why. The tooltip says how the hub is reached
 ("droplet — t15 on Wi-Fi", "via Tailscale"), or how many devices are linked
 without a hub, and "being controlled by Home" for two minutes after remote
-control. The drop is aqua, grey when nothing is reachable, and amber for a
-few seconds after another device sends input.
+control. The drop is aqua, grey when nothing is reachable, amber for a few
+seconds after another device sends input, and grey with a pause sign while
+everything is paused.
 
 **Port of the Go app:** SendInput with absolute moves over the virtual
 desktop, carried fractions, swapped buttons and the same key mapping;
@@ -272,6 +280,18 @@ Go app first (its tray icon → Quit droplet).
     They match on both. It's listed "on Wi-Fi". Pair in the other direction
     too: the request appears as a toast with Accept/Deny (try Accept from the
     toast) and in Devices. Unpair it.
+15a. **Whose device it is**: pair again; accepting (in Devices and from the
+    toast) and They match each ask "Is … your device, or someone else's?".
+    Answer Someone else's on the PC: the card says Someone else's, Send
+    clipboard is greyed ("The clipboard with … is switched off here"), and
+    the other side's Send clipboard says "… doesn't allow the clipboard from
+    you"; files and messages still go both ways. Permissions… shows the
+    switches; turn Remote control on and off and watch the phone's remote
+    follow. Pause on the card: the other side shows Paused by …, a message
+    sent to it waits ("… is paused: resume it to send") and goes on Resume.
+    Pause everything in the tray: the icon gets a pause sign, Devices and
+    Settings show the banner, clipboard sync stops reaching every device,
+    and Resume everything brings it all back.
 16. **Settings**: Start with Windows off by default. Turn it on: HKCU\…\Run
     has `droplet` with `--background`; sign out and in: droplet starts in the
     tray without opening a window. Send To off by default; turn it on:

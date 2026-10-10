@@ -39,15 +39,40 @@ internal sealed record Destination
     /// <summary>What it can be asked to do: ring, clipboard...</summary>
     public IReadOnlyList<string> Caps { get; init; } = [];
 
+    /// <summary>Someone else's device (docs/mesh.md §9.9).</summary>
+    public bool Other { get; init; }
+
+    /// <summary>Paused here: nothing goes to it or comes from it.</summary>
+    public bool Paused { get; init; }
+
+    /// <summary>It paused sharing with this PC (its own word, while linked).</summary>
+    public bool PausedByPeer { get; init; }
+
+    /// <summary>This PC's switch per capability for it; null for the hub and devices only the hub knows.</summary>
+    public IReadOnlyDictionary<string, bool>? Allow { get; init; }
+
+    /// <summary>What it said it takes from this PC (while linked); null when it said nothing.</summary>
+    public RemotePerm? Remote { get; init; }
+
+    /// <summary>The last thing it refused from this PC, in words, or null.</summary>
+    public string? Refused { get; init; }
+
     /// <summary>A line for lists: the name and the route.</summary>
-    public string Label => IsHub ? Name : $"{Name}  ({Route})";
+    public string Label => IsHub ? Name : $"{Name}  ({(Paused ? "paused" : Route)})";
 }
 
 /// <summary>A trusted mesh peer as the destination list needs it.</summary>
 /// <param name="Entry">The trust entry.</param>
 /// <param name="Link">The open link's kind ("lan" or "tailnet"), or null.</param>
 /// <param name="Nearby">Announcing itself on this network.</param>
-internal sealed record PeerView(TrustEntry Entry, string? Link, bool Nearby);
+/// <param name="Remote">What it said about how it treats this PC, while linked.</param>
+/// <param name="Refused">The last thing it refused.</param>
+internal sealed record PeerView(TrustEntry Entry, string? Link, bool Nearby, RemotePerm? Remote = null, Refusal? Refused = null);
+
+/// <summary>Why something can't go to a device now, and whether it waits for a resume instead of failing.</summary>
+/// <param name="Text">What to show: "Brian's laptop paused sharing with you".</param>
+/// <param name="Waits">Files and messages wait while paused, and go on the resume.</param>
+internal sealed record Block(string Text, bool Waits);
 
 /// <summary>Builds and searches the destination list: pure, so it's tested anywhere.</summary>
 internal static class Destinations
@@ -88,6 +113,8 @@ internal static class Destinations
             {
                 Key = "peer:" + e.Fp, Name = e.Name, Fp = e.Fp, HubDeviceId = dev?.Id, Route = route,
                 Online = p.Link is not null || viaHub || p.Nearby, Paired = e.Source == TrustSource.Paired, Os = e.Os, Caps = e.Caps,
+                Other = e.IsOther, Paused = e.Paused, PausedByPeer = p.Remote?.Paused == true, Allow = Perms.CleanAllow(e.Allow, e.Relation),
+                Remote = p.Remote, Refused = p.Refused?.Text,
             });
         }
         foreach (var d in hubDevices.Values.Where(d => !claimed.Contains(d.Id)))
@@ -109,6 +136,38 @@ internal static class Destinations
             });
         }
         return sorted;
+    }
+
+    /// <summary>
+    /// Why something needing <paramref name="cap"/> can't go to <paramref name="d"/> now, or
+    /// null: this PC's own pause and switches first, then what the device said it takes. Only
+    /// mesh peers have permissions (the hub and the devices only it knows are your own).
+    /// </summary>
+    public static Block? Blocked(Destination d, string cap, bool pausedAll)
+    {
+        ArgumentNullException.ThrowIfNull(d);
+        if (d.Fp is null)
+        {
+            return null;
+        }
+        var waits = cap is Perms.Files or Perms.Chat;
+        if (pausedAll)
+        {
+            return new Block("Everything is paused on this PC: resume it to send", waits);
+        }
+        if (d.Paused)
+        {
+            return new Block(Perms.LocalText(d.Name, Perms.WhyPaused, cap), waits);
+        }
+        if (!Perms.InboundOnly.Contains(cap) && d.Allow is { } allow && !allow.GetValueOrDefault(cap, true))
+        {
+            return new Block(Perms.LocalText(d.Name, Perms.WhyDenied, cap), false);
+        }
+        if (Perms.RemoteRefuses(d.Remote, cap) is { } why)
+        {
+            return new Block(Perms.RefusalText(d.Name, why, cap), waits && why == Perms.WhyPaused);
+        }
+        return null;
     }
 
     /// <summary>

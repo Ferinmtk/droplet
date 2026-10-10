@@ -67,6 +67,13 @@ public sealed class HubLiveSession : IAsyncDisposable
     /// <summary>The platform named in hello.</summary>
     public string Platform { get; init; } = "windows";
 
+    /// <summary>
+    /// Why a message through the hub is refused ("paused" or "denied", by its sender's
+    /// switches here, docs/mesh.md §9.9), or null when it isn't. A direct link is checked by
+    /// the mesh; through the hub, the same rules apply.
+    /// </summary>
+    public Func<JsonObject, string?>? Refuse { get; set; }
+
     /// <summary>Raised when the status changes.</summary>
     public event Action<LiveStatus>? StatusChanged;
 
@@ -418,6 +425,19 @@ public sealed class HubLiveSession : IAsyncDisposable
         switch (msg.Str("t"))
         {
             case "input" or "media" or "cmd" or "clip" or "rpc":
+                if (Refuse?.Invoke(msg) is { } why)
+                {
+                    log.LogInformation("live: refused {T} from {Who} through the hub: {Why}", msg.Str("t"), (msg["from"] as JsonObject)?.Str("name") ?? "?",
+                        why == "paused" ? "paused" : "switched off for that device");
+                    if (msg.Str("t") == "rpc")
+                    {
+                        await SendAsync(new JsonObject
+                        {
+                            ["t"] = "rpc-result", ["id"] = msg["id"]?.DeepClone(), ["error"] = why == "paused" ? "Paused." : "Not allowed for that device.",
+                        }).ConfigureAwait(false);
+                    }
+                    break;
+                }
                 await dispatcher.DispatchAsync(msg, new HubSource(this)).ConfigureAwait(false);
                 break;
             case "presence":

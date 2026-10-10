@@ -29,6 +29,9 @@ public interface IMeshServerHandler
     /// <summary>The offer with this id, or null.</summary>
     Offer? GetOffer(string id);
 
+    /// <summary>Whether the peer may fetch files offered to it now: not while it's paused, or files are off for it (docs/mesh.md §9.9).</summary>
+    bool MayFetch(string fp);
+
     /// <summary>Bytes a second when serving files; 0 for no limit.</summary>
     long MaxRate { get; }
 
@@ -341,6 +344,13 @@ public sealed partial class MeshServer : IAsyncDisposable
         var resp = ctx.Response;
         // one file per connection, as the reference
         resp.Headers.Connection = "close";
+        if (!handler.MayFetch(fp))
+        {
+            // paused (or files switched off) since it was offered
+            resp.StatusCode = 403;
+            resp.ContentLength = 0;
+            return;
+        }
         var offer = FileReceiver.OfferIdPattern().IsMatch(id) ? handler.GetOffer(id) : null;
         if (offer is null || offer.Fp != fp)
         {

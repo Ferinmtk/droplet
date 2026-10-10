@@ -12,6 +12,7 @@
     <SolidColorBrush x:Key="DropletLineBrush" Color="#33808080" />
     <SolidColorBrush x:Key="DropletCardBrush" Color="#0DFFFFFF" />
     <SolidColorBrush x:Key="DropletWarnBrush" Color="#FBBF24" />
+    <SolidColorBrush x:Key="DropletWarnSoftBrush" Color="#26FBBF24" />
     <SolidColorBrush x:Key="DropletOkBrush" Color="#0FAE9C" />
 
     <Style x:Key="PageTitle" TargetType="TextBlock">
@@ -59,6 +60,17 @@
         <Setter Property="CornerRadius" Value="8" />
         <Setter Property="Padding" Value="12,8" />
         <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+
+    <!-- a small rounded label beside a name: "Someone else's", "Paused" -->
+    <Style x:Key="Badge" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource DropletAccentSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DropletAccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="8,1" />
+        <Setter Property="Margin" Value="0,2,6,6" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">

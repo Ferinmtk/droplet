@@ -68,6 +68,12 @@ public sealed class MeshSettings
 
     /// <summary>Where files sent directly are saved; null means the download folder.</summary>
     [JsonPropertyName("downloads")] public string? Downloads { get; set; }
+
+    /// <summary>
+    /// Pause everything: nothing is shared with any device, sent or taken, until it's false
+    /// again (docs/mesh.md §9.9). Each device can also be paused on its own (the trust list).
+    /// </summary>
+    [JsonPropertyName("paused")] public bool Paused { get; set; }
 }
 
 /// <summary>

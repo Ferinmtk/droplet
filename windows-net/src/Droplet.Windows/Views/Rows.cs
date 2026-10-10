@@ -16,7 +16,7 @@ public sealed record DeviceRow(string Name, string Route, bool Online, string Os
 }
 
 /// <summary>A device asking to pair.</summary>
-public sealed record RequestRow(string Title, string Code, string Request);
+public sealed record RequestRow(string Title, string Code, string Request, string Name);
 
 /// <summary>A device announcing itself nearby, not paired yet.</summary>
 public sealed record NearbyRow(string Name, string Detail, string Target);

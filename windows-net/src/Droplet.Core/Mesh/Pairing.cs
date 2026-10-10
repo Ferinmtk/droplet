@@ -358,6 +358,9 @@ public sealed class OutgoingPairing : IDisposable
     /// <summary>The peer's address.</summary>
     public string Host { get; }
 
+    /// <summary>What the owner here said the peer is, when confirming the code: "own" or "other" (docs/mesh.md §9.9).</summary>
+    public string Relation { get; set; } = Perms.Own;
+
     /// <summary>The peer's port.</summary>
     public int Port { get; }
 
