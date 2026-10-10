@@ -1,14 +1,16 @@
 using System.Windows;
 using System.Windows.Controls;
+using Droplet.Core.Mesh;
 using Droplet.Windows.Services;
 
 namespace Droplet.Windows.Tray;
 
 /// <summary>
-/// The tray's menu and icon: Open droplet · Send files ▸ · Send clipboard ▸ · Ring ▸ ·
-/// Devices… · Open downloads folder · Pause notifications · Pause remote control ·
-/// Settings… · Quit. The icon dims when nothing can be reached and turns amber while
-/// another device sends input; the tooltip says how the hub is reached and who's in control.
+/// The tray's menu and icon: Pause (Resume) everything · Pause a device ▸ · Open droplet ·
+/// Send files ▸ · Send clipboard ▸ · Ring ▸ · Devices… · Open downloads folder · Pause
+/// notifications · Pause remote control · Settings… · Quit. The icon dims when nothing can be
+/// reached, turns amber while another device sends input, and shows a pause sign while
+/// everything is paused; the tooltip says how the hub is reached and who's in control.
 /// </summary>
 internal sealed class TrayController
 {
@@ -22,6 +24,8 @@ internal sealed class TrayController
     readonly MenuItem ring = new() { Header = "Ring" };
     readonly MenuItem pauseNotifications = new() { Header = "Pause notifications", IsCheckable = true };
     readonly MenuItem pauseRemote = new() { Header = "Pause remote control", IsCheckable = true };
+    readonly MenuItem pauseAll = new();
+    readonly MenuItem pauseDevice = new() { Header = "Pause a device" };
 
     public TrayController(App app, AppHost host, NotifyIcon icon)
     {
@@ -31,9 +35,13 @@ internal sealed class TrayController
         stopRing.Click += async (_, _) => await host.StopRingAsync();
         pauseNotifications.Click += (_, _) => Guard(() => host.SetNotificationsPaused(pauseNotifications.IsChecked));
         pauseRemote.Click += (_, _) => Guard(() => host.SetRemotePaused(pauseRemote.IsChecked));
+        pauseAll.Click += (_, _) => Guard(() => host.SetPausedAll(!host.Tray.PausedAll));
         var menu = new ContextMenu { MinWidth = 240 };
         menu.Items.Add(header);
         menu.Items.Add(stopRing);
+        // sharing first: Pause everything is what you reach for before a presentation
+        menu.Items.Add(pauseAll);
+        menu.Items.Add(pauseDevice);
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Open droplet", app.OpenWeb));
         menu.Items.Add(sendFiles);
@@ -84,6 +92,8 @@ internal sealed class TrayController
         stopRing.Header = Plain($"Stop ringing ({t.RingingFrom})");
         pauseNotifications.IsChecked = t.NotificationsPaused;
         pauseRemote.IsChecked = t.RemotePaused;
+        pauseAll.Header = t.PausedAll ? "Resume everything" : "Pause everything";
+        pauseAll.ToolTip = t.PausedAll ? "Share with your devices again" : "Share nothing with any device, either way, until you resume";
     }
 
     /// <summary>Fills the device submenus as the menu opens.</summary>
@@ -91,20 +101,28 @@ internal sealed class TrayController
     {
         Update();
         var dests = host.Destinations;
-        Fill(sendFiles, dests, d => d.Label, app.PickAndSend);
-        Fill(sendClip, dests, d => d.Label, app.SendClipboard);
-        Fill(ring, dests, d => d.Label, d => _ = host.RingAsync(d));
+        var pausedAll = host.Tray.PausedAll;
+        Fill(sendFiles, dests, d => d.Label, app.PickAndSend, d => Destinations.Blocked(d, Perms.Files, pausedAll));
+        Fill(sendClip, dests, d => d.Label, app.SendClipboard, d => Destinations.Blocked(d, Perms.Clipboard, pausedAll));
+        Fill(ring, dests, d => d.Label, d => _ = host.RingAsync(d), d => Destinations.Blocked(d, Perms.Ring, pausedAll));
+        // each paired or roster device, paused or not
+        var peers = dests.Where(d => d.Fp is not null).ToList();
+        Fill(pauseDevice, peers, d => d.Paused ? $"Resume {d.Name}" : $"Pause {d.Name}", d => Guard(() => host.SetPeerPaused(d, !d.Paused)));
     }
 
     /// <summary>Text shown as is: an underscore would otherwise mark an access key.</summary>
     static string Plain(string s) => s.Replace("_", "__", StringComparison.Ordinal);
 
-    static void Fill(MenuItem parent, IReadOnlyList<Destination> dests, Func<Destination, string> label, Action<Destination> click)
+    static void Fill(MenuItem parent, IReadOnlyList<Destination> dests, Func<Destination, string> label, Action<Destination> click,
+        Func<Destination, Block?>? blocked = null)
     {
         parent.Items.Clear();
         foreach (var d in dests)
         {
-            var item = new MenuItem { Header = Plain(label(d)) };
+            // refused (switched off, or the device said no) greys it, with why; a pause only makes it wait
+            var block = blocked?.Invoke(d);
+            var item = new MenuItem { Header = Plain(label(d)), IsEnabled = block is null || block.Waits, ToolTip = block?.Text };
+            ToolTipService.SetShowOnDisabled(item, true);
             item.Click += (_, _) => click(d);
             parent.Items.Add(item);
         }

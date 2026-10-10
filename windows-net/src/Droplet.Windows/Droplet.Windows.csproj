@@ -51,6 +51,7 @@
     <EmbeddedResource Include="Assets\tray.ico" LogicalName="tray.ico" />
     <EmbeddedResource Include="Assets\tray-dim.ico" LogicalName="tray-dim.ico" />
     <EmbeddedResource Include="Assets\tray-live.ico" LogicalName="tray-live.ico" />
+    <EmbeddedResource Include="Assets\tray-paused.ico" LogicalName="tray-paused.ico" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Droplet.Windows.Tests" />

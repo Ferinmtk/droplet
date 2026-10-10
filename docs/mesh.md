@@ -544,7 +544,9 @@ for each peer, what it shares with it, and can pause it. **Enforcement is
 local**: every device checks what it sends and what it accepts against its
 own settings, whatever the peer says or does. The Linux and Mac agent is
 the reference (`agent/droplet_agent/mesh/perms.py`); the Windows and
-Android apps follow this section. Nothing here changes `v` (still 1): the
+Android apps follow this section. The Windows app does
+(`windows-net/src/Droplet.Core/Mesh/Perms.cs`), with the reference's
+`test_perms.py` ported to .NET and run against the agent too. Nothing here changes `v` (still 1): the
 new fields and messages are optional, and an older peer that ignores them
 is treated exactly as before.
 

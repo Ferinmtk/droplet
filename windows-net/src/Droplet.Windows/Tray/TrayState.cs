@@ -51,6 +51,9 @@ internal sealed record TrayState
     /// <summary>Mesh peers trusted (paired, or listed by the hub).</summary>
     public int Peers { get; init; }
 
+    /// <summary>Pause everything is on: nothing is shared with any device.</summary>
+    public bool PausedAll { get; init; }
+
     /// <summary>The tooltip, as the Go app worded it, plus the mesh.</summary>
     public string Tooltip()
     {
@@ -73,6 +76,10 @@ internal sealed record TrayState
         {
             text += " · remote control paused";
         }
+        if (PausedAll)
+        {
+            text += " · everything paused";
+        }
         return "droplet — " + text;
     }
 
@@ -82,9 +89,13 @@ internal sealed record TrayState
         _ => $"{PeersLinked} of {Peers} devices linked",
     };
 
-    /// <summary>Which icon: amber while someone sends input, grey when nothing can be reached, else the drop.</summary>
+    /// <summary>
+    /// Which icon: grey with a pause sign while everything is paused, amber while someone sends
+    /// input, grey when nothing can be reached, else the drop.
+    /// </summary>
     public string Icon() => this switch
     {
+        { PausedAll: true } => "tray-paused",
         { InputNow: true, RemotePaused: false } => "tray-live",
         { Configured: true, Connected: true } => "tray",
         { PeersLinked: > 0 } => "tray",

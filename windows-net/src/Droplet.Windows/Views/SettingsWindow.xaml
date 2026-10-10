@@ -8,6 +8,29 @@
             <TextBlock Text="Settings" Style="{StaticResource PageTitle}" />
             <TextBlock Text="Changes are saved as you make them." Style="{StaticResource Caption}" Margin="0,0,0,16" />
 
+            <Border x:Name="PausedBanner" Style="{StaticResource Banner}" Visibility="Collapsed"
+                    Background="{DynamicResource DropletWarnSoftBrush}" BorderBrush="{DynamicResource DropletWarnBrush}">
+                <DockPanel>
+                    <Button Content="Resume everything" Style="{StaticResource PrimaryButton}" DockPanel.Dock="Right" Click="ResumeAll_Click" />
+                    <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Text="Everything is paused: nothing is shared with any device." />
+                </DockPanel>
+            </Border>
+
+            <!-- sharing: Pause everything (each device's own switches are in Devices, under Permissions) -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Sharing" Style="{StaticResource SectionTitle}" />
+                    <CheckBox x:Name="PausedAll" Content="Pause everything" Style="{StaticResource Switch}" Click="PausedAll_Click" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="28,0,0,6">
+                        Nothing is shared with any device, either way, until you turn this off: no files, messages, clipboard,
+                        notifications or remote control. Devices are told, and what you send them waits. Handy before a presentation.
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource Caption}">
+                        Each device also has its own Pause, and a switch for each thing it may do, under Permissions… in Devices.
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
             <!-- this PC -->
             <Border Style="{StaticResource Card}">
                 <StackPanel>

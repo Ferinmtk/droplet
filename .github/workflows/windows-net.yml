@@ -72,8 +72,18 @@ jobs:
       - name: Core tests (unit)
         run: ./tests/Droplet.Core.Tests/bin/Release/net10.0/Droplet.Core.Tests.exe -namespace- Droplet.Core.Tests.Interop
 
+      # they also render some windows to PNG (DROPLET_SHOTS), kept as an artifact for reviewing the UI
       - name: Windows tests
+        env:
+          DROPLET_SHOTS: ${{ runner.temp }}/screenshots
         run: ./tests/Droplet.Windows.Tests/bin/Release/net10.0-windows10.0.19041.0/Droplet.Windows.Tests.exe
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: droplet-windows-screenshots
+          path: ${{ runner.temp }}/screenshots
+          if-no-files-found: ignore
 
       # the plain exe: self-contained, one file, not trimmed (WPF doesn't support trimming)
       - name: Publish the exe
