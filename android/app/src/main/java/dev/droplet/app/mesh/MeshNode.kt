@@ -961,8 +961,8 @@ class MeshNode(
             host.log("mesh: receiving ${c.name} (${c.size} bytes) from ${entry.name}")
             var lastNote = 0L
             val part = MeshFiles.download(identity, entry.fp, hosts, c, incomingDir, log = host::log, stopped = { stopped },
-                sleep = { ms -> var left = ms; while (left > 0 && !stopped && key !in dlCancel) { Thread.sleep(minOf(left, 200)); left -= 200 } },
-                cancelled = { key in dlCancel },
+                sleep = { ms -> var left = ms; while (left > 0 && !stopped && !dlCancel.containsKey(key)) { Thread.sleep(minOf(left, 200)); left -= 200 } },
+                cancelled = { dlCancel.containsKey(key) },
                 onProgress = { got, size ->
                 transfers.progress(c.id, got)
                 tellTransfer(c.id)
