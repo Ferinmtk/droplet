@@ -6,6 +6,7 @@ reference other platforms follow:
 - identity.py   the long-lived key and self-signed certificate; the fingerprint is the peer
 - tlsctx.py     mutual TLS: server and client contexts, the fingerprint check
 - trust.py      the trust list (roster peers and directly paired peers)
+- perms.py      per-device permissions and Pause: your device or someone else's, a switch each
 - discovery.py  `_droplet-peer._tcp` over mDNS: announcing and browsing
 - wslink.py     a WebSocket over an established TLS socket (websockets' Sans-I/O layer)
 - server.py     the mesh port: /mesh (WebSocket), /mesh/files/<id>, /mesh/pair

@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QLineEdit, QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget
 
 from . import model
+from .perms import RelationChoice
 from .widgets import Card, button, device_icon, font, hbox, icon_label, label, primary, title, vbox
 
 IPHONE_HOW = ("On the iPhone, open droplet.noxeratech.com/app in Safari, add it to the Home Screen, "
@@ -136,7 +137,11 @@ class PairPage(QWidget):
         self.again.clicked.connect(lambda: self.start(self.flow.target, self.flow.peer.get("name")))
         self.done.clicked.connect(self._finish)
         self.back.clicked.connect(self.reset)
+        # after the codes match: is it yours, or someone else's?
+        self.relation = RelationChoice()
+        self.relation.chosen.connect(self.choose)
         flow.setLayout(vbox(None, self.headline, 6, self.code, 6, hbox(None, self.detail, None),
+                            hbox(None, self.relation, None),
                             hbox(None, self.no, self.back, self.yes, self.again, self.done, None),
                             12, hbox(None, self.cert, None), None, spacing=10))
 
@@ -236,6 +241,12 @@ class PairPage(QWidget):
 
     def confirm(self, yes: bool):
         req = self.flow.confirm(yes)
+        self.show_flow()
+        if req is not None:
+            self.win.agent.ask(req, self._confirmed)
+
+    def choose(self, relation: str):
+        req = self.flow.choose(relation)
         if req is None:
             return
         self.show_flow()
@@ -261,7 +272,7 @@ class PairPage(QWidget):
                 self.win.refresh()
 
     def reset(self):
-        if self.flow.state in ("code", "waiting"):
+        if self.flow.state in ("code", "relation", "waiting"):
             self.confirm(False)
         self.flow.reset()
         self.address.clear()
@@ -289,8 +300,9 @@ class PairPage(QWidget):
         showing = bool(fp) and st in ("code", "waiting")
         self.cert.setText(f"Its certificate:\n{model.grouped_fp(fp, per_line=8)}" if showing else "")
         self.cert.setVisible(bool(self.cert.text()))
+        self.relation.setVisible(st == "relation")
         self.yes.setVisible(st == "code")
-        self.no.setVisible(st in ("code", "waiting"))
+        self.no.setVisible(st in ("code", "relation", "waiting"))
         self.no.setText("No, cancel" if st == "code" else "Cancel")
         self.again.setVisible(st in ("declined", "expired", "error") and bool(f.target))
         self.done.setVisible(st == "paired")

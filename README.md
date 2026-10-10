@@ -180,6 +180,24 @@ The **Linux and Mac agent** is the first peer (`droplet-agent peers`, `pair`,
 still go through the hub. The Android app also controls your TV directly.
 Details: [agent/README.md](agent/README.md) and [docs/mesh.md](docs/mesh.md).
 
+### Your devices, and someone else's
+
+When you pair, droplet asks: **is this your device, or someone else's?**
+A deskmate's laptop or a friend's phone gets files, messages and ring, and
+nothing else: no clipboard, no notifications, no remote control. Every
+device has a switch for each of these, changeable any time, and a
+**Pause** that stops all sharing with it until you resume (pause the
+deskmate so they don't get your clipboard). **Pause everything** does it
+for every device at once, while you present. Each device enforces its own
+settings, both ways; the other side is told, so its app can say "Paused
+by…" and grey out what won't work. Devices paired before, and your hub's
+devices, stay your own, with everything on.
+
+Built in the Linux and Mac agent (its window, tray and `droplet-agent
+allow`, `pause`, `resume`) and the iPhone web app; Windows and Android
+next. Details: [agent/README.md](agent/README.md#your-devices-and-someone-elses)
+and [docs/mesh.md §9.9](docs/mesh.md).
+
 ## Tailnet: real HTTPS from anywhere
 
 If the hub is on [Tailscale](https://tailscale.com), droplet can put itself

@@ -47,16 +47,17 @@ def find(items, key):
 def test_view_lists_peers_with_their_state_and_actions():
     v = build_view(STATUS)
     assert v.running
-    assert labels(v.items) == ["Open Droplet", "Pair an iPhone…", "slim", "friend wants to pair (code 1234)",
-                               "phone — connected",
+    assert labels(v.items) == ["Open Droplet", "Pair an iPhone…", "slim", "Pause everything",
+                               "friend wants to pair (code 1234)", "phone — connected",
                                "office_pc — nearby", "laptop — not reachable", "Open received files"]
     assert find(v.items, "open-app").action == ("open-app",)
     header = find(v.items, "header")
     assert not header.enabled and header.action is None
     phone = find(v.items, "peer:p1")
-    assert labels(phone.children) == ["Send files…", "Send clipboard", "Ring"]
-    assert [c.action for c in phone.children] == [("send-files", "p1", "phone"), ("send-clipboard", "p1", "phone"),
-                                                  ("ring", "p1", "phone")]
+    assert labels(phone.children) == ["Send files…", "Send clipboard", "Ring", "Pause"]
+    assert [c.action for c in phone.children if not c.separator] == [
+        ("send-files", "p1", "phone"), ("send-clipboard", "p1", "phone"), ("ring", "p1", "phone"),
+        ("pause", "p1", "phone", True)]
     assert find(v.items, "open-downloads").action == ("open-downloads",)
 
 
@@ -64,10 +65,55 @@ def test_pairing_requests_need_attention():
     v = build_view(STATUS)
     assert v.status == ATTENTION
     req = find(v.items, "pair:r1")
-    assert [(c.label, c.action) for c in req.children] == [("Accept", ("pair-answer", "r1", True, "friend")),
-                                                           ("Decline", ("pair-answer", "r1", False, "friend"))]
+    assert [(c.label, c.action) for c in req.children] == [
+        ("Accept: it's my device", ("pair-answer", "r1", True, "friend", "own")),
+        ("Accept: it's someone else's", ("pair-answer", "r1", True, "friend", "other")),
+        ("Decline", ("pair-answer", "r1", False, "friend"))]
     assert v.tooltip == "1 device connected. friend wants to pair"
     assert build_view({**STATUS, "incoming": []}).status == ACTIVE
+
+
+def test_a_paused_device_and_someone_elses():
+    peers = [dict(STATUS["peers"][0], paused=True),
+             dict(STATUS["peers"][1], relation="other", allow={"files": True, "clipboard": False})]
+    v = build_view({**STATUS, "incoming": [], "peers": peers})
+    phone, pc = find(v.items, "peer:p1"), find(v.items, "peer:p2")
+    assert phone.label == "phone — paused" and pc.label == "office_pc (someone else's) — nearby"
+    # paused: nothing can be sent until it's resumed, which is right there
+    assert [c.enabled for c in phone.children if not c.separator] == [False, False, False, True]
+    assert find(v.items, "peer:p1:pause").label == "Resume"
+    assert find(v.items, "peer:p1:pause").action == ("pause", "p1", "phone", False)
+    # someone else's, with the clipboard off: no Send clipboard
+    assert not find(v.items, "peer:p2:clip").enabled and find(v.items, "peer:p2:files").enabled
+
+
+def test_pause_everything_is_at_the_top_and_shows_on_the_icon():
+    v = build_view({**STATUS, "incoming": []})
+    assert find(v.items, "pause-all").action == ("pause-all", True) and not v.paused
+    v = build_view({**STATUS, "incoming": [], "paused_all": True})
+    item = find(v.items, "pause-all")
+    assert item.label == "Resume everything" and item.action == ("pause-all", False)
+    assert v.paused and v.tooltip.startswith("Everything is paused.")
+    assert not find(v.items, "peer:p1:clip").enabled
+    o = TrayObjects(icons=Icons.load())
+    o.show(build_view({**STATUS, "incoming": []}))
+    normal = o.item_properties()["IconPixmap"][1]
+    signals = o.show(v)
+    assert (ITEM_PATH, ITEM_IFACE, "NewIcon", "", ()) in signals
+    assert o.item_properties()["IconPixmap"][1] == o.icons.paused != normal
+
+
+def test_pause_actions_ask_the_agent():
+    asked, notes = [], []
+    acts = Actions(lambda req, timeout=0: asked.append(req) or {"name": "phone", "paused": True},
+                   lambda *a: notes.append(a))
+    acts.pause("p1", "phone", True)
+    acts.pause_all(False)
+    acts.pair_answer("r1", True, "friend", "other")
+    assert asked == [{"cmd": "pause", "peer": "p1"}, {"cmd": "resume", "all": True},
+                     {"cmd": "pair-answer", "request": "r1", "accept": True, "relation": "other"}]
+    assert notes[0][0] == "Paused phone" and notes[1][0] == "Everything is resumed"
+    assert "someone else's" in notes[2][1]
 
 
 def test_tooltip_counts_connected_devices():
@@ -232,7 +278,7 @@ def test_menu_methods_serialise(objects):
     menu = objects.menu
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetLayout", "iias", (0, -1, []))
     rev, (root, _, kids) = reply.body
-    assert rev == menu.revision and root == 0 and len(kids) == 12   # Open Droplet, Pair an iPhone, a separator
+    assert rev == menu.revision and root == 0 and len(kids) == 13   # Open Droplet, Pair an iPhone, a separator
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetGroupProperties", "aias", ([1, 2, 3], ["label"]))
     assert [i for i, _ in reply.body[0]] == [1, 2, 3]
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetProperty", "is", (menu.id_of("header"), "label"))
@@ -252,7 +298,7 @@ def test_clicks_become_actions(objects):
     accept = objects.menu.id_of("pair:r1:accept")
     reply, action = call(objects, MENU_PATH, MENU_IFACE, "EventGroup", "a(isvu)",
                          ([(accept, "clicked", ("i", 0), 0), (9999, "clicked", ("i", 0), 0)],))
-    assert reply.body == ([9999],) and action == ("pair-answer", "r1", True, "friend")
+    assert reply.body == ([9999],) and action == ("pair-answer", "r1", True, "friend", "own")
 
 
 def test_item_methods_and_errors_serialise(objects):

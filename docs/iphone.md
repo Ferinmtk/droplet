@@ -147,9 +147,11 @@ A paired app proves itself:
 C → {"t":"auth","v":1,"key":<base64 SPKI>,"name","sig":<base64>}
     sig = ECDSA P-256 / SHA-256 over the ASCII
           "droplet-webrtc-auth-v1" LF fpK LF fpS LF fpD LF nS
-S → {"t":"welcome","v":1,"id","name","os":"linux","caps":[]}
+S → {"t":"welcome","v":1,"id","name","os":"linux","caps":[],"perm":{"paused":false,"allow":{…}}}
     or {"t":"auth-failed","error","paired":false|true}
 ```
+
+`perm` (§3.5) is how the computer treats this app: a hint for its screens.
 
 `fpS` is the computer's fingerprint (pinned by DTLS), `fpD` the SHA-256 of
 the **browser's** DTLS certificate as the computer saw it in this very
@@ -276,6 +278,39 @@ the app never syncs it by itself: everything is one tap.
   `\u` escapes, so nearly the whole 256 KB is text. The app refuses longer
   text before sending; the computer refuses to send it ("too much text"),
   and its broadcast skips the iPhone for it.
+
+### 3.5 Your iPhone or someone else's, and Pause
+
+docs/mesh.md §9.9, over the channel. Each side enforces its own settings.
+
+- **The computer asks** "Is *iPhone* your device, or someone else's?" when
+  its owner accepts the pairing (the window's two big choices, the tray's
+  "Accept: it's my device" / "Accept: it's someone else's", or
+  `droplet-agent pair --accept [--own|--other]`). Someone else's iPhone may
+  send files and messages and ring; the computer takes no clipboard from it
+  (a `clip` is answered `{"t":"nack","id","error":"t15 doesn't allow the
+  clipboard from you","cap":"clipboard","why":"denied"}`) and sends it none.
+  Its switches can be changed any time (Permissions on its card,
+  `droplet-agent allow`).
+- **The computer tells the app** how it treats it: `perm` in `welcome`, and
+  `{"t":"perm","paused","allow","caps"}` when that changes. The app greys
+  out what won't be taken ("t15 doesn't take the clipboard from this
+  iPhone") and shows **Paused by t15** while the computer paused it. It's
+  a hint: the computer refuses regardless.
+- **The computer pauses the app** (Pause on its card or in the tray,
+  `droplet-agent pause <iphone>`, or Pause everything): it sends nothing,
+  and what the app sends is answered `{"t":"refused","re","id","cap",
+  "why":"paused","error"}`. The computer's messages and files for it wait in
+  its outbox and go on resume.
+- **The app pauses a computer**: **Pause** on its row on the home screen, or
+  **⋯ → Pause sharing with *computer***. Kept in IndexedDB (`paused` on the
+  computer's record), so it holds across launches. The app then sends
+  nothing (its buttons are off, with the reason above the message box),
+  answers whatever the computer sends with the same `refused`, drops
+  incoming file data, and tells the computer with
+  `{"t":"perm","paused":true,"allow":{}}` (again on every connection while
+  paused). The computer holds what it would send (`waiting: iPhone paused
+  sharing with you`) until `{"t":"perm","paused":false}`.
 
 ## 4. The computer's side
 

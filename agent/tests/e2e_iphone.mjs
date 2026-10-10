@@ -264,6 +264,93 @@ try {
   await page.evaluate(() => { document.getElementById("toast").hidden = true; });
   await shot(page, "clipboard-4-peer");
 
+  // --- permissions and Pause (docs/mesh.md §9.9) ---
+  // the computer says the iPhone is someone else's: files and messages yes, clipboard no
+  const asOther = await control({ cmd: "perm-set", peer: me.name, relation: "other" });
+  check("the computer marks the iPhone as someone else's", asOther.relation === "other" && asOther.allow.clipboard === false && asOther.allow.files === true, JSON.stringify(asOther));
+  check("…the app is told, and greys out Send clipboard",
+    await waitUntil(() => page.evaluate(() => document.getElementById("send-clip").disabled), 10000));
+  // the computer enforces it whatever the app does: a clip sent past the app's own check
+  const forced = await page.evaluate(async () => {
+    const s = [...window.droplet.sessions.values()][0];
+    const id = "forcedclip01";
+    const done = s._ack(id, 8000);
+    s.dc.send(JSON.stringify({ t: "clip", id, text: "past the hint" }));
+    return done;
+  });
+  check("…and refuses a clipboard from it anyway, with the reason", !forced.ok && /doesn't allow the clipboard from you/.test(forced.error || ""), JSON.stringify(forced));
+  check("…without touching its clipboard", !agentLog().includes("'past the hint'"));
+  const noClipOut = await control({ cmd: "clip", peer: me.name, text: "not for a guest" });
+  check("…and won't send its own clipboard to it", noClipOut.error && noClipOut.error.includes("switched off here"), JSON.stringify(noClipOut));
+  const small = crypto.randomBytes(40 * 1024);
+  await page.evaluate(() => { document.getElementById("transfers").replaceChildren(); });
+  await page.setInputFiles("#file-input", { name: "guest file.bin", mimeType: "application/octet-stream", buffer: small });
+  const guestFile = await waitUntil(async () => (await page.textContent("#transfers")).includes("Sent"), 20000);
+  check("files from someone else's iPhone still arrive", guestFile && fs.existsSync(path.join(downloads, "guest file.bin")), await page.textContent("#transfers"));
+  await page.fill("#composer", "a guest can still message");
+  await page.press("#composer", "Enter");
+  check("…and messages", await waitUntil(async () => (await control({ cmd: "chat" })).messages.find((m) => m.body === "a guest can still message"), 10000));
+  await shot(page, "6-someone-elses");
+
+  // the computer pauses the iPhone: shown in the app; what the computer sends waits, then goes
+  await control({ cmd: "perm-set", peer: me.name, relation: "own" });
+  await control({ cmd: "pause", peer: me.name });
+  const pausedBy = await waitUntil(async () => (await page.textContent("#peer-state")) === "Paused by t15-e2e", 10000);
+  check("the computer pauses it: the app says \"Paused by t15-e2e\"", pausedBy, await page.textContent("#peer-state"));
+  check("…and its message box and Send clipboard are off", await page.evaluate(() => document.getElementById("composer").disabled && document.getElementById("send-clip").disabled));
+  await sleep(300);
+  await shot(page, "7-paused-by-computer");
+  const held = await control({ cmd: "text", peer: me.name, body: "after the pause", wait: 5 });
+  check("…a message from the computer waits, it doesn't fail", held.state === "queued" && /^waiting: /.test(held.why || ""), JSON.stringify(held));
+  await control({ cmd: "resume", peer: me.name });
+  check("…and arrives on resume", await waitUntil(async () => (await page.textContent("#messages")).includes("after the pause"), 15000));
+  check("…and the app is back to Connected", await waitUntil(async () => (await page.textContent("#peer-state")) === "Connected", 5000));
+
+  // the iPhone pauses the computer: enforced in the app, and the computer is told
+  await page.click("#peer-menu");
+  await page.click("#pause-toggle");
+  const told = await waitUntil(async () => {
+    const p = (await control({ cmd: "status" })).peers.find((x) => x.fp === me.fp);
+    return p && p.remote && p.remote.paused;
+  }, 10000);
+  check("Pause in the app tells the computer", told);
+  check("…the app shows Resume, and that it's paused", await page.isVisible("#peer-resume") && (await page.textContent("#peer-paused")).includes("You paused"));
+  const toPaused = await control({ cmd: "clip", peer: me.name, text: "should not go" });
+  check("…the computer doesn't send to it, and says why", toPaused.error && toPaused.error.includes("paused sharing with you"), JSON.stringify(toPaused));
+  const heldByApp = await control({ cmd: "text", peer: me.name, body: "while you paused me", wait: 5 });
+  check("…its messages wait", heldByApp.state === "queued" && (heldByApp.why || "").includes("paused sharing with you"), JSON.stringify(heldByApp));
+  const pausedRefusal = await page.evaluate(async () => {
+    // the app refuses what reaches it anyway (a computer that ignored the hint)
+    const s = [...window.droplet.sessions.values()][0];
+    const sent = [];
+    const orig = s._send.bind(s);
+    s._send = (m) => { sent.push(m); orig(m); };
+    s._message(JSON.stringify({ t: "text", id: "sneaky000001", body: "ignored the hint" }));
+    s._send = orig;
+    return sent;
+  });
+  check("…and the app refuses what arrives anyway, saying it's paused",
+    pausedRefusal.length === 1 && pausedRefusal[0].t === "refused" && pausedRefusal[0].why === "paused" && pausedRefusal[0].id === "sneaky000001", JSON.stringify(pausedRefusal));
+  await sleep(300);
+  await page.evaluate(() => { document.getElementById("toast").hidden = true; });
+  await shot(page, "8-paused-in-app");
+  await page.click("#peer .back");
+  await page.waitForSelector("#home:not([hidden])");
+  check("the home screen shows it paused, with Resume", (await page.textContent("#devices")).includes("Paused") && (await page.textContent(".device-card .pause-chip")) === "Resume");
+  await page.evaluate(() => { document.getElementById("toast").hidden = true; });
+  await shot(page, "9-home-paused");
+  check("the app keeps its Pause (it holds after a restart)", await page.evaluate(async () => {
+    const p = (await window.droplet.db.peers.all())[0];
+    return p.paused === true;
+  }));
+  await page.click(".device-card .pause-chip");
+  check("resuming in the app delivers what waited", await waitUntil(async () => {
+    const m = (await control({ cmd: "chat" })).messages.find((x) => x.body === "while you paused me");
+    return m && m.state === "sent";
+  }, 15000));
+  await page.click(".device-card .device");
+  await page.waitForSelector("#peer:not([hidden])");
+
   // --- the key survives, and it reconnects ---
   await page.reload();
   await page.waitForSelector("#home:not([hidden])");

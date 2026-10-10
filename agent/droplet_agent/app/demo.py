@@ -18,9 +18,12 @@ NEARBY_FP = "e8a4" * 16
 ASKING_FP = "5c33" * 16
 
 
-def _peer(pid, name, fp, os_name, link=None, on_lan=False, lan=(), source="paired"):
+def _peer(pid, name, fp, os_name, link=None, on_lan=False, lan=(), source="paired", relation="own"):
+    from ..mesh import perms
     return {"id": pid, "name": name, "fp": fp, "source": source, "lan": list(lan), "port": 1739,
-            "tailnet_ip": None, "os": os_name, "hub": None, "link": link, "on_lan": on_lan}
+            "tailnet_ip": None, "os": os_name, "hub": None, "link": link, "on_lan": on_lan,
+            "relation": relation, "allow": perms.defaults(relation), "paused": False, "remote": None,
+            "refused": None}
 
 
 class DemoAgent:
@@ -36,7 +39,7 @@ class DemoAgent:
         self.peers = [
             _peer("redmi-note-11e", "redmi-note-11e-pro", PHONE_FP, "android", link="lan 192.168.1.23",
                   on_lan=True, lan=["192.168.1.23"]),
-            _peer("maryanne", "maryanne", WIN_FP, "windows", on_lan=True, lan=["192.168.1.40"]),
+            _peer("maryanne", "maryanne", WIN_FP, "windows", on_lan=True, lan=["192.168.1.40"], relation="other"),
             _peer("sheffield", "sheffield", LINUX_FP, "linux", lan=["192.168.1.61"]),
         ]
         self.nearby = [{"id": "pixel-tablet", "name": "pixel-tablet", "fp": NEARBY_FP, "os": "android",
@@ -63,6 +66,7 @@ class DemoAgent:
         ]
         self.jobs: dict[str, dict] = {}
         self.pairing: dict[str, dict] = {}
+        self.paused_all = False
 
     def _name(self, fp):
         return next((p["name"] for p in self.peers if p["fp"] == fp), "?")
@@ -96,9 +100,33 @@ class DemoAgent:
     def _answer(self, req: dict) -> dict:
         cmd = req.get("cmd")
         if cmd == "status":
+            from ..mesh import perms
             return {"id": "slim", "name": "slim", "fp": "9be1" * 16, "port": 1739,
-                    "peers": [dict(p) for p in self.peers], "nearby": [dict(n) for n in self.nearby],
+                    "paused_all": self.paused_all, "capabilities": list(perms.CAPABILITIES),
+                    "peers": [dict(p, allow=dict(p["allow"])) for p in self.peers],
+                    "nearby": [dict(n) for n in self.nearby],
                     "incoming": [dict(r) for r in self.incoming], "outbox": [], "refused": 0}
+        if cmd == "perm-set":
+            from ..mesh import perms
+            p = self._find(req.get("peer"))
+            if req.get("relation") in perms.RELATIONS:
+                p["relation"] = req["relation"]
+                p["allow"] = perms.defaults(req["relation"])
+            allow = req.get("allow") if isinstance(req.get("allow"), dict) else {}
+            if req.get("capability"):
+                allow = {req["capability"]: bool(req.get("on"))}
+            for c, on in allow.items():
+                if c not in perms.CAPABILITIES:
+                    raise ValueError(f"no capability called {c!r}")
+                p["allow"][c] = bool(on)
+            return {k: p[k] for k in ("name", "fp", "relation", "allow", "paused")}
+        if cmd in ("pause", "resume"):
+            if req.get("all"):
+                self.paused_all = cmd == "pause"
+                return {"paused_all": self.paused_all}
+            p = self._find(req.get("peer"))
+            p["paused"] = cmd == "pause"
+            return {k: p[k] for k in ("name", "fp", "relation", "allow", "paused")} | {"paused_all": self.paused_all}
         if cmd == "chat":
             msgs = self.chat
             if req.get("peer"):
@@ -161,6 +189,7 @@ class DemoAgent:
             if pr is None:
                 raise ValueError("no such pairing request")
             pr["state"] = "waiting" if req.get("yes") else "cancelled"
+            pr["relation"] = req.get("relation") or "own"
             return {"state": pr["state"]}
         if cmd == "pair-status":
             pr = self.pairing.get(req.get("request"))
@@ -173,7 +202,7 @@ class DemoAgent:
                     p = pr["peer"]
                     self.nearby = [n for n in self.nearby if n["fp"] != p["fp"]]
                     self.peers.append(_peer(p["id"], p["name"], p["fp"], p["os"], link="lan 192.168.1.77",
-                                            on_lan=True))
+                                            on_lan=True, relation=pr.get("relation") or "own"))
             return {"state": pr["state"]}
         if cmd == "pair-answer":
             r = next((r for r in self.incoming if r["request"] == req.get("request")), None)
@@ -181,7 +210,8 @@ class DemoAgent:
                 raise ValueError("no such pairing request waiting (it may have expired)")
             self.incoming.remove(r)
             if req.get("accept"):
-                self.peers.append(_peer(r["id"], r["name"], r["fp"], r["os"], on_lan=True))
+                self.peers.append(_peer(r["id"], r["name"], r["fp"], r["os"], on_lan=True,
+                                        relation=req.get("relation") or "own"))
             return {"state": "accepted" if req.get("accept") else "denied", "name": r["name"], "fp": r["fp"]}
         if cmd == "qr":
             return {"link": "https://droplet.noxeratech.com/app/#pair=eyJ2IjoxLCJuIjoiZGVtbyJ9",

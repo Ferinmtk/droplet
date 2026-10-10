@@ -110,8 +110,13 @@ def test_pairing_flow_from_this_side():
     f.on_started(demo.call(req))
     assert f.state == "code" and f.code == "2604" and f.detail() == "Does pixel-tablet show the same code?"
     assert f.poll() is None                    # nothing to wait for until the codes match
-    req = f.confirm(True)
-    assert req["cmd"] == "pair-confirm" and req["yes"] and f.state == "waiting"
+    # the codes match: then, is it yours or someone else's?
+    assert f.confirm(True) is None and f.state == "relation"
+    assert f.headline() == "Is pixel-tablet your device, or someone else's?"
+    assert f.choose("friend") is None
+    req = f.choose("other")
+    assert req == {"cmd": "pair-confirm", "request": f.request, "yes": True, "relation": "other"}
+    assert f.state == "waiting"
     f.on_confirmed(demo.call(req))
     assert f.confirm(True) is None
     f.on_status(demo.call(f.poll()))
@@ -119,9 +124,27 @@ def test_pairing_flow_from_this_side():
     f.on_status(None, "the agent didn't answer")   # a missed poll changes nothing
     f.on_status(demo.call(f.poll()))
     assert f.state == "paired" and f.headline() == "Paired with pixel-tablet"
+    assert f.detail().endswith("as someone else's device.")
     assert f.poll() is None
-    # it's a paired device now
-    assert any(p["name"] == "pixel-tablet" for p in demo.call({"cmd": "status"})["peers"])
+    # it's a paired device now, someone else's
+    (p,) = [p for p in demo.call({"cmd": "status"})["peers"] if p["name"] == "pixel-tablet"]
+    assert p["relation"] == "other" and not p["allow"]["clipboard"]
+
+
+def test_what_a_card_says_about_permissions():
+    p = {"name": "Brian's laptop", "relation": "other",
+         "allow": {"files": True, "chat": True, "clipboard": False, "notify": False, "control": False,
+                   "ring": True, "access": False}, "link": "lan 1.2.3.4"}
+    assert model.is_other(p) and not model.is_paused(p)
+    assert model.perm_summary(p) == "The clipboard, notifications, remote control and SMS, files and commands off"
+    assert model.perm_summary(dict(p, allow={"files": True})) == "Everything allowed"
+    assert model.can_send(p, "files") and not model.can_send(p, "clipboard")
+    assert not model.can_send(p, "files", paused_all=True)
+    assert model.state_text(dict(p, paused=True)) == "Paused: nothing is shared with it"
+    q = dict(p, remote={"paused": True, "allow": {}})
+    assert model.state_text(q) == "Paused by Brian's laptop" and not model.can_send(q, "ring")
+    # what it said it won't take, greys out here too
+    assert not model.allows(dict(p, relation="own", allow={"ring": True}, remote={"allow": {"ring": False}}), "ring")
 
 
 def test_pairing_flow_ends():
@@ -138,6 +161,7 @@ def test_pairing_flow_ends():
         f.start("box")
         f.on_started({"request": "r", "code": "1", "peer": {"name": "box"}})
         f.confirm(True)
+        f.choose("own")
         f.on_status({"state": answer})
         assert f.state == end and f.headline()
 

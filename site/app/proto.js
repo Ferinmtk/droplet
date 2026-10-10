@@ -9,6 +9,17 @@ const HIGH = 1024 * 1024;
 const LOW = 256 * 1024;
 export const MAX_FRAME = 256 * 1024;   // bytes in one message on the channel (its max-message-size)
 
+// per-device permissions (docs/mesh.md §9.9): the capability each message needs
+const CAPS = { text: "chat", file: "files", "file-end": "files", clip: "clipboard", ring: "ring", "ring-stop": "ring" };
+const NOUNS = { files: "files", chat: "messages", clipboard: "the clipboard", ring: "ringing" };
+
+export function cleanPerm(p) {
+  if (!p || typeof p !== "object") return null;
+  const allow = {};
+  if (p.allow && typeof p.allow === "object") for (const [k, v] of Object.entries(p.allow)) if (typeof v === "boolean") allow[k] = v;
+  return { paused: p.paused === true, allow };
+}
+
 export class Session extends EventTarget {
   // peer: { fp, addresses, port, name }; id: this device's identity (crypto.js)
   constructor(peer, id, myName) {
@@ -25,6 +36,11 @@ export class Session extends EventTarget {
     this._next = [];               // [{t, resolve, reject}] waiting for a message type
     this._in = new Map();          // 16-hex id prefix → incoming file
     this._sendQueue = Promise.resolve();
+    // how the computer treats this iPhone ({paused, allow}): what it said, a hint for the screens
+    this.remote = null;
+    // this iPhone paused sharing with the computer: nothing goes, nothing is taken (enforced here)
+    this.paused = false;
+    this._refusedAt = new Map();   // message type → when we last said no
   }
 
   emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
@@ -56,8 +72,45 @@ export class Session extends EventTarget {
       throw err;
     }
     this.ready = true;
+    this.remote = cleanPerm(m.perm);
     this.emit("ready", m);
     return m;
+  }
+
+  // Pause on this iPhone: tell the computer (so it holds what it would send), and refuse
+  // whatever comes while paused. The computer enforces its own settings; this is the iPhone's.
+  setPaused(on) {
+    this.paused = !!on;
+    try { this._send({ t: "perm", paused: this.paused, allow: {} }); } catch (_) {}
+  }
+
+  // what the computer said it won't take from this iPhone: "paused", "denied" or null
+  refuses(cap) {
+    if (!this.remote) return null;
+    if (this.remote.paused) return "paused";
+    if (cap && this.remote.allow[cap] === false) return "denied";
+    return null;
+  }
+
+  _check(cap) {
+    if (this.paused) throw Object.assign(new Error("You paused sharing with this computer. Resume to send."), { paused: true });
+    const why = this.refuses(cap);
+    const name = (this.hello && this.hello.name) || "The computer";
+    if (why === "paused") throw Object.assign(new Error(`${name} paused sharing with this iPhone.`), { paused: true });
+    if (why === "denied") throw new Error(`${name} doesn't allow ${NOUNS[cap] || cap} from this iPhone.`);
+  }
+
+  _refuse(m, cap) {
+    // paused here: say so, so the computer waits instead of failing (an id gets its own answer)
+    const error = `${this.myName} paused sharing with you`;
+    if (typeof m.id === "string" && m.id.length <= 64) {
+      this._send({ t: "refused", re: m.t, id: m.id, cap, why: "paused", error });
+      return;
+    }
+    const now = Date.now();
+    if (now - (this._refusedAt.get(m.t) || 0) < 5000) return;
+    this._refusedAt.set(m.t, now);
+    this._send({ t: "refused", re: m.t, cap, why: "paused", error });
   }
 
   // pairing, steps 1–2: returns the code to show; then confirmed() waits for the computer's answer
@@ -98,16 +151,18 @@ export class Session extends EventTarget {
 
   // --- messages ---
   async sendText(body) {
+    this._check("chat");
     const id = randomHex(12);
     const done = this._ack(id, 10000);
     this._send({ t: "text", id, body, ts: Date.now() / 1000 });
     const r = await done;
-    if (!r.ok) throw new Error(r.error || "not delivered");
+    if (!r.ok) throw Object.assign(new Error(r.error || "not delivered"), { paused: !!r.paused });
     return id;
   }
 
   // this iPhone's clipboard text, sent on a tap: resolves once the computer has put it on its clipboard
   async sendClip(text) {
+    this._check("clipboard");
     const id = randomHex(12);
     const frame = JSON.stringify({ t: "clip", id, text });
     if (new TextEncoder().encode(frame).length > MAX_FRAME) throw new Error("It's too long to send (256 KB at most).");
@@ -129,6 +184,7 @@ export class Session extends EventTarget {
 
   async _sendFile(file, onProgress) {
     if (!this.ready) throw new Error("Not connected.");
+    this._check("files");
     const id = randomHex(16);
     const prefix = unhex(id.slice(0, 16));
     const done = this._ack(id, 0);
@@ -185,12 +241,30 @@ export class Session extends EventTarget {
     try { m = JSON.parse(data); } catch (_) { return; }
     const i = this._next.findIndex((w) => w.types.includes(m.t));
     if (i >= 0) { const [w] = this._next.splice(i, 1); w.resolve(m); return; }
+    // paused here: refuse what needs a capability (ring, text, files, clipboard), keep the rest
+    const cap = CAPS[m.t];
+    if (this.paused && cap) {
+      if (m.t === "file") this.emit("refused-file", m);
+      if (m.t !== "file-end") this._refuse(m, cap);
+      return;
+    }
     switch (m.t) {
       case "ack": case "nack": {
         const r = this._wait.get(m.id);
         if (r) { this._wait.delete(m.id); r({ ok: m.t === "ack", error: m.error }); }
         break;
       }
+      case "refused": {
+        // the computer is paused (for us, or everything): what we sent wasn't taken, for now
+        const r = typeof m.id === "string" && this._wait.get(m.id);
+        if (r) { this._wait.delete(m.id); r({ ok: false, error: m.error || "paused", paused: m.why === "paused" }); }
+        this.emit("refused", m);
+        break;
+      }
+      case "perm":
+        this.remote = cleanPerm(m);
+        this.emit("perm", this.remote);
+        break;
       case "text":
         if (typeof m.id === "string" && typeof m.body === "string") {
           this._send({ t: "ack", id: m.id });

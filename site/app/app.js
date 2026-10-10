@@ -20,6 +20,7 @@ const status = new Map();       // fp → "connecting" | "connected" | "offline"
 const retry = new Map();        // fp → timer
 let current = null;             // the peer being shown
 let scanning = null;
+const currentPeers = new Map(); // fp → the stored peer record, as last rendered
 // clipboard text the computers sent, newest first: in memory only, never stored (it may be a
 // password), so it's gone when iOS ends the app. { id, fp, text, ts, fresh }
 const clips = [];
@@ -49,8 +50,46 @@ function show(view) {
 }
 
 // --- connections ---
+// --- pause and permissions (docs/mesh.md §9.9) ---
+// A peer record's `paused` is this iPhone's own Pause for that computer (enforced here, and
+// told to it). What the computer said about this iPhone (paused, or something switched off)
+// comes in its welcome and `perm`, and only greys things out here: the computer enforces it.
+async function peerRecord(fp) { return (await db.peers.get(fp)) || null; }
+
+function remoteOf(fp) {
+  const s = sessions.get(fp);
+  return s ? s.remote : null;
+}
+
+// why `cap` can't be used with this computer now, in words; "" if it can
+function blocked(peer, cap) {
+  if (peer.paused) return "You paused sharing with it.";
+  const r = remoteOf(peer.fp);
+  if (r && r.paused) return `${peer.name} paused sharing with this iPhone.`;
+  if (r && cap && r.allow[cap] === false) {
+    const noun = { clipboard: "the clipboard", files: "files", chat: "messages" }[cap] || cap;
+    return `${peer.name} doesn't take ${noun} from this iPhone.`;
+  }
+  return "";
+}
+
+async function setPaused(peer, on) {
+  peer.paused = !!on;
+  await db.peers.put(peer);
+  currentPeers.set(peer.fp, peer);
+  const s = sessions.get(peer.fp);
+  if (s) s.setPaused(peer.paused);
+  toast(on ? `Paused ${peer.name}: nothing goes to it or comes from it until you resume.` : `Resumed ${peer.name}.`);
+  renderDevices();
+  if (current && current.fp === peer.fp) { current.paused = peer.paused; renderPeerState(); }
+}
+
 function stateText(fp) {
   const s = status.get(fp);
+  const rec = currentPeers.get(fp);
+  if (rec && rec.paused) return "Paused: nothing is shared with it";
+  const r = remoteOf(fp);
+  if (s === "connected" && r && r.paused) return `Paused by ${(rec && rec.name) || "the computer"}`;
   if (s === "connected") return "Connected";
   if (s === "connecting") return "Connecting…";
   if (s && s !== "offline") return s;
@@ -88,6 +127,15 @@ function scheduleRetry(peer, ms = 5000) {
 
 function attach(peer, s) {
   sessions.set(peer.fp, s);
+  // our own Pause, kept across launches: refuse from the first message, and tell the computer
+  if (peer.paused) s.setPaused(true);
+  s.addEventListener("perm", () => {
+    renderDevices();
+    if (current && current.fp === peer.fp) renderPeerState();
+  });
+  s.addEventListener("refused-file", (e) => {
+    if (current && current.fp === peer.fp) transferRow(`in-${e.detail.id}`, `↓ ${e.detail.name || "a file"}`, 0, e.detail.size || 0, "Not taken: you paused this computer");
+  });
   if (s.hello && s.hello.name && s.hello.name !== peer.name) { peer.name = s.hello.name; db.peers.put(peer); }
   if (s.address && peer.addresses[0] !== s.address) {
     // the address that worked goes first next time
@@ -157,21 +205,34 @@ async function forget(peer) {
 // --- home ---
 async function renderDevices() {
   const list = await db.peers.all();
+  currentPeers.clear();
+  for (const p of list) currentPeers.set(p.fp, p);
   const box = $("devices");
   box.replaceChildren(...list.sort((a, b) => a.name.localeCompare(b.name)).map((p) => {
     const on = status.get(p.fp) === "connected";
     const fresh = clips.filter((c) => c.fp === p.fp && c.fresh).length;
+    const r = remoteOf(p.fp);
+    const pausedHere = !!p.paused, pausedThere = !!(on && r && r.paused);
     const b = el("button", { className: "device" },
-      el("i", { className: "dot" + (on ? " on" : "") }),
+      el("i", { className: "dot" + (pausedHere || pausedThere ? " paused" : on ? " on" : "") }),
       el("div", {}, el("b", { textContent: p.name }), el("span", { textContent: stateText(p.fp) })),
-      fresh ? el("em", { className: "badge", textContent: "New clipboard", title: `${fresh} new` }) : null);
+      pausedHere ? el("em", { className: "badge paused", textContent: "Paused" })
+        : fresh ? el("em", { className: "badge", textContent: "New clipboard", title: `${fresh} new` }) : null);
     b.onclick = () => openPeer(p);
-    const card = el("div", { className: "device-card" }, b);
+    const card = el("div", { className: "device-card" + (pausedHere ? " is-paused" : "") }, b);
     card.dataset.fp = p.fp;
     if (on) {
-      const send = clipButton("Send clipboard");
-      send.onclick = () => sendClipboard(p, send);
-      card.append(el("div", { className: "device-tools" }, send));
+      const tools = el("div", { className: "device-tools" });
+      const why = blocked(p, "clipboard");
+      if (!why) {
+        const send = clipButton("Send clipboard");
+        send.onclick = () => sendClipboard(p, send);
+        tools.append(send);
+      }
+      const pause = el("button", { className: "chip pause-chip", textContent: pausedHere ? "Resume" : "Pause" });
+      pause.onclick = () => setPaused(p, !pausedHere);
+      tools.append(pause);
+      card.append(tools);
     }
     return card;
   }));
@@ -386,7 +447,26 @@ async function openPeer(peer) {
 function renderPeerState() {
   const st = $("peer-state");
   st.textContent = stateText(current.fp);
-  st.classList.toggle("on", status.get(current.fp) === "connected");
+  // what can't be used now, and why: one line above the composer
+  const rec = currentPeers.get(current.fp) || current;
+  const why = blocked(rec, null);
+  st.classList.toggle("on", status.get(current.fp) === "connected" && !why);
+  st.classList.toggle("paused", !!why);
+  const clipWhy = blocked(rec, "clipboard"), chatWhy = blocked(rec, "chat"), fileWhy = blocked(rec, "files");
+  const note = $("peer-paused");
+  const text = why ? `${why} ${rec.paused ? "Nothing goes to it or comes from it until you resume." : "What you send waits."}`
+    : [clipWhy, chatWhy, fileWhy].filter(Boolean).join(" ");
+  note.hidden = !text;
+  note.textContent = text;
+  note.classList.toggle("info", !why);
+  $("peer-resume").hidden = !rec.paused;
+  $("send-clip").disabled = !!clipWhy;
+  $("send-clip").title = clipWhy;
+  $("composer").disabled = $("send").disabled = !!chatWhy;
+  $("composer").placeholder = chatWhy ? "Paused" : "Message";
+  $("file-input").disabled = !!fileWhy;
+  $("file-label").classList.toggle("disabled", !!fileWhy);
+  $("pause-toggle").textContent = rec.paused ? `Resume sharing with ${rec.name}` : `Pause sharing with ${rec.name}`;
 }
 
 async function renderMessages() {
@@ -490,6 +570,17 @@ async function main() {
   $("file-input").onchange = (e) => { const files = [...e.target.files]; e.target.value = ""; sendFiles(files); };
   $("peer-menu").onclick = () => { $("sheet").hidden = false; };
   $("sheet-close").onclick = () => { $("sheet").hidden = true; };
+  $("pause-toggle").onclick = async () => {
+    $("sheet").hidden = true;
+    if (!current) return;
+    const rec = (await peerRecord(current.fp)) || current;
+    await setPaused(rec, !rec.paused);
+  };
+  $("peer-resume").onclick = async () => {
+    if (!current) return;
+    const rec = (await peerRecord(current.fp)) || current;
+    await setPaused(rec, false);
+  };
   $("unpair").onclick = async () => {
     $("sheet").hidden = true;
     if (!current) return;

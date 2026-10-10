@@ -70,7 +70,8 @@ class MenuBar(QObject):
         self.sync = sync
         self.actions = tray.Actions(self.call, notify or macos.notify, refresh=self.kick)
         icons = tray.Icons.load()
-        self.icons = {"normal": _icon(icons.normal), "attention": _icon(icons.attention), "off": _icon(icons.off)}
+        self.icons = {"normal": _icon(icons.normal), "attention": _icon(icons.attention), "off": _icon(icons.off),
+                      "paused": _icon(icons.paused)}
         self.icon = QSystemTrayIcon(self.icons["off"])
         self.menu = QMenu()
         self.icon.setContextMenu(self.menu)
@@ -120,6 +121,8 @@ class MenuBar(QObject):
         shape = tray._shape(view.items)
         if not view.running:
             self.icon.setIcon(self.icons["off"])
+        elif view.paused and view.status != tray.ATTENTION:
+            self.icon.setIcon(self.icons["paused"])
         else:
             self.icon.setIcon(self.icons["attention" if view.status == tray.ATTENTION else "normal"])
         self.icon.setToolTip(f"droplet: {view.tooltip}" if view.tooltip else "droplet")

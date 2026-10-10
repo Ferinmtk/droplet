@@ -121,6 +121,10 @@ class Host:
     def already_received(self, conn: "Conn", fid: str) -> bool: return False
     def downloads(self) -> Path: raise NotImplementedError
     def closed(self, conn: "Conn") -> None: pass
+    # per-device permissions (mesh/perms.py): how this computer treats the browser, for its
+    # welcome; and the answer refusing a file it offers (None: take it)
+    def perm(self, fp: str) -> dict | None: return None
+    def refuse_file(self, conn: "Conn", msg: dict) -> dict | None: return None
 
 
 class Conn:
@@ -228,7 +232,14 @@ class Conn:
             if fut is not None and not fut.done():
                 fut.set_result((t == "ack", str(msg.get("error") or "")[:200]))
             self.host.deliver(self, msg)
-        elif t in ("text", "unpair", "ring", "ring-stop"):
+        elif t == "refused":
+            # the app paused sharing with this computer: a file it was sent waits, and goes on resume
+            fut = self._waiting.get(msg.get("id")) if isinstance(msg.get("id"), str) else None
+            if fut is not None and not fut.done():
+                why = "paused" if msg.get("why") == "paused" else "denied"
+                fut.set_result((False, f"{why}: {str(msg.get('error') or '')[:200]}"))
+            self.host.deliver(self, msg)
+        elif t in ("text", "unpair", "ring", "ring-stop", "perm"):
             self.host.deliver(self, msg)
         elif t == "clip":
             if isinstance(msg.get("text"), str):
@@ -259,8 +270,12 @@ class Conn:
             return
         self.fp, self.name = fp, entry["name"]
         self.pairing = None
-        self.send({"t": "welcome", "v": PROTOCOL_VERSION, "id": info["id"], "name": info["name"], "os": OS_NAME,
-                   "caps": []})
+        welcome = {"t": "welcome", "v": PROTOCOL_VERSION, "id": info["id"], "name": info["name"], "os": OS_NAME,
+                   "caps": []}
+        perm = self.host.perm(fp)
+        if perm is not None:
+            welcome["perm"] = perm
+        self.send(welcome)
         log.info("webrtc: %s connected from %s", entry["name"], self.address)
         self.host.authenticated(self)
 
@@ -306,6 +321,10 @@ class Conn:
             return
         if not isinstance(size, int) or isinstance(size, bool) or not 0 <= size <= MAX_FILE:
             self.send({"t": "nack", "id": fid, "error": "bad size"})
+            return
+        no = self.host.refuse_file(self, msg)
+        if no is not None:
+            self.send(no)        # files are off for it, or it's paused: its data frames are dropped
             return
         if self.host.already_received(self, fid):
             self.send({"t": "ack", "id": fid})
@@ -406,6 +425,8 @@ class Conn:
                             self.on_progress(fid, sent)
                 if fut.done():
                     ok, why = fut.result()
+                    if not ok and why.startswith("paused:"):
+                        return False, why
                     return ok, "" if ok else f"refused: {why}"
                 if self.closed:
                     return False, f"the connection closed at {sent} bytes"
@@ -416,7 +437,7 @@ class Conn:
                     return False, "no answer"
                 if ok:
                     return True, ""
-                return False, why if why == "the connection closed" else f"refused: {why}"
+                return False, why if why == "the connection closed" or why.startswith("paused:") else f"refused: {why}"
             except OSError as e:
                 return False, f"refused: can't read it: {e.strerror or e}"
             finally:
