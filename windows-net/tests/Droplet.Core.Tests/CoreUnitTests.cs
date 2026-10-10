@@ -214,7 +214,8 @@ public sealed class RouteSelectionTests
 
     sealed class FakeNet
     {
-        public Dictionary<string, (string Id, string Fp)> Lan { get; } = [];
+        // read by probes still running after SelectAsync returns, while the test changes it
+        public System.Collections.Concurrent.ConcurrentDictionary<string, (string Id, string Fp)> Lan { get; } = new();
         public HubInfo? Remote { get; set; }
         public List<HubAnnouncement> Announced { get; } = [];
         public List<string> Calls { get; } = [];
@@ -280,7 +281,12 @@ public sealed class RouteSelectionTests
         net.Announced.Add(Announce("10.0.0.23:8443", Fp));
         res = await RouteSelector.SelectAsync(new HubTarget(Id, Fp, ["10.0.0.9:8443"], "https://t15.ts.net"), net.Deps, Quick);
         Assert.Equal("10.0.0.23:8443", res.Route.Addr);
-        Assert.DoesNotContain("https://10.0.0.50:8443", net.Calls);
+        string[] calls;
+        lock (net.Calls)
+        {
+            calls = [.. net.Calls];   // losing probes may still be adding to it
+        }
+        Assert.DoesNotContain("https://10.0.0.50:8443", calls);
     }
 
     [Fact]
