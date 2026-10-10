@@ -46,7 +46,7 @@
                                     <Run Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold" />
                                     <Run Text="{Binding Way, Mode=OneWay}" Foreground="{DynamicResource DropletDimBrush}" />
                                 </TextBlock>
-                                <ProgressBar Height="4" Margin="0,4,0,3" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}"
+                                <ProgressBar Height="4" Margin="0,4,0,3" Foreground="{DynamicResource DropletAccentBrush}" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}"
                                              IsIndeterminate="{Binding Indeterminate, Mode=OneWay}" Visibility="{Binding BarVisibility}" />
                                 <TextBlock Text="{Binding Status}" Style="{StaticResource Caption}" />
                             </StackPanel>
