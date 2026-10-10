@@ -36,6 +36,7 @@ from . import DEFAULT_PORT, OS_NAME, PROTOCOL_VERSION, perms
 from .control import ControlServer
 from .desktop import Desktop
 from .discovery import Directory, txt_records
+from . import hotspot
 from .files import Completed, DownloadError, Offer, Offers, check_offer, download, safe_name
 from .identity import PEER_ID, der_to_pem, load_or_create
 from .outbox import DONE, FAILED, QUEUED, SENDING, Outbox
@@ -61,6 +62,7 @@ RETRY_EVERY = 15       # the outbox looks for routes this often (and at once whe
 # accepting, a peer that can't be reached directly is tried again every PAIR_RETRY seconds
 # instead of every RETRY_EVERY.
 PAIR_GRACE = 120
+PAIR_SCAN_FOR = 20      # seconds a Pair screen's last status keeps the gateway being asked
 PAIR_RETRY = 2
 MAX_TEXT = 64 * 1024
 MAX_CHAT = 500          # messages one `chat` answer holds at most
@@ -239,12 +241,19 @@ class MeshNode:
         self.local_addresses = local_addresses or (lambda: [])   # LAN addresses, the main one first
         self.gateways = gateways or default_gateways
         self._gateway_misses: set[tuple[str, str]] = set()        # (gateway, fp) that weren't that peer
+        # pairing on a hotspot (hotspot.py): the gateway asked while a Pair screen is open, and
+        # the devices that asked this one
+        self.gateway_port = DEFAULT_PORT
+        self.gateway_scan = hotspot.GatewayScan()
+        self._scan_until = 0.0
+        self._scan_kick = threading.Event()
         self.identity = load_or_create(config_dir)
         self.trust = TrustList(config_dir / "trust.json", self.identity.fp)
         self.contexts = ServerContexts(self.identity, self.trust.pems())
         self.trust.on_change = self._trust_changed
         self.incoming = Incoming(self.identity)
         self.incoming.on_ready = self._pair_request
+        self.knocks = hotspot.Knocks(self.identity.fp)
         self.outgoing: dict[str, Outgoing] = {}
         self.offers = Offers(max_rate)
         self.completed = Completed(data_dir / "received.json")
@@ -458,7 +467,7 @@ class MeshNode:
         if self.announce:
             self.directory = Directory(self.identity.fp, self.local_addresses, self._seen)
             self.directory.start(self.port, self._txt())
-        for target in (self._deliver_loop, self._housekeeping):
+        for target in (self._deliver_loop, self._housekeeping, self._pair_scan_loop):
             threading.Thread(target=target, name=f"mesh-{target.__name__.strip('_')}", daemon=True).start()
         threading.Thread(target=self.probe_gateways, name="mesh-gateway", daemon=True).start()
         self._kick.set()
@@ -466,6 +475,7 @@ class MeshNode:
     def close(self):
         self.stop.set()
         self._kick.set()
+        self._scan_kick.set()
         for c in (self.control, self.directory, self.server, self.webrtc):
             if c is not None:
                 try:
@@ -530,6 +540,57 @@ class MeshNode:
                 log.info("mesh: link open with %s at the gateway (%s): its hotspot", entry["name"], gw)
                 return link
         return None
+
+    # --- pairing on a hotspot (hotspot.py) ------------------------------------------
+
+    def pair_scan(self):
+        """A Pair screen is open: ask the gateway who it is for the next PAIR_SCAN_FOR seconds.
+        The first time, at once (so `droplet-agent peers` shows it straight away)."""
+        was = time.monotonic() < self._scan_until
+        self._scan_until = time.monotonic() + PAIR_SCAN_FOR
+        if not was:
+            self.scan_gateways()
+        self._scan_kick.set()
+
+    def _pair_scan_loop(self):
+        while not self.stop.is_set():
+            self._scan_kick.wait(5)
+            self._scan_kick.clear()
+            if self.stop.is_set():
+                return
+            if time.monotonic() < self._scan_until:
+                try:
+                    self.scan_gateways()
+                except Exception:
+                    log.exception("mesh: asking the gateway who it is")
+
+    def scan_gateways(self, force: bool = False) -> list:
+        """Ask each gateway that's due who it is: a droplet device serving the hotspot answers
+        (and lists this one in turn). Returns what answered."""
+        mine = hotspot.me(self.peer_id, self.identity.fp, self.name, self.port)
+        for gw in self.gateway_scan.due(self.gateways(), force):
+            try:
+                seen = hotspot.ask(gw, self.gateway_port, mine)
+            except Exception as e:
+                log.debug("mesh: no droplet device answers at the gateway %s: %s", gw, e)
+                seen = None
+            if seen is not None and seen.fp == self.identity.fp:
+                seen = None
+            if seen is not None and not self.gateway_scan.peers():
+                log.info("mesh: %s is at the gateway (%s): it can be paired with", seen.name, gw)
+            self.gateway_scan.result(gw, seen)
+        return self.gateway_scan.peers()
+
+    def nearby_seen(self) -> list:
+        """Devices on this network: announcing themselves over mDNS, at the gateway, or that
+        asked this one who it is. One each, mDNS first."""
+        out = list(self.directory.peers()) if self.directory is not None else []
+        fps = {s.fp for s in out}
+        for s in self.gateway_scan.peers() + self.knocks.peers():
+            if s.fp not in fps and s.fp != self.identity.fp:
+                fps.add(s.fp)
+                out.append(s)
+        return out
 
     # --- trust ------------------------------------------------------------------
 
@@ -1111,11 +1172,15 @@ class MeshNode:
 
     # --- pairing --------------------------------------------------------------------
 
-    def pair(self, method: str, path: str, body):
+    def pair(self, method: str, path: str, body, address: str | None = None):
         if path == "/mesh/pair":
             if method != "POST":
                 return 405, {"error": "POST"}
             return self.incoming.open(body, self.peer_id, self.name)
+        if path == hotspot.HELLO_PATH:
+            if method != "POST":
+                return 405, {"error": "POST"}
+            return self.knocks.answer(body, address, hotspot.me(self.peer_id, self.identity.fp, self.name, self.port))
         m = re.fullmatch(r"/mesh/pair/([0-9a-f]{32})(/confirm|/cancel)?", path)
         if not m:
             return 404, {"error": "not found"}
@@ -1160,10 +1225,15 @@ class MeshNode:
 
     def _pair_target(self, target: str) -> tuple[str, int, str | None]:
         t = (target or "").strip()
-        seen = self.directory.peers() if self.directory is not None else []
         q = t.lower()
-        matches = [s for s in seen if s.name.casefold() == t.casefold() or s.id == q
-                   or (len(q) >= 8 and s.fp.startswith(q))]
+
+        def matching():
+            return [s for s in self.nearby_seen() if s.name.casefold() == t.casefold() or s.id == q
+                    or (len(q) >= 8 and s.fp.startswith(q))]
+        matches = matching()
+        if not matches and t:
+            self.scan_gateways(force=True)    # it may be serving this network's hotspot
+            matches = matching()
         if len({s.fp for s in matches}) == 1:
             s = matches[0]
             return s.addresses[0], s.port, s.fp
@@ -1277,7 +1347,7 @@ class MeshNode:
         return found[0]
 
     def status(self) -> dict:
-        seen = self.directory.peers() if self.directory is not None else []
+        seen = self.nearby_seen()
         peers = []
         for e in self.trust.all():
             link = self.open_link(e["fp"])
@@ -1346,6 +1416,8 @@ class MeshNode:
         cmd = req.get("cmd")
         try:
             if cmd == "status":
+                if req.get("scan"):
+                    self.pair_scan()    # a Pair screen is open
                 return self.status()
             if cmd == "pair-start":
                 return self.pair_start(str(req.get("target") or ""))

@@ -215,7 +215,8 @@ class Window(QMainWindow):
         if self._asking:
             return
         self._asking = True
-        self.agent.ask({"cmd": "status"}, self._got_status, timeout=8)
+        # on the Pair page, the agent also asks the gateway who it is (a phone's hotspot)
+        self.agent.ask({"cmd": "status", "scan": self.current_page() == "pair"}, self._got_status, timeout=8)
 
     def refresh_soon(self, ms: int = 2500):
         QTimer.singleShot(ms, self.refresh)

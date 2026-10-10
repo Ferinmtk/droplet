@@ -139,6 +139,12 @@ class MeshNode(
     private val gatewayProbing = AtomicBoolean(false)
     /** The network moved: look at the gateway on the next housekeeping round, not 30 s later. */
     private val networkMoved = AtomicBoolean(true)
+    /** Pairing on a hotspot (docs/mesh.md §9.10, [Hotspot]): the port the gateway is asked at (tests move it). */
+    @Volatile var gatewayPort = DEFAULT_PORT
+    /** The gateways that said who they are, while a Pair screen asks ([scanGateways]). */
+    val gatewayScan = Hotspot.GatewayScan()
+    /** The devices that asked this phone who it is. */
+    val knocks = Hotspot.Knocks(identity.fp)
     /** What each linked peer said about how it treats this phone (its `perm`): a hint only. */
     val remotePerm = ConcurrentHashMap<String, Perms.Remote>()
     /** fp → the last thing it refused, and why. */
@@ -159,6 +165,7 @@ class MeshNode(
         trust.onChange = { trustChanged() }
         incoming.onReady = { host.onPairRequest(it); host.onChanged() }
         incoming.onGone = { host.onPairGone(it); host.onChanged() }
+        knocks.onNew = { host.onChanged() }
     }
 
     // --- who we are -------------------------------------------------------------
@@ -470,6 +477,30 @@ class MeshNode(
             }
         }
         return null
+    }
+
+    /**
+     * Asks each gateway that's due who it is ([Hotspot]): a droplet device
+     * serving this hotspot answers, and lists this phone in turn. Called by
+     * the Pair screen while it's open; [force] skips the back-off. Blocks.
+     * Returns the gateways that answered.
+     */
+    fun scanGateways(force: Boolean = false): List<Seen> {
+        val mine = Hotspot.me(peerId, identity.fp, host.deviceName(), listeningPort)
+        val before = gatewayScan.peers().map { it.fp }.toSet()
+        for (gw in gatewayScan.due(currentGateways(), force)) {
+            if (stopped) break
+            val seen = try {
+                Hotspot.ask(gw, gatewayPort, mine)?.takeIf { it.fp != identity.fp }
+            } catch (e: Exception) {
+                null
+            }
+            if (seen != null && seen.fp !in before) host.log("mesh: ${seen.name} is at the gateway ($gw): it can be paired with")
+            gatewayScan.result(gw, seen)
+        }
+        val now = gatewayScan.peers()
+        if (now.map { it.fp }.toSet() != before) host.onChanged()
+        return now
     }
 
     /** Tests: whether [gateway] turned out not to be the peer [fp] on this network. */
@@ -1152,10 +1183,14 @@ class MeshNode(
 
     // --- pairing --------------------------------------------------------------------
 
-    override fun pair(method: String, path: String, body: JSONObject?): Pair<Int, JSONObject> {
+    override fun pair(method: String, path: String, body: JSONObject?, address: String?): Pair<Int, JSONObject> {
         if (path == "/mesh/pair") {
             if (method != "POST") return 405 to JSONObject().put("error", "POST")
             return incoming.open(body, peerId, host.deviceName())
+        }
+        if (path == Hotspot.HELLO_PATH) {
+            if (method != "POST") return 405 to JSONObject().put("error", "POST")
+            return knocks.answer(body, address?.takeIf { it != "?" }, Hotspot.me(peerId, identity.fp, host.deviceName(), listeningPort))
         }
         val m = Regex("^/mesh/pair/([0-9a-f]{32})(/confirm|/cancel)?$").matchEntire(path)
             ?: return 404 to JSONObject().put("error", "not found")
@@ -1276,7 +1311,17 @@ class MeshNode(
         host.onChanged()
     }
 
-    fun nearby(): List<Seen> = directory?.peers()?.filter { it.fp != identity.fp }.orEmpty()
+    /**
+     * Devices on this network: announcing themselves over mDNS, at the
+     * gateway, or that asked this phone who it is (a hotspot, §9.10). One
+     * each, mDNS first.
+     */
+    fun nearby(): List<Seen> {
+        val out = directory?.peers()?.filter { it.fp != identity.fp }.orEmpty().toMutableList()
+        val fps = out.map { it.fp }.toMutableSet()
+        for (s in gatewayScan.peers() + knocks.peers()) if (s.fp != identity.fp && fps.add(s.fp)) out += s
+        return out
+    }
 
     /** How a peer is reachable now, for screens: "lan", "tailnet", "hub", "seen" (on the LAN, no link yet), or "offline". */
     fun route(e: TrustList.Entry): String {

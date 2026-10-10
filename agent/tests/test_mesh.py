@@ -815,3 +815,139 @@ def test_received_lists_files_newest_first_with_the_sender(nodes, tmp_path):
     assert [f["name"] for f in b.handle_control({"cmd": "received", "n": 1})["files"]] == ["second.jpg"]
     gone = b.handle_control({"cmd": "received"})["files"][1]
     assert gone["exists"] is False and gone["size"] is None
+
+
+# --- pairing on a hotspot: nothing announces, the gateway is asked who it is ---------------
+
+def _on_hotspot(nodes):
+    """The phone serves the hotspot; the laptop joined it. No mDNS either way."""
+    phone, laptop = nodes("phone"), nodes("laptop")
+    laptop.gateways = lambda: ["127.0.0.1"]
+    laptop.gateway_port = phone.port                 # 1739 in real life
+    return phone, laptop
+
+
+def test_the_device_serving_the_hotspot_can_be_paired_from_either_side(nodes):
+    phone, laptop = _on_hotspot(nodes)
+    assert phone.status()["nearby"] == [] and laptop.status()["nearby"] == []   # nothing asked yet
+    # the laptop's Pair screen is open: it asks the gateway, and lists the phone
+    st = laptop.handle_control({"cmd": "status", "scan": True})
+    near = [n for n in st["nearby"] if n["fp"] == phone.identity.fp]
+    assert len(near) == 1 and near[0]["name"] == "phone" and near[0]["addresses"] == ["127.0.0.1"]
+    assert near[0]["port"] == phone.port and near[0]["os"] == OS_NAME
+    # and the phone lists the laptop, which asked: at the address it asked from, with its own port
+    near = phone.status()["nearby"]
+    assert [(n["fp"], n["name"], n["addresses"], n["port"]) for n in near] == \
+        [(laptop.identity.fp, "laptop", ["127.0.0.1"], laptop.port)]
+    assert phone.trust.get(laptop.identity.fp) is None and laptop.trust.get(phone.identity.fp) is None  # never by itself
+
+    # the laptop pairs with it by name, as from the Pair page: the code, the owners, as always
+    out = laptop.handle_control({"cmd": "pair-start", "target": "phone"})
+    assert out["peer"]["fp"] == phone.identity.fp
+    waiting = phone.incoming.waiting()
+    assert len(waiting) == 1 and waiting[0]["code"] == out["code"] and waiting[0]["fp"] == laptop.identity.fp
+    phone.pair_answer(waiting[0]["request"], True)
+    laptop.handle_control({"cmd": "pair-confirm", "request": out["request"], "yes": True})
+    assert wait_for(lambda: laptop.trust.get(phone.identity.fp) is not None)
+    assert phone.trust.get(laptop.identity.fp)["source"] == "paired"
+    # paired: neither lists the other for pairing any more
+    assert phone.status()["nearby"] == []
+    assert laptop.handle_control({"cmd": "status", "scan": True})["nearby"] == []
+
+
+def test_the_hotspot_owner_can_start_pairing_with_the_device_that_asked(nodes):
+    phone, laptop = _on_hotspot(nodes)
+    laptop.handle_control({"cmd": "status", "scan": True})
+    start = phone.pair_start("laptop")          # its name, from the list
+    assert start["peer"]["fp"] == laptop.identity.fp and start["address"] == f"127.0.0.1:{laptop.port}"
+    waiting = laptop.incoming.waiting()
+    assert len(waiting) == 1 and waiting[0]["code"] == start["code"]
+
+
+def test_a_device_that_asked_is_only_a_hint(nodes):
+    """A hello says who it is, like an mDNS announcement: it proves nothing. Pairing pins the
+    fingerprint it claimed, so a device claiming someone else's fails before any code."""
+    phone, laptop, liar = nodes("phone"), nodes("laptop"), nodes("liar")
+    body = {"v": 1, "id": laptop.peer_id, "name": "laptop", "os": "linux", "fp": laptop.identity.fp, "port": liar.port}
+    assert phone.knocks.answer(body, "127.0.0.1", {"v": 1})[0] == 200
+    with pytest.raises(ValueError):
+        phone.pair_start("laptop")              # liar's port, laptop's fingerprint: refused in TLS
+    assert liar.incoming.waiting() == []
+
+
+def test_the_gateway_is_only_asked_while_a_pair_screen_is_open(nodes):
+    phone, laptop = _on_hotspot(nodes)
+    asked = []
+    real = laptop.gateways
+    laptop.gateways = lambda: asked.append(1) or real()
+    laptop.status()
+    laptop.handle_control({"cmd": "status"})
+    time.sleep(0.3)
+    assert asked == [] and phone.status()["nearby"] == []
+    laptop.handle_control({"cmd": "status", "scan": True})
+    assert asked and phone.status()["nearby"]
+
+
+def test_an_older_peer_or_a_plain_router_at_the_gateway_lists_nothing(nodes, monkeypatch):
+    phone, laptop = _on_hotspot(nodes)
+    # an older peer: 404 for the hello, as before
+    monkeypatch.setattr(phone.knocks, "answer", lambda body, address, mine: (404, {"error": "not found"}))
+    assert laptop.scan_gateways(force=True) == []
+    # one whose answer doesn't match the certificate it presented
+    monkeypatch.setattr(phone.knocks, "answer", lambda body, address, mine: (200, dict(mine, fp="ab" * 32)))
+    assert laptop.scan_gateways(force=True) == []
+    # nothing listening
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        laptop.gateway_port = s.getsockname()[1]
+    assert laptop.scan_gateways(force=True) == []
+    assert laptop.handle_control({"cmd": "status", "scan": True})["nearby"] == []
+
+
+def test_asking_the_gateway_backs_off():
+    from droplet_agent.mesh import hotspot
+    now = [100.0]
+    scan = hotspot.GatewayScan(clock=lambda: now[0])
+    assert scan.due(["10.0.0.1"]) == ["10.0.0.1"]
+    waits = []
+    for _ in range(6):
+        scan.result("10.0.0.1", None)
+        t0 = now[0]
+        while not scan.due(["10.0.0.1"]):
+            now[0] += 1
+        waits.append(now[0] - t0)
+    assert waits == [5, 10, 20, 40, 60, 60]
+    seen = discovery.Seen(fp="ab" * 32, id="0123456789abcdef", name="phone", os="android", caps=[], hub="",
+                          port=1739, addresses=["10.0.0.1"])
+    scan.result("10.0.0.1", seen)
+    assert scan.peers() == [seen] and scan.due(["10.0.0.1"]) == []
+    now[0] += hotspot.HELLO_EVERY
+    assert scan.due(["10.0.0.1"]) == ["10.0.0.1"]
+    now[0] += hotspot.FOUND_TTL
+    assert scan.peers() == []                        # it stopped answering: gone from the list
+    assert scan.due(["10.0.0.9"]) == ["10.0.0.9"] and scan.peers() == []   # another network
+
+
+def test_devices_that_asked_are_limited_and_forgotten():
+    from droplet_agent.mesh import hotspot
+    now = [0.0]
+    own = "cd" * 32
+    k = hotspot.Knocks(own, clock=lambda: now[0])
+
+    def hello(i, **kw):
+        return dict({"v": 1, "id": f"{i:016x}", "name": f" dev\n {i}\x07", "os": "android", "fp": f"{i:064x}",
+                     "port": 1740}, **kw)
+    assert k.answer(hello(1, fp=own), "10.0.0.2", {})[0] == 200 and k.peers() == []        # itself
+    for bad in (hello(1, fp="xyz"), hello(1, id="NOPE"), "nonsense", None):
+        assert k.answer(bad, "10.0.0.2", {"me": 1}) == (200, {"me": 1}) and k.peers() == []
+    k.answer(hello(1, port=0, os="beos"), "10.0.0.2", {})
+    assert [(s.name, s.os, s.port, s.addresses) for s in k.peers()] == [("dev 1", "", 1739, ["10.0.0.2"])]
+    for i in range(2, 20):
+        k.answer(hello(i), f"10.0.0.{i}", {})
+    assert len(k.peers()) == hotspot.MAX_KNOCKS
+    now[0] += hotspot.KNOCK_TTL + 1
+    assert k.peers() == []
+    # answering is limited too
+    for _ in range(hotspot.MAX_HELLOS):
+        assert k.answer(None, "10.0.0.2", {})[0] == 200
+    assert k.answer(None, "10.0.0.2", {})[0] == 429
