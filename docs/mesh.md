@@ -532,6 +532,28 @@ this is it.
   everything is paused. The TV remote and the Bluetooth mouse and keyboard
   talk to the TV and the computer directly, not over the mesh, so they're
   unaffected.
+- **Progress and Cancel, links, rename and nicknames, several devices**
+  (§9.10; `mesh/Transfers.kt`, `mesh/Links.kt`, `MeshNode`): the same
+  messages, rules and features as the reference. A file on its way shows on
+  its device's card on the home screen (progress, time left, speed, and
+  Cancel; a send still waiting in the outbox can be cancelled there too), and
+  one arriving in its notification, which has a Cancel action
+  (`TransferCancelReceiver`); a share's notification keeps its Cancel, which
+  now tells the other device. The ⋮ menu of a device has **Send a link…**
+  (filled in from the clipboard when it holds one) and **Nickname…**; the
+  nickname shows on the card with the real name small under it, in Messages,
+  the share sheet and notifications. A link from your own device opens in the
+  browser while one of droplet's screens is showing; Android doesn't let an
+  app in the background start an activity (Stay connected's foreground
+  service isn't enough), so otherwise it's a notification whose tap opens it.
+  From someone else's device it's never opened by itself: Messages shows an
+  **Open** button on it, as on any message that's nothing but a link.
+  Settings → **Rename this phone** (with a hub too: `POST /api/device` on the
+  hub first, and a name the hub refuses isn't changed). **Select** on the
+  home screen ticks devices (or **All my devices**) for Files, Message, Link
+  or Clipboard to all of them, each with its own result; the share sheet has
+  **Several** for the same, and a shared web page (text that's only a link)
+  goes as a link.
 - **Tests** (`android/app/src/test`): `MeshUnitTest` (the certificate
   profile, pairing vectors from the reference, Range, the server's access
   rules over real sockets, two JVM peers pairing and talking) and
@@ -546,7 +568,16 @@ this is it.
   else's, Pause and resume, and the hub routes; `NoHubTest` checks the same
   against the real agent from the home screen (the agent's `perm` greying
   out Clipboard, its refusal shown on the card, a pause the agent hears,
-  a ring refused, a message held until Resume). CI
+  a ring refused, a message held until Resume). `TransfersTest` and
+  `FeaturesTest` port the reference's `test_transfers.py` and
+  `test_sending.py` (progress from byte counts, cancel from either end with
+  the partial file gone, a cancelled re-offer refused, links opened only from
+  your own devices and at most 5 a minute, links refused by the chat switch
+  and sent as messages to a paused or older peer, rename and name rules,
+  nicknames never sent, several devices each with its own result);
+  `FeaturesInteropTest` does cancel both ways, links both ways (and the
+  notification that opens one), rename both ways and a nickname against the
+  real agent. CI
   (`.github/workflows/android.yml`) runs them all, with the agent
   installed from the same commit.
 

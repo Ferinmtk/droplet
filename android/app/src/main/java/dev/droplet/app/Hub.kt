@@ -256,6 +256,14 @@ object Hub {
 
     fun me(): JSONObject = get("/api/me")
 
+    /**
+     * Renames this phone on the hub (POST /api/device with its token): the
+     * hub's rules apply (40 characters, and no other device of the hub's may
+     * have that name; a 409 otherwise). Returns the name the hub kept.
+     */
+    fun renameDevice(name: String): String =
+        postJson("/api/device", JSONObject().put("name", name)).optString("name").ifEmpty { name }
+
     fun files(): JSONObject = get("/api/files")
 
     fun devices(files: JSONObject = files()): List<Device> {

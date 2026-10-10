@@ -115,7 +115,28 @@ object Mesh {
 
     fun init(context: Context) {
         app = context.applicationContext
+        // whether one of droplet's screens is showing: only then may a link open by itself
+        (app as? android.app.Application)?.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: android.app.Activity) { started.incrementAndGet() }
+            override fun onActivityStopped(activity: android.app.Activity) { started.decrementAndGet() }
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
     }
+
+    /** droplet's screens on show now (started, not stopped). */
+    private val started = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * Whether droplet may open the browser now. Android doesn't let an app in
+     * the background start an activity (a foreground service isn't enough),
+     * so only while one of its screens is showing; otherwise a link waits for
+     * a tap on its notification.
+     */
+    @VisibleForTesting @Volatile var inForeground: () -> Boolean = { started.get() > 0 }
 
     fun dir(): File = dirOverride ?: File(app.filesDir, "mesh")
 
@@ -473,6 +494,54 @@ object Mesh {
 
     private fun running(): MeshNode = node ?: throw NoRoute(app.getString(R.string.mesh_off_now))
 
+    // --- progress and Cancel, links, names (docs/mesh.md §9.10) ---------------------------
+
+    /** Files on their way to or from [fp] (every device's when null): active first, then the recently finished. */
+    fun transfers(fp: String? = null): List<dev.droplet.app.mesh.Transfers.View> =
+        node?.transfers?.list().orEmpty().filter { fp == null || it.fp == fp }
+
+    /** Stops a transfer either way; the other device is told. Blocks briefly (off the main thread). */
+    fun cancelTransfer(id: String): MeshNode.CancelResult = running().cancel(id).also { bump() }
+
+    /** A web link to [fp]: see [MeshNode.sendLink]. Blocks. */
+    fun sendLink(fp: String, url: String): MeshNode.LinkSent = running().sendLink(fp, url).also { bump() }
+
+    /**
+     * Renames this phone (with a hub, on the hub first) and tells linked
+     * devices. Blocks. Returns how many were told at once. Throws
+     * IllegalArgumentException saying why not.
+     */
+    fun renamePhone(name: String): Int {
+        val clean = TrustList.checkName(name)
+        val n = node
+        val told = if (n != null) n.rename(clean) else {
+            host.setDeviceName(clean)
+            0
+        }
+        bump()
+        return told
+    }
+
+    /** What the owner calls [fp] here; empty clears it. Never sent. */
+    fun setNickname(fp: String, nickname: String): TrustList.Entry = running().setNickname(fp, nickname).also { bump() }
+
+    fun viewIntent(url: String): Intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        .addCategory(Intent.CATEGORY_BROWSABLE)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /** Opens a web link in the browser: only http(s), checked again here. False if it can't. */
+    fun openUrl(context: Context, url: String): Boolean {
+        if (!dev.droplet.app.mesh.Links.isUrl(url)) return false
+        return try {
+            context.startActivity(viewIntent(url.trim()))
+            true
+        } catch (e: android.content.ActivityNotFoundException) {
+            false
+        } catch (e: SecurityException) {
+            false
+        }
+    }
+
     /** Live control to a peer, in order, off the main thread. [done] gets the route or the error (on the main thread). */
     fun sendLive(fp: String, msg: JSONObject, done: (Result<String>) -> Unit = {}) {
         scope.launch(liveOut) {
@@ -508,12 +577,76 @@ object Mesh {
             if (ChatActivity.showing == entry.fp) return
             notify("chat-${entry.fp.take(16)}", NotificationCompat.Builder(app, Notifs.CH_INBOX)
                 .setSmallIcon(R.drawable.ic_drop)
-                .setContentTitle(entry.name)
+                .setContentTitle(entry.label)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setAutoCancel(true)
                 .setContentIntent(activity(ChatActivity.intent(app, entry.fp), entry.fp.hashCode())))
+        }
+
+        override fun onLink(entry: TrustList.Entry, url: String, open: Boolean) {
+            val tag = "chat-${entry.fp.take(16)}"
+            if (open && inForeground() && openUrl(app, url)) {
+                notify(tag, NotificationCompat.Builder(app, Notifs.CH_INBOX)
+                    .setSmallIcon(R.drawable.ic_drop)
+                    .setContentTitle(app.getString(R.string.link_opened, entry.label))
+                    .setContentText(url)
+                    .setSilent(true)
+                    .setAutoCancel(true)
+                    .setContentIntent(activity(ChatActivity.intent(app, entry.fp), entry.fp.hashCode())))
+                return
+            }
+            // your own device, with droplet in the background: Android won't let it open the
+            // browser by itself, so the notification opens the link when tapped
+            val tap = if (open) activity(viewIntent(url), url.hashCode()) else activity(ChatActivity.intent(app, entry.fp), entry.fp.hashCode())
+            if (open && ChatActivity.showing == entry.fp) return
+            notify(tag, NotificationCompat.Builder(app, Notifs.CH_INBOX)
+                .setSmallIcon(R.drawable.ic_drop)
+                .setContentTitle(app.getString(R.string.link_sent, entry.label))
+                .setContentText(if (open) app.getString(R.string.link_tap_to_open, url) else url)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(
+                    if (open) app.getString(R.string.link_tap_to_open, url) else app.getString(R.string.link_open_from_messages, url)))
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(tap))
+        }
+
+        override fun onTransfer(t: dev.droplet.app.mesh.Transfers.View) {
+            bump()
+            if (t.dir != "in") return
+            val tag = "recv-${t.id}"
+            if (!t.active) {
+                NotificationManagerCompat.from(app).cancel(tag, 0)
+                return
+            }
+            val cancel = PendingIntent.getBroadcast(app, t.id.hashCode(),
+                Intent(app, TransferCancelReceiver::class.java).putExtra(TransferCancelReceiver.EXTRA_ID, t.id),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            notify(tag, NotificationCompat.Builder(app, Notifs.CH_TRANSFERS)
+                .setSmallIcon(R.drawable.ic_drop)
+                .setContentTitle(app.getString(R.string.mesh_receiving, t.peer))
+                .setContentText(t.name)
+                .setSubText(dev.droplet.app.mesh.Transfers.progressText(t))
+                .setProgress(100, t.percent, t.size == 0L)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+                .addAction(0, app.getString(R.string.cancel), cancel)
+                .setContentIntent(activity(MainActivity.intent(app), 0)))
+        }
+
+        override fun setDeviceName(name: String) {
+            if (Prefs.hasHub && Hub.hasDevice()) {
+                // the hub names its devices: renamed there first, under its rules (no name twice)
+                try {
+                    Hub.renameDevice(name)
+                } catch (e: java.io.IOException) {
+                    throw IllegalArgumentException(app.getString(R.string.rename_hub_refused, e.message ?: e.javaClass.simpleName))
+                }
+            }
+            Prefs.meshDeviceName = name
         }
 
         override fun onRing(entry: TrustList.Entry) {
@@ -574,31 +707,13 @@ object Mesh {
             val view = saved.uri?.let {
                 Intent(Intent.ACTION_VIEW).setDataAndType(it, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            NotificationManagerCompat.from(app).cancel("recv-${entry.fp.take(16)}-$name", 0)
             notify("file-${saved.where}", NotificationCompat.Builder(app, Notifs.CH_INBOX)
                 .setSmallIcon(R.drawable.ic_drop)
-                .setContentTitle(app.getString(R.string.mesh_file_from, entry.name))
+                .setContentTitle(app.getString(R.string.mesh_file_from, entry.label))
                 .setContentText(saved.where)
                 .setAutoCancel(true)
                 .apply { view?.let { setContentIntent(activity(it, saved.where.hashCode())) } })
             return saved.where
-        }
-
-        override fun onReceiving(entry: TrustList.Entry, name: String, got: Long, size: Long) {
-            val tag = "recv-${entry.fp.take(16)}-$name"
-            if (got < 0) {
-                NotificationManagerCompat.from(app).cancel(tag, 0)
-                return
-            }
-            val pct = if (size > 0) (got * 100 / size).toInt() else 100
-            notify(tag, NotificationCompat.Builder(app, Notifs.CH_TRANSFERS)
-                .setSmallIcon(R.drawable.ic_drop)
-                .setContentTitle(app.getString(R.string.mesh_receiving, entry.name))
-                .setContentText(name)
-                .setProgress(100, pct, false)
-                .setOngoing(true)
-                .setOnlyAlertOnce(true)
-                .setSilent(true))
         }
 
         override fun onPairRequest(req: MeshPairing.Request) {

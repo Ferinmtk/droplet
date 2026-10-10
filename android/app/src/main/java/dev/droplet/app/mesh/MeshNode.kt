@@ -61,6 +61,19 @@ interface MeshHost {
     /** Gives a completed download its home (Downloads/droplet). Returns where it went, for the notification. */
     fun saveFile(entry: TrustList.Entry, part: File, name: String, mime: String): String
     fun onReceiving(entry: TrustList.Entry, name: String, got: Long, size: Long) {}
+    /**
+     * A web link arrived (docs/mesh.md §9.10), already in the chat history.
+     * [open]: it's from your own device and within the rate, so it may open
+     * by itself; otherwise it waits in Messages with an Open button.
+     */
+    fun onLink(entry: TrustList.Entry, url: String, open: Boolean) {}
+    /** A transfer started, moved, or ended (the node's [MeshNode.transfers]): notifications and screens redraw. */
+    fun onTransfer(t: Transfers.View) {}
+    /**
+     * A new name for this phone. With a hub, the hub names it, and may refuse
+     * (a name another device has): throws IllegalArgumentException saying why.
+     */
+    fun setDeviceName(name: String) {}
     fun onPairRequest(req: MeshPairing.Request) {}
     fun onPairGone(request: String) {}
     fun onChanged() {}
@@ -145,6 +158,18 @@ class MeshNode(
     val refusals = ConcurrentHashMap<String, Refusal>()
     /** (fp, type) → when this phone last told it no. */
     private val refusedAt = ConcurrentHashMap<Pair<String, String>, Long>()
+    /** Files on their way, either way, with real byte counts (docs/mesh.md §9.10). */
+    val transfers = Transfers()
+    /** "fp:offer id" being received → who cancelled it ("here" or "sender"). */
+    private val dlCancel = ConcurrentHashMap<String, String>()
+    /** "fp:offer id" cancelled here: an older sender's re-offer is refused. */
+    private val cancelledIn = ConcurrentHashMap.newKeySet<String>()
+    /** Outbox jobs cancelled while being sent. */
+    private val cancelJobs = ConcurrentHashMap.newKeySet<String>()
+    /** fp → when links from it were opened (at most [OPEN_LINKS] a minute). */
+    private val opened = ConcurrentHashMap<String, MutableList<Long>>()
+    /** id → when the host last heard of its progress (it hears at most a few times a second). */
+    private val toldAt = ConcurrentHashMap<String, Long>()
 
     /** Something a peer didn't take from this phone, and why ("paused" or "denied"). */
     data class Refusal(val re: String, val cap: String?, val why: String, val text: String, val ts: Long)
@@ -173,6 +198,7 @@ class MeshNode(
     fun hello(t: String = "hello", fp: String? = null): JSONObject {
         val out = JSONObject().put("t", t).put("id", peerId).put("name", host.deviceName())
             .put("caps", JSONArray(host.caps())).put("os", "android").put("v", 1).put("port", listeningPort)
+            .put("features", JSONArray(FEATURES))
         if (fp != null) out.put("caps", JSONArray(capsFor(fp))).put("perm", permFor(fp))
         return out
     }
@@ -180,6 +206,9 @@ class MeshNode(
     // --- permissions (Perms, docs/mesh.md §9.9) ------------------------------------
 
     val pausedAll: Boolean get() = runCatching { host.pausedEverything() }.getOrDefault(false)
+
+    /** Tests: every message this node sends ("out") and receives ("in") over its links, with the peer's fingerprint. */
+    @Volatile internal var spy: ((String, String, JSONObject) -> Unit)? = null
 
     /** Tests: false makes this node send whatever it's asked, as an older peer would, ignoring what peers said. */
     @Volatile internal var heedHints = true
@@ -192,6 +221,20 @@ class MeshNode(
     }
 
     fun permFor(fp: String): JSONObject = Perms.remoteView(trust.get(fp), pausedAll)
+
+    /** What the peer said it understands besides v1, on its open link (none: an older peer). */
+    fun featuresOf(fp: String): List<String> = strings(openLink(fp)?.hello?.optJSONArray("features"))
+
+    /** Tells the host about a transfer: at once when it starts or ends, at most every [TELL_EVERY_MS] as it moves. */
+    private fun tellTransfer(id: String, force: Boolean = false) {
+        val now = System.nanoTime() / 1_000_000
+        val last = toldAt[id]
+        if (!force && last != null && now - last < TELL_EVERY_MS) return
+        toldAt[id] = now
+        val t = transfers.get(id) ?: return
+        if (!t.active) toldAt.remove(id)
+        runCatching { host.onTransfer(t) }
+    }
 
     /**
      * Throws [Refused] unless [msg] may go to the peer: by this phone's own
@@ -268,7 +311,7 @@ class MeshNode(
         val text = Perms.refusalText(host.deviceName(), no.why, no.cap)
         host.log("mesh: refused $t from ${entry.name}: ${if (no.why == Perms.PAUSED) "paused" else "${no.cap} is off"}")
         val mid = (msg.opt("id") as? String)?.takeIf { it.length <= 64 }
-        if (mid != null && t in setOf("text", "offer", "clip", "file")) {
+        if (mid != null && t in setOf("text", "offer", "clip", "file", "link")) {
             link.send(if (no.why == Perms.DENIED) JSONObject().put("t", "nack").put("id", mid).put("error", text)
                 .put("cap", no.cap).put("why", no.why)
             else JSONObject().put("t", "refused").put("re", t).put("id", mid).put("cap", no.cap).put("why", no.why)
@@ -544,6 +587,7 @@ class MeshNode(
             }
             val ok = sendText(text)
             if (ok) lastUsed = System.currentTimeMillis()
+            if (ok) spy?.invoke("out", fp, msg)
             return ok
         }
 
@@ -559,6 +603,7 @@ class MeshNode(
         fun received(text: String) {
             val msg = runCatching { JSONObject(text) }.getOrNull() ?: return
             lastUsed = System.currentTimeMillis()
+            spy?.invoke("in", fp, msg)
             try {
                 onMessage(this, msg)
             } catch (e: Exception) {
@@ -785,6 +830,13 @@ class MeshNode(
         when (t) {
             "ping" -> link.send(JSONObject().put("t", "pong"))
             "text" -> recvText(link, current, msg)
+            "link" -> recvLink(link, current, msg)
+            "cancel" -> gotCancel(link, current, msg)
+            "rename" -> trust.rename(link.fp, msg.opt("name"))?.let { e ->
+                host.log("mesh: ${current.name} is called ${e.name} now")
+                link.hello?.put("name", e.name)
+                host.onChanged()
+            }
             "ack", "nack" -> {
                 val id = msg.opt("id") as? String ?: return
                 val err = msg.optString("error").take(200)
@@ -837,6 +889,45 @@ class MeshNode(
         if (new) host.onText(entry, body, ts)
     }
 
+    /**
+     * A web link. From your own device it may open by itself (at most
+     * [OPEN_LINKS] a minute from one device); from someone else's it waits in
+     * Messages with an Open button. Never anything but http(s).
+     */
+    private fun recvLink(link: Link, entry: TrustList.Entry, msg: JSONObject) {
+        val mid = msg.opt("id") as? String ?: return
+        if (!Regex("^[0-9A-Za-z_-]{8,64}$").matches(mid)) return
+        val url = try {
+            Links.checkUrl(msg.opt("url"))
+        } catch (e: Links.BadLink) {
+            link.send(JSONObject().put("t", "nack").put("id", mid).put("error", e.message))
+            return
+        }
+        val ts = (msg.opt("ts") as? Number)?.toDouble() ?: (System.currentTimeMillis() / 1000.0)
+        val open = entry.relation == Perms.OWN_DEVICE && mayOpen(link.fp)
+        val new = chat.add(JSONObject().put("id", "${link.fp.take(16)}:$mid").put("dir", "in").put("fp", link.fp)
+            .put("peer", entry.id).put("name", entry.name).put("body", url).put("ts", ts).put("kind", "link")
+            .apply { if (open) put("opened", true) })
+        link.send(JSONObject().put("t", "ack").put("id", mid))
+        if (!new) return
+        host.log("mesh: link from ${entry.name}${if (open) " (opening it)" else ""}: ${url.take(200)}")
+        host.onLink(entry, url, open)
+    }
+
+    private fun mayOpen(fp: String): Boolean {
+        val now = System.nanoTime() / 1_000_000
+        synchronized(opened) {
+            val recent = opened[fp].orEmpty().filter { now - it < 60_000 }.toMutableList()
+            if (recent.size >= OPEN_LINKS) {
+                opened[fp] = recent
+                return false
+            }
+            recent += now
+            opened[fp] = recent
+        }
+        return true
+    }
+
     private fun recvOffer(link: Link, entry: TrustList.Entry, msg: JSONObject) {
         val c = try {
             MeshFiles.checkOffer(msg)
@@ -849,6 +940,12 @@ class MeshNode(
             return
         }
         val key = "${link.fp}:${c.id}"
+        if (key in cancelledIn) {
+            // cancelled here, and offered again by a sender that didn't understand `cancel`
+            link.send(JSONObject().put("t", "nack").put("id", c.id).put("error", "${host.deviceName()} cancelled it")
+                .put("why", "cancelled"))
+            return
+        }
         if (!downloading.add(key)) return
         val hosts = ArrayList<Pair<String, Int>>()
         hosts += link.address to (link.port ?: entry.port ?: DEFAULT_PORT)
@@ -858,12 +955,17 @@ class MeshNode(
 
     private fun download(entry: TrustList.Entry, c: MeshFiles.Checked, hosts: List<Pair<String, Int>>, key: String) {
         var reply: JSONObject? = null
+        transfers.start(c.id, "in", entry.fp, entry.label, c.name, c.size)
+        tellTransfer(c.id, force = true)
         try {
             host.log("mesh: receiving ${c.name} (${c.size} bytes) from ${entry.name}")
             var lastNote = 0L
             val part = MeshFiles.download(identity, entry.fp, hosts, c, incomingDir, log = host::log, stopped = { stopped },
-                sleep = { ms -> var left = ms; while (left > 0 && !stopped) { Thread.sleep(minOf(left, 200)); left -= 200 } },
+                sleep = { ms -> var left = ms; while (left > 0 && !stopped && !dlCancel.containsKey(key)) { Thread.sleep(minOf(left, 200)); left -= 200 } },
+                cancelled = { dlCancel.containsKey(key) },
                 onProgress = { got, size ->
+                transfers.progress(c.id, got)
+                tellTransfer(c.id)
                 val now = System.currentTimeMillis()
                 if (now - lastNote > 500 || got == size) {
                     lastNote = now
@@ -873,21 +975,104 @@ class MeshNode(
             val where = host.saveFile(entry, part, c.name, c.mime)
             part.delete()
             completed.add(entry.fp, c.id, where)
+            transfers.finish(c.id, Transfers.DONE)
             host.log("mesh: saved ${c.name} from ${entry.name} to $where")
             reply = JSONObject().put("t", "ack").put("id", c.id)
         } catch (e: MeshFiles.DownloadError) {
-            host.log("mesh: receiving ${c.name} from ${entry.name} failed: ${e.message}")
-            if (e.permanent) reply = JSONObject().put("t", "nack").put("id", c.id).put("error", e.message)
+            val by = dlCancel[key]
+            if (e is MeshFiles.Cancelled || by != null) {
+                MeshFiles.dropPartial(incomingDir, entry.fp, c.id)
+                val here = by == "here"
+                transfers.finish(c.id, Transfers.CANCELLED, if (here) Transfers.CANCELLED_HERE else "${entry.label} cancelled it")
+                host.log("mesh: receiving ${c.name} from ${entry.name} cancelled ${if (here) "here" else "by the sender"}")
+                // the sender cancelled: it knows. Cancelled here: tell it (an older sender ignores
+                // that, and is refused when it offers it again)
+                if (here) {
+                    cancelledIn += key
+                    reply = JSONObject().put("t", "cancel").put("id", c.id)
+                }
+            } else {
+                transfers.finish(c.id, if (e.permanent) Transfers.FAILED else Transfers.WAITING, e.message)
+                host.log("mesh: receiving ${c.name} from ${entry.name} failed: ${e.message}")
+                if (e.permanent) reply = JSONObject().put("t", "nack").put("id", c.id).put("error", e.message)
+            }
         } catch (e: Exception) {
             host.log("mesh: receiving ${c.name} failed: $e")
+            transfers.finish(c.id, Transfers.FAILED, e.message ?: e.javaClass.simpleName)
             // saving failed (no space, storage gone): the part stays, a re-offer resumes
         } finally {
             downloading.remove(key)
+            dlCancel.remove(key)
             host.onReceiving(entry, c.name, -1, c.size)
+            tellTransfer(c.id, force = true)
         }
         reply?.let { r ->
             if (direct(entry.fp)?.send(r) != true) host.log("mesh: couldn't tell ${entry.name} about ${c.name}; it will offer it again")
         }
+    }
+
+    // --- cancelling a transfer (docs/mesh.md §9.10) --------------------------------
+
+    /**
+     * The peer cancelled a transfer: one it was sending here (stop fetching it,
+     * and drop what came), or one this phone was sending it (it doesn't want
+     * it). Only the peer at the other end of a transfer can cancel it.
+     */
+    private fun gotCancel(link: Link, entry: TrustList.Entry, msg: JSONObject) {
+        val oid = (msg.opt("id") as? String)?.takeIf { it.length <= 64 } ?: return
+        val key = "${link.fp}:$oid"
+        if (key in downloading) {
+            dlCancel.putIfAbsent(key, "sender")
+            return
+        }
+        val job = outbox.get(oid) ?: return
+        if (job.optString("fp") == link.fp && job.optString("state") !in Outbox.FINISHED) {
+            cancelOut(job, "${entry.label} cancelled it", tell = false)
+        }
+    }
+
+    /** What [cancel] stopped: its id, which way it was going, its name and the device's. */
+    data class CancelResult(val id: String, val dir: String, val name: String?, val peer: String?)
+
+    /**
+     * Stops a transfer, or a send still waiting in the outbox, by its id (or
+     * the start of it, 6 characters or more). The other device is told.
+     * Throws IllegalArgumentException when there's no such transfer.
+     */
+    fun cancel(tid: String): CancelResult {
+        val id = tid.trim().lowercase()
+        require(id.isNotEmpty()) { "say which transfer: its id" }
+        fun match(i: String) = i == id || (id.length >= 6 && i.startsWith(id))
+        val downloads = downloading.filter { match(it.substringAfter(':')) }
+        val jobs = outbox.queued().filter { match(it.getString("id")) }
+        require(downloads.size + jobs.size <= 1) { "\"$id\" matches more than one transfer: give more of its id" }
+        downloads.firstOrNull()?.let { key ->
+            dlCancel[key] = "here"
+            val t = transfers.get(key.substringAfter(':'))
+            host.log("mesh: cancelling ${t?.name ?: key.substringAfter(':')} from ${t?.peer ?: key.take(12)}")
+            return CancelResult(key.substringAfter(':'), "in", t?.name, t?.peer)
+        }
+        jobs.firstOrNull()?.let { job ->
+            cancelOut(job, Transfers.CANCELLED_HERE, tell = true)
+            return CancelResult(job.getString("id"), "out", job.optString("name").ifEmpty { null }, job.optString("peer"))
+        }
+        throw IllegalArgumentException("no transfer with that id is going on (it may have finished already)")
+    }
+
+    /** Cancels something this phone sends: stop serving it, mark it cancelled, tell the peer. */
+    private fun cancelOut(job: JSONObject, why: String, tell: Boolean) {
+        val jid = job.getString("id")
+        cancelJobs += jid
+        val offer = offers.get(jid)
+        offer?.cancel("cancelled: $why")
+        val link = openLink(job.getString("fp"))
+        if (tell && link != null && (offer != null || job.optInt("attempts") > 0)) {
+            link.send(JSONObject().put("t", "cancel").put("id", jid))
+        }
+        // on its way right now: the delivery thread sees the offer end, and finishes it as cancelled;
+        // otherwise it just leaves the outbox
+        if (offer == null) finish(job, Outbox.CANCELLED, error = why)
+        host.log("mesh: ${job.optString("name").ifEmpty { "a message" }} to ${job.optString("peer")} cancelled ($why)")
     }
 
     // --- sending: live messages (routes 1–3) --------------------------------------
@@ -955,10 +1140,125 @@ class MeshNode(
         return job
     }
 
+    /**
+     * One device's result when sending to several: [outcome] is "sent",
+     * "sending" (still on its way when the wait ended), "waiting" (paused or
+     * away: it's in the outbox) or "refused", with [text] saying why.
+     */
+    data class Each(val fp: String, val name: String, val outcome: String, val text: String, val job: JSONObject?)
+
+    /**
+     * Several devices at once (docs/mesh.md §9.10): each gets its own job and
+     * its own result, exactly as if it were sent to it alone, so permissions,
+     * Pause and routes apply to each. [send] queues one device's job. Waits
+     * up to [waitMs] in all for the jobs to settle. Blocks.
+     */
+    fun toEach(fps: List<String>, waitMs: Long, send: (String) -> JSONObject): List<Each> {
+        val queued = fps.distinct().map { fp ->
+            val name = trust.get(fp)?.label ?: fp.take(12)
+            try {
+                Triple(fp, name, Result.success(send(fp)))
+            } catch (e: Exception) {
+                Triple(fp, name, Result.failure<JSONObject>(e))
+            }
+        }
+        val end = System.currentTimeMillis() + waitMs
+        return queued.map { (fp, name, r) ->
+            val job = r.getOrNull() ?: return@map Each(fp, name, "refused",
+                r.exceptionOrNull()?.message ?: "refused", null)
+            val j = awaitJob(job.getString("id"), maxOf(0L, end - System.currentTimeMillis())) ?: job
+            val err = j.optString("error").takeIf { it.isNotEmpty() && it != "null" }
+            when (j.optString("state")) {
+                Outbox.DONE -> Each(fp, name, "sent", j.optString("route"), j)
+                Outbox.FAILED, Outbox.CANCELLED -> Each(fp, name, "refused", err ?: "refused", j)
+                Outbox.QUEUED -> if (j.optInt("attempts") > 0 && !j.optBoolean("retry")) Each(fp, name, "waiting", err ?: "waiting", j)
+                    else Each(fp, name, "sending", err ?: "", j)
+                else -> Each(fp, name, "sending", "", j)
+            }
+        }
+    }
+
+    /** How a link went: as a `link` over [route], or as a chat message ([job], in the outbox). */
+    data class LinkSent(val how: String, val route: String? = null, val job: JSONObject? = null)
+
+    /**
+     * A web link for the peer to open (docs/mesh.md §9.10): it opens on your
+     * own device, and waits with an Open button on someone else's. Over an
+     * open link to a peer that understands `link`; otherwise (not reachable,
+     * paused, or an older peer) it goes as a chat message, which waits in the
+     * outbox like any other. Blocks. Throws [Links.BadLink] for anything but a
+     * web link, and [Refused] when chat is switched off, here or there.
+     */
+    fun sendLink(fp: String, url: String): LinkSent {
+        val e = entry(fp)
+        val clean = Links.checkUrl(url)
+        try {
+            maySend(fp, JSONObject().put("t", "link"), e)
+        } catch (r: Refused) {
+            if (r.why != Perms.PAUSED) throw r
+            // paused, here or there: it waits as a message, and goes on resume
+            return LinkSent("message", job = sendText(fp, clean))
+        }
+        val link = direct(fp)
+        if (link == null || "link" !in featuresOf(fp)) return LinkSent("message", job = sendText(fp, clean))
+        val mid = Outbox.newId()
+        val ts = System.currentTimeMillis() / 1000.0
+        val w = Waiter(link.fp)
+        acks[mid] = w
+        try {
+            if (!link.send(JSONObject().put("t", "link").put("id", mid).put("url", clean).put("ts", ts))) {
+                return LinkSent("message", job = sendText(fp, clean))
+            }
+            if (!w.done.await(ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) return LinkSent("message", job = sendText(fp, clean))
+        } finally {
+            acks.remove(mid)
+        }
+        if (!w.ok) {
+            val why = w.error
+            val paused = why.startsWith("paused:")
+            if (paused) return LinkSent("message", job = sendText(fp, clean))
+            throw Refused(why.removePrefix("denied:").trim().ifEmpty { "refused" }, Perms.DENIED, Perms.CHAT, false)
+        }
+        chat.add(JSONObject().put("id", mid).put("dir", "out").put("fp", fp).put("peer", e.id).put("name", e.name)
+            .put("body", clean).put("ts", ts).put("route", link.kind).put("kind", "link"))
+        host.log("mesh: link to ${e.name} delivered (${link.kind})")
+        return LinkSent("link", route = link.kind)
+    }
+
+    /**
+     * Gives this phone a new name: kept by the host (with a hub, the hub names
+     * it, and its rules apply), announced over mDNS, and told to every linked
+     * peer at once (`rename`). Peers not linked now hear it in the next hello.
+     * Returns how many linked devices were told. Throws IllegalArgumentException
+     * for a name that isn't one, or one the hub refused.
+     */
+    fun rename(name: String): Int {
+        val clean = TrustList.checkName(name)
+        if (clean == host.deviceName()) return 0
+        val old = host.deviceName()
+        host.setDeviceName(clean)
+        runCatching { refreshAnnouncement() }
+        var told = 0
+        for (fp in links.keys.toList()) {
+            if (openLink(fp)?.send(JSONObject().put("t", "rename").put("name", clean)) == true) told++
+        }
+        host.log("mesh: this phone is called $clean now (was $old); told $told linked device(s)")
+        host.onChanged()
+        return told
+    }
+
+    /** What the owner calls a peer here; empty clears it. Never sent. */
+    fun setNickname(fp: String, nickname: String): TrustList.Entry {
+        val e = trust.setNickname(fp, nickname)
+        host.log("mesh: ${e.name} ${if (e.nickname.isNotEmpty()) "is called ${e.nickname} here" else "has no nickname"}")
+        host.onChanged()
+        return e
+    }
+
     /** Waits for a job to be delivered, fail, or find no route (not a transfer being retried). */
     fun awaitJob(id: String, timeoutMs: Long): JSONObject? = outbox.await(id, timeoutMs) { j ->
         val s = j.optString("state")
-        s == Outbox.DONE || s == Outbox.FAILED || (s == Outbox.QUEUED && j.optInt("attempts") > 0 && !j.optBoolean("retry"))
+        s in Outbox.FINISHED || (s == Outbox.QUEUED && j.optInt("attempts") > 0 && !j.optBoolean("retry"))
     }
 
     /** Serving files: bytes a second, 0 for no limit. */
@@ -987,7 +1287,15 @@ class MeshNode(
             while (!stopped) {
                 val jobs = synchronized(workers) { outbox.forPeer(fp) }
                 if (jobs.isEmpty()) break
-                if (attempt(jobs[0]) == "wait") break
+                if (attempt(jobs[0]) == "wait") {
+                    // the ones behind it wait too, for the same reason: say so, so whoever sent
+                    // them hears "waiting" rather than nothing
+                    val why = outbox.get(jobs[0].getString("id"))?.optString("error")?.takeIf { it.isNotEmpty() && it != "null" }
+                    if (why != null) for (j in outbox.forPeer(fp).drop(1)) {
+                        if (j.optInt("attempts") == 0) outbox.update(j.getString("id"), "attempts" to 1, "retry" to false, "error" to why)
+                    }
+                    break
+                }
             }
         } catch (e: Exception) {
             host.log("mesh: delivering to ${fp.take(12)}: $e")
@@ -997,8 +1305,22 @@ class MeshNode(
     }
 
     private fun finish(job: JSONObject, state: String, route: String? = null, error: String? = null) {
-        outbox.update(job.getString("id"), "state" to state, "route" to route, "error" to error)
-        if ((state == Outbox.DONE || state == Outbox.FAILED) && job.optBoolean("spooled")) File(job.getString("source")).delete()
+        val id = job.getString("id")
+        outbox.update(id, "state" to state, "route" to route, "error" to error)
+        if (job.getString("kind") == "file" && (transfers.get(id) != null || state == Outbox.CANCELLED)) {
+            if (transfers.get(id) == null) {
+                transfers.start(id, "out", job.getString("fp"), labelOf(job), job.optString("name"), job.optLong("size"))
+            }
+            transfers.finish(id, when (state) {
+                Outbox.DONE -> Transfers.DONE
+                Outbox.FAILED -> Transfers.FAILED
+                Outbox.CANCELLED -> Transfers.CANCELLED
+                else -> Transfers.WAITING
+            }, error)
+            tellTransfer(id, force = true)
+        }
+        if (state in Outbox.FINISHED) cancelJobs.remove(id)
+        if (state in Outbox.FINISHED && job.optBoolean("spooled")) File(job.getString("source")).delete()
         if (state == Outbox.DONE && job.getString("kind") == "text") {
             val e = trust.get(job.getString("fp"))
             chat.add(JSONObject().put("id", job.getString("id")).put("dir", "out").put("fp", job.getString("fp"))
@@ -1009,6 +1331,9 @@ class MeshNode(
         else if (state == Outbox.FAILED) host.log("mesh: ${job.getString("kind")} to ${job.optString("peer")} failed: $error")
         host.onChanged()
     }
+
+    /** What the owner calls a job's device now (its nickname), else the name it was sent to. */
+    private fun labelOf(job: JSONObject): String = trust.get(job.optString("fp"))?.label ?: job.optString("peer")
 
     private fun fileChanged(job: JSONObject): String? {
         val now = runCatching { host.sourceSize(job.getString("source")) }.getOrNull() ?: return "${job.optString("name")} is gone"
@@ -1033,6 +1358,11 @@ class MeshNode(
             }
         }
         outbox.update(job.getString("id"), *fields)
+        // a transfer that had started says it's waiting
+        if (job.getString("kind") == "file" && transfers.get(job.getString("id")) != null) {
+            transfers.finish(job.getString("id"), Transfers.WAITING, error)
+            tellTransfer(job.getString("id"), force = true)
+        }
         host.onChanged()
     }
 
@@ -1058,6 +1388,10 @@ class MeshNode(
             keepWaiting(job, "waiting: ${r.message}", retry = false, attempts = job.optInt("attempts") + 1)
             return "wait"
         }
+        if (id in cancelJobs) {
+            finish(job, Outbox.CANCELLED, error = job.optString("error").takeIf { it.isNotEmpty() && it != "null" } ?: "cancelled")
+            return "done"
+        }
         outbox.update(id, "state" to Outbox.SENDING, "attempts" to job.optInt("attempts") + 1)
         val link = direct(e.fp)
         if (link == null && justAccepted(e.fp)) {
@@ -1065,7 +1399,15 @@ class MeshNode(
             thread(isDaemon = true) { Thread.sleep(PAIR_RETRY_MS); kick() }
         }
         if (link != null) {
+            if (job.getString("kind") == "file") {
+                transfers.start(id, "out", e.fp, e.label, job.optString("name"), job.optLong("size"), route = link.kind)
+                tellTransfer(id, force = true)
+            }
             val got = if (job.getString("kind") == "text") directText(link, job) else directFile(link, job)
+            if (got.startsWith("cancelled") || id in cancelJobs) {
+                finish(job, Outbox.CANCELLED, error = if (got.startsWith("cancelled: ")) got.removePrefix("cancelled: ") else "cancelled")
+                return "done"
+            }
             if (got == "ok") {
                 finish(job, Outbox.DONE, route = link.kind)
                 return "done"
@@ -1088,7 +1430,12 @@ class MeshNode(
         val err = if (hubKnows(e)) {
             try {
                 if (job.getString("kind") == "text") host.hubText(e.id, job.getString("body"))
-                else host.hubUpload(e.id, job.getString("source"), job.getString("name"), job.getString("mime"), job.getLong("size"))
+                else {
+                    // through the hub there are no byte counts: it shows as going, then sent
+                    transfers.start(id, "out", e.fp, e.label, job.optString("name"), job.optLong("size"), route = "hub")
+                    tellTransfer(id, force = true)
+                }
+                if (job.getString("kind") != "text") host.hubUpload(e.id, job.getString("source"), job.getString("name"), job.getString("mime"), job.getLong("size"))
                 finish(job, Outbox.DONE, route = if (host.hubOnline(e.id)) "hub" else "hub-mailbox")
                 return "done"
             } catch (x: Exception) {
@@ -1119,8 +1466,14 @@ class MeshNode(
         val source = job.getString("source")
         val offer = MeshFiles.Offer(job.getString("id"), link.fp, job.getString("name"), job.getLong("size"),
             job.getString("mime"), open = { from -> host.openSource(source, from) }, check = { fileChanged(job) })
+        val id = job.getString("id")
+        offer.onProgress = { n ->
+            transfers.progress(id, n)
+            tellTransfer(id)
+        }
         offers.add(offer)
         try {
+            if (id in cancelJobs) return "cancelled"
             if (!link.send(offer.message())) return "the link dropped"
             while (!offer.await(1_000)) {
                 if (stopped) return "stopping"
@@ -1130,7 +1483,7 @@ class MeshNode(
                 if (!trust.isTrusted(link.fp)) return "refused: not trusted any more"
             }
             val (ok, error) = offer.result ?: (false to "")
-            if (!ok && error.startsWith("paused:")) return error
+            if (!ok && (error.startsWith("paused:") || error.startsWith("cancelled"))) return error
             return if (ok) "ok" else "refused: $error"
         } finally {
             offers.remove(job.getString("id"))
@@ -1310,6 +1663,15 @@ class MeshNode(
         const val PAIR_RETRY_MS = 2_000L
         /** A stream of refused messages (input, say) gets one `refused` this often, per type. */
         const val REFUSE_EVERY_MS = 5_000L
+        /**
+         * What this peer understands besides v1 (docs/mesh.md §9.10), in its hello as "features":
+         * `cancel` (stop a transfer), `link` (a web link, opened on your own devices), `rename`.
+         */
+        val FEATURES = listOf("cancel", "link", "rename")
+        /** Links opened at most, from one device, in a minute (the rest wait in Messages). */
+        const val OPEN_LINKS = 5
+        /** A screen hears of a transfer's progress at most this often (4 a second). */
+        const val TELL_EVERY_MS = 250L
 
         /**
          * This phone's caps, and the capability a peer needs to be told of each

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- one of your devices on the home screen: how it's reached, and one tap for each thing to do -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -16,6 +17,17 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal">
+
+        <!-- Select: ticked to send to several devices at once -->
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/tick"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-6dp"
+            android:clickable="false"
+            android:focusable="false"
+            android:visibility="gone"
+            app:buttonTint="@color/r_accent" />
 
         <FrameLayout
             android:layout_width="46dp"
@@ -56,8 +68,21 @@
                     android:textColor="@color/r_text"
                     android:textSize="18sp"
                     android:textStyle="bold"
-                    tools:text="slim" />
+                    tools:text="Brian's laptop" />
             </LinearLayout>
+
+            <!-- a nickname above: the device's own name, small -->
+            <TextView
+                android:id="@+id/realname"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/r_dim"
+                android:textSize="12sp"
+                android:visibility="gone"
+                tools:text="slim"
+                tools:visibility="visible" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -129,7 +154,16 @@
             tools:ignore="UseAppTint" />
     </LinearLayout>
 
+    <!-- files on their way to or from it: progress, time left, speed, and Cancel (item_transfer) -->
     <LinearLayout
+        android:id="@+id/transfers"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/actions"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"

@@ -53,10 +53,11 @@ object Perms {
     /**
      * Always allowed, even paused: what keeps the link up, says why something
      * was refused, and lets either side unpair. ack and nack answer what was
-     * sent before the pause.
+     * sent before the pause; `cancel` only stops a transfer, and `rename` only
+     * says what the sender is called now, as hello does (docs/mesh.md §9.10).
      */
     val ALWAYS = setOf("hello", "welcome", "ping", "pong", "perm", "unpair", "ack", "nack", "refused", "error",
-        "rpc-result")
+        "rpc-result", "cancel", "rename")
 
     fun defaults(relation: String?): Map<String, Boolean> = if (relation == OTHER_DEVICE) OTHER else OWN
 
@@ -79,7 +80,7 @@ object Perms {
      * still stops while paused, unless it's in [ALWAYS]).
      */
     fun capability(msg: JSONObject): String? = when (msg.optString("t")) {
-        "text" -> CHAT
+        "text", "link" -> CHAT
         "offer", "file", "file-end" -> FILES
         "clip" -> CLIPBOARD
         "notify", "notify-removed" -> NOTIFY
@@ -109,6 +110,14 @@ object Perms {
     }
 
     fun allowed(entry: TrustList.Entry?, cap: String): Boolean = entry?.allow?.get(cap) ?: (entry != null)
+
+    /**
+     * "All my devices", for sending to several at once (docs/mesh.md §9.10):
+     * the peers that are your own and have [cap] on here. A paused one stays
+     * in: what it's sent waits for it.
+     */
+    fun ownTargets(peers: List<TrustList.Entry>, cap: String): List<TrustList.Entry> =
+        peers.filter { it.relation == OWN_DEVICE && allowed(it, cap) }
 
     /** What this phone tells a peer about how it treats it: `perm` (a hint for its UI). */
     fun remoteView(entry: TrustList.Entry?, pausedAll: Boolean): JSONObject = JSONObject()
