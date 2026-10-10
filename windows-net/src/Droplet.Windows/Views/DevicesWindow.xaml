@@ -1,6 +1,7 @@
 <Window x:Class="Droplet.Windows.Views.DevicesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Droplet.Windows.Views"
         Title="droplet" Width="940" Height="640" MinWidth="680" MinHeight="480"
         WindowStartupLocation="CenterScreen" Icon="/Assets/droplet.ico">
     <Grid Margin="24,20,24,24">
@@ -24,6 +25,14 @@
         </DockPanel>
 
         <StackPanel Grid.Row="1">
+            <Border x:Name="PausedBanner" Style="{StaticResource Banner}" Visibility="Collapsed"
+                    Background="{DynamicResource DropletWarnSoftBrush}" BorderBrush="{DynamicResource DropletWarnBrush}">
+                <DockPanel>
+                    <Button Content="Resume everything" Style="{StaticResource PrimaryButton}" DockPanel.Dock="Right" Click="ResumeAll_Click" />
+                    <TextBlock VerticalAlignment="Center" TextWrapping="Wrap"
+                               Text="Everything is paused: nothing is shared with any device, either way. Messages and files you send wait." />
+                </DockPanel>
+            </Border>
             <Border x:Name="RingBanner" Style="{StaticResource Banner}" Visibility="Collapsed">
                 <DockPanel>
                     <Button Content="Stop ringing" Style="{StaticResource PrimaryButton}" DockPanel.Dock="Right" Click="StopRing_Click" />
@@ -78,8 +87,9 @@
                                     <DataTemplate>
                                         <DockPanel Margin="0,4,0,8">
                                             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                                                <Button Content="Accept" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Tag="{Binding Request}" Click="Accept_Click" />
-                                                <Button Content="Deny" Style="{StaticResource PlainButton}" Tag="{Binding Request}" Click="Deny_Click" />
+                                                <Button Content="Accept…" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Tag="{Binding}" Click="Accept_Click"
+                                                        ToolTip="You'll be asked whether it's your device or someone else's" />
+                                                <Button Content="Deny" Style="{StaticResource PlainButton}" Tag="{Binding}" Click="Deny_Click" />
                                             </StackPanel>
                                             <StackPanel>
                                                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -96,18 +106,7 @@
                     </Border>
 
                     <Border x:Name="DetailCard" Style="{StaticResource Card}" Visibility="Collapsed">
-                        <StackPanel>
-                            <TextBlock x:Name="DetailName" Style="{StaticResource SectionTitle}" FontSize="20" />
-                            <TextBlock x:Name="DetailRoute" Style="{StaticResource Caption}" Margin="0,0,0,12" />
-                            <WrapPanel>
-                                <Button x:Name="SendFilesButton" Content="Send files…" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" Click="SendFiles_Click" />
-                                <Button x:Name="MessageButton" Content="Message…" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Message_Click" />
-                                <Button x:Name="ClipboardButton" Content="Send clipboard" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Clipboard_Click" />
-                                <Button x:Name="RingButton" Content="Ring" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Ring_Click" />
-                                <Button x:Name="UnpairButton" Content="Unpair" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="Unpair_Click" />
-                            </WrapPanel>
-                            <TextBlock x:Name="DetailNote" Style="{StaticResource Caption}" Margin="0,4,0,0" />
-                        </StackPanel>
+                        <local:DeviceCard x:Name="Card" />
                     </Border>
 
                     <Border x:Name="PairCard" Style="{StaticResource Card}" Visibility="Collapsed">

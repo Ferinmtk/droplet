@@ -24,6 +24,13 @@ public partial class DevicesWindow : Window
     {
         this.app = app;
         InitializeComponent();
+        Card.SendFilesButton.Click += SendFiles_Click;
+        Card.MessageButton.Click += Message_Click;
+        Card.ClipboardButton.Click += Clipboard_Click;
+        Card.RingButton.Click += Ring_Click;
+        Card.PauseButton.Click += Pause_Click;
+        Card.PermissionsButton.Click += Permissions_Click;
+        Card.UnpairButton.Click += Unpair_Click;
         pairPoll = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Normal, (_, _) => PollPairing(), Dispatcher);
         app.Host.Changed += Refresh;
         Closed += (_, _) =>
@@ -47,10 +54,11 @@ public partial class DevicesWindow : Window
         RingText.Text = $"{tray.RingingFrom} is ringing this PC.";
         ControlBanner.Visibility = tray.ControlledBy is null || tray.RemotePaused ? Visibility.Collapsed : Visibility.Visible;
         ControlText.Text = $"{tray.ControlledBy} is controlling this PC (or did in the last two minutes).";
+        PausedBanner.Visibility = tray.PausedAll ? Visibility.Visible : Visibility.Collapsed;
 
         // the list is rebuilt only when it changed, so selection, focus and scrolling stay put
-        var rows = Host.Destinations.Select(d => new DeviceRow(d.Name, d.IsHub ? (d.Online ? "files and messages go here" : "offline") : d.Route, d.Online, d.Os, d)).ToList();
-        if (Changed(ref deviceKey, rows.Select(r => $"{((Destination)r.Item).Key}|{r.Name}|{r.Route}|{r.Online}|{r.Os}")))
+        var rows = Host.Destinations.Select(d => new DeviceRow(d.Name, RowRoute(d), d.Online, d.Os, d)).ToList();
+        if (Changed(ref deviceKey, rows.Select(r => $"{((Destination)r.Item).Key}|{r.Name}|{r.Route}|{r.Online}|{r.Os}|{SharingKey((Destination)r.Item)}")))
         {
             List.ItemsSource = rows;
             List.SelectedItem = rows.FirstOrDefault(r => ((Destination)r.Item).Key == selectedKey) ?? (selectedKey is null ? rows.FirstOrDefault() : null);
@@ -59,7 +67,7 @@ public partial class DevicesWindow : Window
 
         var mesh = Host.Engine?.Mesh;
         var requests = mesh?.Incoming.Waiting()
-            .Select(r => new RequestRow($"{r.Name} wants to pair{(r.Os.Length > 0 ? $" ({r.Os})" : "")}", r.Code, r.Request)).ToList() ?? [];
+            .Select(r => new RequestRow($"{r.Name} wants to pair{(r.Os.Length > 0 ? $" ({r.Os})" : "")}", r.Code, r.Request, r.Name)).ToList() ?? [];
         if (Changed(ref requestKey, requests.Select(r => r.Request + r.Code)))
         {
             Requests.ItemsSource = requests;
@@ -79,6 +87,23 @@ public partial class DevicesWindow : Window
         }
         ShowDetail();
     }
+
+    /// <summary>The line under a device's name: how it's reached, and whether it's paused or someone else's.</summary>
+    internal static string RowRoute(Destination d)
+    {
+        if (d.IsHub)
+        {
+            return d.Online ? "files and messages go here" : "offline";
+        }
+        var route = d.Paused ? "paused" : d.PausedByPeer ? $"{d.Route} · paused by it" : d.Route;
+        return d.Other ? $"{route} · someone else's" : route;
+    }
+
+    /// <summary>What the detail card shows about sharing, so a change rebuilds the list (and the card) even when the line under the name stays.</summary>
+    static string SharingKey(Destination d) =>
+        string.Join(",", Perms.Capabilities.Select(c => d.Allow?.GetValueOrDefault(c, true) == false ? "0" : "1")) +
+        $"|{d.Paused}|{d.PausedByPeer}|{d.Other}|{d.Refused}|{d.Caps.Count}|" +
+        (d.Remote is { } r ? string.Join(",", r.Allow.Select(p => $"{p.Key}={p.Value}")) : "-");
 
     static bool Changed(ref string last, IEnumerable<string> parts)
     {
@@ -100,26 +125,7 @@ public partial class DevicesWindow : Window
         }
         selectedKey = d.Key;
         DetailCard.Visibility = Visibility.Visible;
-        DetailName.Text = d.Name;
-        DetailRoute.Text = d.IsHub
-            ? "Your hub. Files sent here land in its shared storage; open droplet to see them."
-            : d.Route switch
-            {
-                "on Wi-Fi" => "Connected directly, on this network.",
-                "via Tailscale" => "Connected directly, over Tailscale.",
-                "via the hub" => "Reached through your hub.",
-                "nearby" => "On this network; droplet connects when there's something to send.",
-                _ => d.Fp is not null
-                    ? "Not reachable now. Messages and files wait, and go when it's back."
-                    : "Offline. The hub keeps messages and files for it.",
-            };
-        MessageButton.Visibility = Visibility.Visible;
-        ClipboardButton.Visibility = Visibility.Visible;
-        RingButton.Visibility = Visibility.Visible;
-        UnpairButton.Visibility = d.Paired ? Visibility.Visible : Visibility.Collapsed;
-        DetailNote.Text = d.Fp is not null && !d.Paired
-            ? "Trusted because your hub lists it. To remove it, remove it on the hub."
-            : "";
+        Card.Show(d, Host.Tray.PausedAll);
     }
 
     void List_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -198,16 +204,50 @@ public partial class DevicesWindow : Window
         Host.Refresh();
     }
 
-    void Accept_Click(object sender, RoutedEventArgs e) => Answer(sender, true);
-
-    void Deny_Click(object sender, RoutedEventArgs e) => Answer(sender, false);
-
-    void Answer(object sender, bool accept)
+    void Accept_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is string request)
+        // whose device it is decides what it may do: asked here, never sent to it
+        if ((sender as FrameworkElement)?.Tag is RequestRow r && RelationWindow.Ask(this, r.Name) is { } relation)
         {
-            Host.AnswerPairing(request, accept);
+            Host.AnswerPairing(r.Request, true, relation);
             Refresh();
+        }
+    }
+
+    void Deny_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is RequestRow r)
+        {
+            Host.AnswerPairing(r.Request, false);
+            Refresh();
+        }
+    }
+
+    void ResumeAll_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Host.SetPausedAll(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            App.ShowError(ex.Message);
+        }
+    }
+
+    void Pause_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is { Fp: not null } d)
+        {
+            Host.SetPeerPaused(d, !d.Paused);
+        }
+    }
+
+    void Permissions_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is { Fp: { } fp })
+        {
+            app.ShowPermissions(fp, this);
         }
     }
 
@@ -272,9 +312,14 @@ public partial class DevicesWindow : Window
         {
             return;
         }
+        // whose device it is decides what it may do: asked here, never sent to it
+        if (RelationWindow.Ask(this, pairPeer) is not { } relation)
+        {
+            return;
+        }
         try
         {
-            await m.PairConfirmAsync(pairRequest, true);
+            await m.PairConfirmAsync(pairRequest, true, relation);
             PairButtons.Visibility = Visibility.Collapsed;
             PairText.Text = $"Waiting for {pairPeer} to say yes too…";
             pairPoll.Start();
@@ -321,7 +366,9 @@ public partial class DevicesWindow : Window
         PairCode.Text = "";
         PairText.Text = state switch
         {
-            PairState.Accepted => $"Paired with {pairPeer}.",
+            PairState.Accepted => m.Trust.Find(pairPeer).FirstOrDefault() is { IsOther: true }
+                ? $"Paired with {pairPeer}, as someone else's device: files, messages and ring (Permissions… changes that)."
+                : $"Paired with {pairPeer}.",
             PairState.Denied => $"{pairPeer} said no.",
             PairState.Cancelled => "Cancelled.",
             _ => $"{pairPeer} didn't answer in time. Try again.",

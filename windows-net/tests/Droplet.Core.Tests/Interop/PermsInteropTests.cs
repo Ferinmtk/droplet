@@ -49,8 +49,9 @@ public sealed class PermsInteropTests : IAsyncLifetime
         JsonObject? request = null;
         await Wait.For(async () => (request = (await a.StatusAsync())["incoming"]?.AsArray().OfType<JsonObject>().FirstOrDefault()) is not null,
             20, "the agent to show the request");
-        Assert.Equal(start.Code, request!.Str("code"));
-        var answer = await a.CallAsync(new JsonObject { ["cmd"] = "pair-answer", ["request"] = request.Str("request"), ["accept"] = true, ["relation"] = "other" });
+        var req = request!;
+        Assert.Equal(start.Code, req.Str("code"));
+        var answer = await a.CallAsync(new JsonObject { ["cmd"] = "pair-answer", ["request"] = req.Str("request"), ["accept"] = true, ["relation"] = "other" });
         Assert.Equal(("accepted", "other"), (answer.Str("state") ?? "", answer.Str("relation") ?? ""));
         await n.Node.PairConfirmAsync(start.Request, true, Perms.Own);
         await Wait.For(() => n.Node.PairStatus(start.Request) == PairState.Accepted, 20, "the .NET side to see it accepted");

@@ -1,0 +1,42 @@
+<Window x:Class="Droplet.Windows.Views.RelationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="droplet" Width="540" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="True" Icon="/Assets/droplet.ico">
+    <StackPanel Margin="24,20,24,22">
+        <TextBlock x:Name="Question" Style="{StaticResource PageTitle}" FontSize="20" TextWrapping="Wrap" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,16">
+            It decides what it may do with this PC. Only you see the answer: the other device asks its own owner.
+        </TextBlock>
+
+        <Button x:Name="OwnButton" Style="{StaticResource PlainButton}" HorizontalContentAlignment="Stretch" Padding="16,12"
+                Margin="0,0,0,10" Click="Own_Click" AutomationProperties.Name="My device">
+            <DockPanel>
+                <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22" Margin="0,2,14,0"
+                           VerticalAlignment="Top" Foreground="{DynamicResource DropletAccentBrush}" />
+                <StackPanel>
+                    <TextBlock x:Name="OwnTitle" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock x:Name="OwnLine" Style="{StaticResource Caption}" />
+                </StackPanel>
+            </DockPanel>
+        </Button>
+
+        <Button x:Name="OtherButton" Style="{StaticResource PlainButton}" HorizontalContentAlignment="Stretch" Padding="16,12"
+                Margin="0,0,0,14" Click="Other_Click" AutomationProperties.Name="Someone else's">
+            <DockPanel>
+                <TextBlock Text="&#xE716;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22" Margin="0,2,14,0"
+                           VerticalAlignment="Top" Foreground="{DynamicResource DropletAccentBrush}" />
+                <StackPanel>
+                    <TextBlock x:Name="OtherTitle" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock x:Name="OtherLine" Style="{StaticResource Caption}" />
+                </StackPanel>
+            </DockPanel>
+        </Button>
+
+        <DockPanel>
+            <Button Content="Cancel" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" IsCancel="True" />
+            <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,12,0"
+                       Text="You can change it later: Permissions…, in Devices." />
+        </DockPanel>
+    </StackPanel>
+</Window>

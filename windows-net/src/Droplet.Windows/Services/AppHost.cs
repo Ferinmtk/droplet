@@ -100,6 +100,13 @@ internal sealed class AppHost : IAsyncDisposable
     /// <summary>Raised on the UI thread when a device asks to pair.</summary>
     public event Action<PairRequestInfo>? PairingRequested;
 
+    /// <summary>
+    /// Asks the person "Is &lt;name&gt; your device, or someone else's?" (docs/mesh.md §9.9):
+    /// <see cref="Perms.Own"/>, <see cref="Perms.Other"/>, or null when they cancel. Unset,
+    /// nobody can be asked, and a device is your own, as before.
+    /// </summary>
+    public Func<string, string?>? AskRelation { get; set; }
+
     /// <summary>Starts the engine.</summary>
     public async Task StartAsync()
     {
@@ -163,6 +170,7 @@ internal sealed class AppHost : IAsyncDisposable
                 Refresh();
             });
             m.Paired += _ => Refresh();
+            m.SharingChanged += _ => Refresh();
             m.Rung += from =>
             {
                 meshRingFrom = from;
@@ -246,7 +254,7 @@ internal sealed class AppHost : IAsyncDisposable
             {
                 var link = m.OpenLink(t.Fp);
                 linked += link is null ? 0 : 1;
-                peers.Add(new PeerView(t, link?.Kind, nearby.Contains(t.Fp)));
+                peers.Add(new PeerView(t, link?.Kind, nearby.Contains(t.Fp), m.RemotePermOf(t.Fp), m.LastRefusal(t.Fp)));
             }
         }
         if (!Ring.Ringing)
@@ -272,6 +280,7 @@ internal sealed class AppHost : IAsyncDisposable
             RingingFrom = poll.RingingFrom ?? meshRingFrom,
             PeersLinked = linked,
             Peers = peers.Count,
+            PausedAll = e.Mesh?.PausedAll ?? cfg.Mesh.Paused,
         };
         SyncSendTo(cfg);
     }
@@ -380,9 +389,15 @@ internal sealed class AppHost : IAsyncDisposable
                 var jobs = files.Select(f => m.SendFile(fp, f)).ToList();
                 var results = await Task.WhenAll(jobs.Select(j => m.WaitJobAsync(j.Id, TimeSpan.FromMinutes(30))));
                 var failed = results.FirstOrDefault(r => r?.State == JobState.Failed);
+                var held = results.FirstOrDefault(r => r?.Error?.StartsWith(Waiting, StringComparison.Ordinal) == true);
                 if (failed is not null)
                 {
                     Notify($"Couldn't send {what} to {d.Name}", failed.Error ?? "");
+                }
+                else if (held is not null)
+                {
+                    // paused, here or there: it goes on the resume
+                    Notify($"{what} will go to {d.Name}", $"{Sentence(held.Error![Waiting.Length..])}. It goes when sharing resumes.");
                 }
                 else if (results.All(r => r?.State == JobState.Done))
                 {
@@ -410,6 +425,10 @@ internal sealed class AppHost : IAsyncDisposable
             Notify($"Couldn't send {what} to {d.Name}", ex.Message);
         }
     }
+
+    const string Waiting = "waiting: ";
+
+    static string Sentence(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
     static string RouteWords(string route) => route switch
     {
@@ -511,6 +530,12 @@ internal sealed class AppHost : IAsyncDisposable
                 return;
             }
             var preview = string.Join(' ', clip.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            if (d.Fp is { } to && e.Mesh is { } guard)
+            {
+                // text from the clipboard is the clipboard, even when it would go as a message:
+                // not to a device it's switched off for, or that doesn't take it from this PC
+                guard.MaySend(to, new System.Text.Json.Nodes.JsonObject { ["t"] = "clip" });
+            }
             if (d.Fp is { } peer && e.Mesh is { } mesh && d.Caps.Contains(Caps.Clipboard))
             {
                 try
@@ -569,6 +594,71 @@ internal sealed class AppHost : IAsyncDisposable
     /// <summary>Pauses (or resumes) file and message notifications.</summary>
     public void SetNotificationsPaused(bool paused) => Running.Store.Update(c => c.Paused = paused);
 
+    // --- sharing: per-device permissions and Pause (docs/mesh.md §9.9) ----------------------------
+
+    /// <summary>Pause everything is on: nothing is shared with any device.</summary>
+    public bool PausedAll => Engine is { } e ? e.Mesh?.PausedAll ?? e.Bridge.PausedEverything : false;
+
+    /// <summary>Pauses (or resumes) sharing with every device at once; linked devices are told.</summary>
+    public void SetPausedAll(bool on)
+    {
+        var e = Running;
+        if (e.Mesh is { } m)
+        {
+            m.PauseEverything(on);
+        }
+        else
+        {
+            e.Bridge.SetPausedEverything(on);
+        }
+        Notify(on ? "Everything is paused" : "Everything is resumed",
+            on ? "Nothing is shared with any device until you resume." : "Sharing again.", "pause");
+        Refresh();
+    }
+
+    /// <summary>Pauses (or resumes) sharing with one device; it's told if it's linked.</summary>
+    public void SetPeerPaused(Destination d, bool on)
+    {
+        ArgumentNullException.ThrowIfNull(d);
+        if (d.Fp is not { } fp || Running.Mesh is not { } m)
+        {
+            return;
+        }
+        try
+        {
+            m.SetPerms(fp, paused: on);
+            Notify(on ? $"Paused {d.Name}" : $"Resumed {d.Name}",
+                on ? "Nothing goes to it or comes from it until you resume it." : "Sharing with it again.", "pause");
+        }
+        catch (ArgumentException ex)
+        {
+            Notify($"Couldn't {(on ? "pause" : "resume")} {d.Name}", ex.Message, "pause");
+        }
+        Refresh();
+    }
+
+    /// <summary>Changes and reads one device's permissions, for the Permissions window.</summary>
+    public IPermsEditor PermsOf(string fp) => new PeerPerms(this, fp);
+
+    sealed class PeerPerms(AppHost host, string fp) : IPermsEditor
+    {
+        public PermsView? Current()
+        {
+            if (host.Engine?.Mesh is not { } m || m.Trust.Get(fp) is not { } e)
+            {
+                return null;
+            }
+            return new PermsView(e.Name, e.Relation, Perms.CleanAllow(e.Allow, e.Relation), e.Paused, m.RemotePermOf(fp), m.PausedAll);
+        }
+
+        public void Set(string? relation = null, IReadOnlyDictionary<string, bool>? allow = null, bool? paused = null)
+        {
+            var m = host.Running.Mesh ?? throw new InvalidOperationException("Direct connections are switched off in Settings.");
+            m.SetPerms(fp, relation, allow, paused);
+            host.Refresh();
+        }
+    }
+
     /// <summary>A chat thread, oldest first: the mesh's log for a peer, or the hub's thread for a hub device.</summary>
     public async Task<List<ChatLine>> ChatAsync(Destination d)
     {
@@ -613,14 +703,31 @@ internal sealed class AppHost : IAsyncDisposable
             case NotificationActionKind.ShowInFolder when dirs.Any(d => ActionLinks.Inside(act.Arg, d)):
                 Files.ShowInFolder(act.Arg, log);
                 break;
-            case NotificationActionKind.AcceptPairing or NotificationActionKind.DenyPairing:
-                AnswerPairing(act.Arg, act.Kind == NotificationActionKind.AcceptPairing);
+            case NotificationActionKind.AcceptPairing:
+                {
+                    // whose device it is: asked here, never sent to it
+                    var name = e.Mesh?.Incoming.Waiting().FirstOrDefault(r => r.Request == act.Arg)?.Name ?? "that device";
+                    if (AskRelation is not { } ask)
+                    {
+                        AnswerPairing(act.Arg, true);
+                    }
+                    else if (ask(name) is { } relation)
+                    {
+                        AnswerPairing(act.Arg, true, relation);
+                    }
+                    break;
+                }
+            case NotificationActionKind.DenyPairing:
+                AnswerPairing(act.Arg, false);
                 break;
         }
     }
 
-    /// <summary>Answers a device's request to pair.</summary>
-    public void AnswerPairing(string request, bool accept)
+    /// <summary>
+    /// Answers a device's request to pair: accepting, as your own device (<see cref="Perms.Own"/>)
+    /// or someone else's (<see cref="Perms.Other"/>).
+    /// </summary>
+    public void AnswerPairing(string request, bool accept, string relation = Perms.Own)
     {
         if (Running.Mesh is not { } m)
         {
@@ -628,9 +735,11 @@ internal sealed class AppHost : IAsyncDisposable
         }
         try
         {
-            if (m.PairAnswer(request, accept) is { } entry)
+            if (m.PairAnswer(request, accept, relation) is { } entry)
             {
-                Notify($"Paired with {entry.Name}", "It can now reach this PC directly.", "pair");
+                Notify($"Paired with {entry.Name}", entry.IsOther
+                    ? "As someone else's device: files, messages and ring only. Change that under Permissions in Devices."
+                    : "It can now reach this PC directly.", "pair");
             }
         }
         catch (ArgumentException ex)
