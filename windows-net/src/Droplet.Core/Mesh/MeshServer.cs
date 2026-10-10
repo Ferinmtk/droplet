@@ -352,7 +352,7 @@ public sealed partial class MeshServer : IAsyncDisposable
             return;
         }
         var offer = FileReceiver.OfferIdPattern().IsMatch(id) ? handler.GetOffer(id) : null;
-        if (offer is null || offer.Fp != fp)
+        if (offer is null || offer.Fp != fp || offer.Cancelled)
         {
             // the same answer whether it doesn't exist or isn't for you
             resp.StatusCode = 404;
@@ -398,6 +398,10 @@ public sealed partial class MeshServer : IAsyncDisposable
             f.Seek(first, SeekOrigin.Begin);
             while (done < length)
             {
+                if (offer.Cancelled)
+                {
+                    throw new IOException("the transfer was cancelled");
+                }
                 var n = await f.ReadAsync(buf.AsMemory(0, (int)Math.Min(FileChunk, length - done)), ctx.RequestAborted).ConfigureAwait(false);
                 if (n == 0)
                 {
@@ -406,6 +410,7 @@ public sealed partial class MeshServer : IAsyncDisposable
                 await resp.Body.WriteAsync(buf.AsMemory(0, n), ctx.RequestAborted).ConfigureAwait(false);
                 done += n;
                 offer.Progress(n);
+                offer.Reached(first + done);
                 if (rate > 0)
                 {
                     var ahead = done * 1000.0 / rate - (Environment.TickCount64 - started);

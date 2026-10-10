@@ -209,6 +209,40 @@ public sealed class Offer
 
     internal void Touch() => Interlocked.Exchange(ref lastActivity, Environment.TickCount64);
 
+    long position;
+    volatile bool cancelled;
+
+    /// <summary>How far into the file it has been served (a resumed request starts further on).</summary>
+    public long Position => Interlocked.Read(ref position);
+
+    /// <summary>Called with <see cref="Position"/> as it's served.</summary>
+    public Action<long>? OnProgress { get; set; }
+
+    /// <summary>Cancelled here: what's being served stops, and it's 404 from now on.</summary>
+    public bool Cancelled => cancelled;
+
+    internal void Reached(long at)
+    {
+        long now;
+        do
+        {
+            now = Interlocked.Read(ref position);
+            if (at <= now)
+            {
+                return;
+            }
+        }
+        while (Interlocked.CompareExchange(ref position, at, now) != now);
+        OnProgress?.Invoke(at);
+    }
+
+    /// <summary>Stops it: nothing more is served, and it ends with <paramref name="error"/>.</summary>
+    public void Cancel(string error = "cancelled")
+    {
+        cancelled = true;
+        Finish(false, error);
+    }
+
     readonly TaskCompletionSource<(bool Ok, string Error)> done = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>Completes with the receiver's ack (true) or nack (false, why).</summary>
@@ -329,6 +363,22 @@ public static partial class FileReceiver
         var mime = msg.Str("mime") ?? "";
         mime = MimePattern().IsMatch(mime) ? mime : "application/octet-stream";
         return new OfferInfo(id, SafeName.Of(msg.Str("name")), size, mime);
+    }
+
+    /// <summary>Deletes what came of an offer so far (its partial file and metadata).</summary>
+    public static void DropPartial(string dir, string fp, string id)
+    {
+        var (part, meta) = PartPaths(dir, fp, id);
+        foreach (var p in new[] { part, meta })
+        {
+            try
+            {
+                File.Delete(p);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     /// <summary>The partial file and its metadata for an offer.</summary>
@@ -485,6 +535,7 @@ public static partial class FileReceiver
         f.Position = have;
         f.SetLength(have);
         var got = have;
+        progress?.Invoke(got, offer.Size);
         var buf = new byte[Chunk];
         while (true)
         {

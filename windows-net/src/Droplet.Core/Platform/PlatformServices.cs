@@ -212,6 +212,13 @@ public interface ISound
     void StopRing();
 }
 
+/// <summary>Opening web links (docs/mesh.md §9.10).</summary>
+public interface IBrowser
+{
+    /// <summary>Opens an http(s) link in the default browser. False when it couldn't.</summary>
+    bool Open(string url);
+}
+
 /// <summary>
 /// What the desktop can do. A null member means "can't", and the matching capability
 /// is never offered. The Windows app (3b) fills these in; tests use fakes.
@@ -238,4 +245,7 @@ public sealed record PlatformServices
 
     /// <summary>The ring.</summary>
     public ISound? Sound { get; init; }
+
+    /// <summary>The browser, for links from your own devices.</summary>
+    public IBrowser? Browser { get; init; }
 }
