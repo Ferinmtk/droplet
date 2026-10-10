@@ -19,6 +19,9 @@ public partial class DevicesWindow : Window
     string deviceKey = "", requestKey = "", nearbyKey = "";
     string? pairRequest;
     string pairPeer = "";
+    bool selecting;
+    readonly HashSet<string> chosen = [];
+    string transfersKey = "";
 
     internal DevicesWindow(App app)
     {
@@ -26,6 +29,10 @@ public partial class DevicesWindow : Window
         InitializeComponent();
         Card.SendFilesButton.Click += SendFiles_Click;
         Card.MessageButton.Click += Message_Click;
+        Card.LinkButton.Click += Link_Click;
+        Card.NicknameButton.Click += Nickname_Click;
+        Card.CancelRequested += id => _ = Host.CancelTransferAsync(id);
+        app.Host.TransfersChanged += ShowTransfers;
         Card.ClipboardButton.Click += Clipboard_Click;
         Card.RingButton.Click += Ring_Click;
         Card.PauseButton.Click += Pause_Click;
@@ -36,6 +43,7 @@ public partial class DevicesWindow : Window
         Closed += (_, _) =>
         {
             app.Host.Changed -= Refresh;
+            app.Host.TransfersChanged -= ShowTransfers;
             pairPoll.Stop();
         };
         Refresh();
@@ -57,8 +65,9 @@ public partial class DevicesWindow : Window
         PausedBanner.Visibility = tray.PausedAll ? Visibility.Visible : Visibility.Collapsed;
 
         // the list is rebuilt only when it changed, so selection, focus and scrolling stay put
-        var rows = Host.Destinations.Select(d => new DeviceRow(d.Name, RowRoute(d), d.Online, d.Os, d)).ToList();
-        if (Changed(ref deviceKey, rows.Select(r => $"{((Destination)r.Item).Key}|{r.Name}|{r.Route}|{r.Online}|{r.Os}|{SharingKey((Destination)r.Item)}")))
+        var rows = Host.Destinations.Select(d => new DeviceRow(d.Name, RowRoute(d), d.Online, d.Os, d, d.RealName, selecting, chosen.Contains(d.Key))).ToList();
+        if (Changed(ref deviceKey, rows.Select(r =>
+                $"{((Destination)r.Item).Key}|{r.Name}|{r.RealName}|{r.Route}|{r.Online}|{r.Os}|{r.Selecting}|{r.Checked}|{SharingKey((Destination)r.Item)}")))
         {
             List.ItemsSource = rows;
             List.SelectedItem = rows.FirstOrDefault(r => ((Destination)r.Item).Key == selectedKey) ?? (selectedKey is null ? rows.FirstOrDefault() : null);
@@ -118,6 +127,14 @@ public partial class DevicesWindow : Window
 
     void ShowDetail()
     {
+        if (selecting)
+        {
+            DetailCard.Visibility = Visibility.Collapsed;
+            SeveralCard.Visibility = Visibility.Visible;
+            ShowSeveral();
+            return;
+        }
+        SeveralCard.Visibility = Visibility.Collapsed;
         if (Selected is not { } d)
         {
             DetailCard.Visibility = Visibility.Collapsed;
@@ -126,6 +143,168 @@ public partial class DevicesWindow : Window
         selectedKey = d.Key;
         DetailCard.Visibility = Visibility.Visible;
         Card.Show(d, Host.Tray.PausedAll);
+        transfersKey = "";
+        ShowTransfers();
+    }
+
+    /// <summary>The files on their way to or from the device shown (at most 4 times a second while they move).</summary>
+    void ShowTransfers()
+    {
+        if (selecting || Selected is not { } d)
+        {
+            return;
+        }
+        var rows = d.Fp is { } fp ? Host.TransferRows(fp) : [];
+        if (Changed(ref transfersKey, rows.Select(r => $"{r.Id}|{r.Percent}|{r.Status}|{r.CanCancel}")))
+        {
+            Card.ShowTransfers(rows);
+        }
+    }
+
+    // --- several devices at once ---------------------------------------------------------------------
+
+    List<Destination> Chosen => Host.Destinations.Where(d => chosen.Contains(d.Key)).ToList();
+
+    void Select_Click(object sender, RoutedEventArgs e)
+    {
+        selecting = !selecting;
+        SelectButton.Content = selecting ? "Done" : "Select";
+        ListTitle.Text = selecting ? "Tick the devices to send to" : "Your devices";
+        if (selecting && Selected is { } d && chosen.Count == 0)
+        {
+            chosen.Add(d.Key);
+        }
+        SeveralResults.ItemsSource = null;
+        SeveralSummary.Visibility = Visibility.Collapsed;
+        deviceKey = "";
+        Refresh();
+    }
+
+    void Check_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { Tag: Destination d } box)
+        {
+            if (box.IsChecked == true)
+            {
+                chosen.Add(d.Key);
+            }
+            else
+            {
+                chosen.Remove(d.Key);
+            }
+            deviceKey = "";
+            Refresh();
+        }
+    }
+
+    void AllMine_Click(object sender, RoutedEventArgs e)
+    {
+        chosen.Clear();
+        foreach (var d in Destinations.Mine(Host.Destinations, Perms.Files))
+        {
+            chosen.Add(d.Key);
+        }
+        deviceKey = "";
+        Refresh();
+    }
+
+    void None_Click(object sender, RoutedEventArgs e)
+    {
+        chosen.Clear();
+        deviceKey = "";
+        Refresh();
+    }
+
+    void ShowSeveral()
+    {
+        var n = Chosen.Count;
+        SeveralTitle.Text = n switch
+        {
+            0 => "Pick devices to send to",
+            1 => "1 device",
+            _ => $"{n} devices",
+        };
+        foreach (var b in new[] { SeveralFiles, SeveralMessage, SeveralLink, SeveralClip })
+        {
+            b.IsEnabled = n > 0;
+        }
+    }
+
+    async Task SendSeveralAsync(string what, Func<Destination, Task<Core.Mesh.DeviceResult>> one)
+    {
+        var dests = Chosen;
+        if (dests.Count == 0)
+        {
+            return;
+        }
+        SeveralSummary.Text = $"{what}: sending to {dests.Count}…";
+        SeveralSummary.Visibility = Visibility.Visible;
+        SeveralResults.ItemsSource = null;
+        var results = await Host.SendToSeveralAsync(dests, what, one);
+        SeveralSummary.Text = $"{what}: {Core.Mesh.Several.Summary(results)}";
+        SeveralResults.ItemsSource = results.Select(Core.Mesh.Several.Line).ToList();
+    }
+
+    async void SeveralFiles_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = $"Send to {Chosen.Count} devices with droplet", CheckFileExists = true };
+        if (dialog.ShowDialog(this) == true && dialog.FileNames.Length > 0)
+        {
+            var files = dialog.FileNames;
+            await SendSeveralAsync(files.Length == 1 ? System.IO.Path.GetFileName(files[0]) : $"{files.Length} files", d => Host.FilesToAsync(d, files));
+        }
+    }
+
+    async void SeveralMessage_Click(object sender, RoutedEventArgs e)
+    {
+        if (AskWindow.Ask(this, $"A message for {Chosen.Count} devices", "Each gets it in its own conversation.", "Send") is { Length: > 0 } text)
+        {
+            await SendSeveralAsync("The message", d => Host.TextToAsync(d, text));
+        }
+    }
+
+    async void SeveralLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.AskLink(this, $"Send a link to {Chosen.Count} devices") is { } url)
+        {
+            await SendSeveralAsync("The link", d => Host.LinkToOneAsync(d, url));
+        }
+    }
+
+    async void SeveralClip_Click(object sender, RoutedEventArgs e)
+    {
+        var clip = App.ReadClipboard();
+        await SendSeveralAsync("The clipboard", d => Host.ClipToAsync(d, clip));
+    }
+
+    void Link_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is { } d)
+        {
+            app.SendLink(d, this);
+        }
+    }
+
+    void Nickname_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is not { Fp: not null } d)
+        {
+            return;
+        }
+        var own = d.RealName.Length > 0 ? d.RealName : d.Name;
+        if (AskWindow.Ask(this, $"What do you call {own}?",
+                "Only this PC uses the nickname, everywhere it shows the device, with its own name small beside it. It's never sent. Leave it empty for none.",
+                "Save", d.Nickname, s => Core.Mesh.Names.Check(s, "a nickname", emptyOk: true), emptyOk: true) is { } nick)
+        {
+            try
+            {
+                Host.SetNickname(d, nick);
+            }
+            catch (ArgumentException ex)
+            {
+                App.ShowError(ex.Message);
+            }
+        }
     }
 
     void List_SelectionChanged(object sender, SelectionChangedEventArgs e)

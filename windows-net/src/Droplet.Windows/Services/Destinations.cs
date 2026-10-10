@@ -12,8 +12,17 @@ internal sealed record Destination
     /// <summary>"hub", "peer:&lt;fingerprint&gt;" or "dev:&lt;hub device id&gt;": what Send To's shortcuts carry.</summary>
     public required string Key { get; init; }
 
-    /// <summary>Its name.</summary>
+    /// <summary>What it's called here: its nickname, else its own name.</summary>
     public required string Name { get; init; }
+
+    /// <summary>Its own name, when a nickname is shown instead (shown small beside it); "" otherwise.</summary>
+    public string RealName { get; init; } = "";
+
+    /// <summary>The nickname given it here; "" for none. Never sent.</summary>
+    public string Nickname { get; init; } = "";
+
+    /// <summary>A mesh peer that said it takes links (docs/mesh.md §9.10), while linked.</summary>
+    public bool TakesLinks { get; init; }
 
     /// <summary>The mesh peer's fingerprint, when it's one.</summary>
     public string? Fp { get; init; }
@@ -67,7 +76,9 @@ internal sealed record Destination
 /// <param name="Nearby">Announcing itself on this network.</param>
 /// <param name="Remote">What it said about how it treats this PC, while linked.</param>
 /// <param name="Refused">The last thing it refused.</param>
-internal sealed record PeerView(TrustEntry Entry, string? Link, bool Nearby, RemotePerm? Remote = null, Refusal? Refused = null);
+/// <param name="Features">What it said it understands besides v1, while linked.</param>
+internal sealed record PeerView(TrustEntry Entry, string? Link, bool Nearby, RemotePerm? Remote = null, Refusal? Refused = null,
+    IReadOnlyList<string>? Features = null);
 
 /// <summary>Why something can't go to a device now, and whether it waits for a resume instead of failing.</summary>
 /// <param name="Text">What to show: "Brian's laptop paused sharing with you".</param>
@@ -111,7 +122,8 @@ internal static class Destinations
             };
             list.Add(new Destination
             {
-                Key = "peer:" + e.Fp, Name = e.Name, Fp = e.Fp, HubDeviceId = dev?.Id, Route = route,
+                Key = "peer:" + e.Fp, Name = e.Label, RealName = e.Nickname.Length > 0 ? e.Name : "", Nickname = e.Nickname,
+                TakesLinks = p.Features?.Contains("link") == true, Fp = e.Fp, HubDeviceId = dev?.Id, Route = route,
                 Online = p.Link is not null || viaHub || p.Nearby, Paired = e.Source == TrustSource.Paired, Os = e.Os, Caps = e.Caps,
                 Other = e.IsOther, Paused = e.Paused, PausedByPeer = p.Remote?.Paused == true, Allow = Perms.CleanAllow(e.Allow, e.Relation),
                 Remote = p.Remote, Refused = p.Refused?.Text,
@@ -171,6 +183,17 @@ internal static class Destinations
     }
 
     /// <summary>
+    /// "All my devices" (docs/mesh.md §9.10): every device that's your own (the hub's, or a peer
+    /// paired as yours) with <paramref name="cap"/> switched on here. A paused one stays in:
+    /// what it's sent waits for it. Not the hub itself.
+    /// </summary>
+    public static List<Destination> Mine(IEnumerable<Destination> all, string cap)
+    {
+        ArgumentNullException.ThrowIfNull(all);
+        return all.Where(d => !d.IsHub && !d.Other && (d.Allow is null || d.Allow.GetValueOrDefault(cap, true))).ToList();
+    }
+
+    /// <summary>
     /// A destination by what someone typed or a shortcut carries: its key, "hub", a device id
     /// or fingerprint, or its name (when only one has it). Throws, with a sentence to show,
     /// when none or several match.
@@ -192,6 +215,11 @@ internal static class Destinations
             return byId;
         }
         var named = all.Where(d => d.Name.Equals(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (named.Count == 0)
+        {
+            // its own name, when a nickname is shown
+            named = all.Where(d => d.RealName.Length > 0 && d.RealName.Equals(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
         return named.Count switch
         {
             1 => named[0],

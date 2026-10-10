@@ -7,7 +7,7 @@ namespace Droplet.Windows.Tray;
 
 /// <summary>
 /// The tray's menu and icon: Pause (Resume) everything · Pause a device ▸ · Open droplet ·
-/// Send files ▸ · Send clipboard ▸ · Ring ▸ · Devices… · Open downloads folder · Pause
+/// Send files ▸ · Send clipboard ▸ · Send a link ▸ · Ring ▸ · Files on their way ▸ (each with Cancel) · Devices… · Open downloads folder · Pause
 /// notifications · Pause remote control · Settings… · Quit. The icon dims when nothing can be
 /// reached, turns amber while another device sends input, and shows a pause sign while
 /// everything is paused; the tooltip says how the hub is reached and who's in control.
@@ -22,6 +22,8 @@ internal sealed class TrayController
     readonly MenuItem sendFiles = new() { Header = "Send files to" };
     readonly MenuItem sendClip = new() { Header = "Send clipboard to" };
     readonly MenuItem ring = new() { Header = "Ring" };
+    readonly MenuItem sendLink = new() { Header = "Send a link to" };
+    readonly MenuItem transfers = new() { Header = "Files on their way" };
     readonly MenuItem pauseNotifications = new() { Header = "Pause notifications", IsCheckable = true };
     readonly MenuItem pauseRemote = new() { Header = "Pause remote control", IsCheckable = true };
     readonly MenuItem pauseAll = new();
@@ -46,7 +48,9 @@ internal sealed class TrayController
         menu.Items.Add(Item("Open droplet", app.OpenWeb));
         menu.Items.Add(sendFiles);
         menu.Items.Add(sendClip);
+        menu.Items.Add(sendLink);
         menu.Items.Add(ring);
+        menu.Items.Add(transfers);
         menu.Items.Add(Item("Devices…", app.ShowDevices));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Open downloads folder", app.OpenDownloads));
@@ -104,7 +108,19 @@ internal sealed class TrayController
         var pausedAll = host.Tray.PausedAll;
         Fill(sendFiles, dests, d => d.Label, app.PickAndSend, d => Destinations.Blocked(d, Perms.Files, pausedAll));
         Fill(sendClip, dests, d => d.Label, app.SendClipboard, d => Destinations.Blocked(d, Perms.Clipboard, pausedAll));
+        Fill(sendLink, dests, d => d.Label, d => app.SendLink(d), d => Destinations.Blocked(d, Perms.Chat, pausedAll));
         Fill(ring, dests, d => d.Label, d => _ = host.RingAsync(d), d => Destinations.Blocked(d, Perms.Ring, pausedAll));
+        // files on their way, each with Cancel; hidden when there are none
+        transfers.Items.Clear();
+        var rows = host.TransferRows().Where(r => r.CanCancel).ToList();
+        foreach (var r in rows)
+        {
+            var item = new MenuItem { Header = Plain($"Cancel {r.MenuLine}"), ToolTip = "Stop it; the other device is told" };
+            var id = r.Id;
+            item.Click += (_, _) => _ = host.CancelTransferAsync(id);
+            transfers.Items.Add(item);
+        }
+        transfers.Visibility = rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         // each paired or roster device, paused or not
         var peers = dests.Where(d => d.Fp is not null).ToList();
         Fill(pauseDevice, peers, d => d.Paused ? $"Resume {d.Name}" : $"Pause {d.Name}", d => Guard(() => host.SetPeerPaused(d, !d.Paused)));
