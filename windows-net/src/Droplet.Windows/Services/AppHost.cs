@@ -9,6 +9,7 @@ using Droplet.Core.Remote;
 using Droplet.Windows.Platform;
 using Droplet.Windows.Shell;
 using Droplet.Windows.Tray;
+using Droplet.Windows.Views;
 using Microsoft.Extensions.Logging;
 
 namespace Droplet.Windows.Services;
