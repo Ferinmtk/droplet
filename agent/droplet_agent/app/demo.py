@@ -23,12 +23,12 @@ def _peer(pid, name, fp, os_name, link=None, on_lan=False, lan=(), source="paire
     return {"id": pid, "name": name, "fp": fp, "source": source, "lan": list(lan), "port": 1739,
             "tailnet_ip": None, "os": os_name, "hub": None, "link": link, "on_lan": on_lan,
             "relation": relation, "allow": perms.defaults(relation), "paused": False, "remote": None,
-            "refused": None}
+            "refused": None, "nickname": "", "features": ["cancel", "link", "rename"] if link else []}
 
 
 class DemoAgent:
     def __init__(self, running: bool = True, incoming: bool = True, now: float | None = None,
-                 folder: str = "~/Downloads/droplet", accept_after: int = 2):
+                 folder: str = "~/Downloads/droplet", accept_after: int = 2, transfers: bool = False):
         self.running = running
         self.lock = threading.Lock()
         self.calls: list[dict] = []
@@ -67,6 +67,22 @@ class DemoAgent:
         self.jobs: dict[str, dict] = {}
         self.pairing: dict[str, dict] = {}
         self.paused_all = False
+        self.name = "slim"
+        self.links: list[dict] = []
+        # files on their way, as the agent's `transfers` says them
+        self.transfers: list[dict] = []
+        if transfers:
+            self.transfers = [
+                {"id": "a1" * 16, "dir": "out", "fp": PHONE_FP, "peer": "redmi-note-11e-pro",
+                 "name": "Holiday video.mp4", "size": 184_549_376, "done": 83_886_080, "state": "active",
+                 "error": None, "route": "lan", "percent": 45, "rate": 7_340_032, "eta": 14},
+                {"id": "b2" * 16, "dir": "in", "fp": PHONE_FP, "peer": "redmi-note-11e-pro",
+                 "name": "IMG_20261010_101544.jpg", "size": 4_194_304, "done": 3_355_443, "state": "active",
+                 "error": None, "route": "lan", "percent": 80, "rate": 2_097_152, "eta": 1},
+                {"id": "c3" * 16, "dir": "out", "fp": WIN_FP, "peer": "maryanne", "name": "Budget 2027.xlsx",
+                 "size": 1_048_576, "done": 1_048_576, "state": "done", "error": None, "route": "lan",
+                 "percent": 100, "rate": None, "eta": None},
+            ]
 
     def _name(self, fp):
         return next((p["name"] for p in self.peers if p["fp"] == fp), "?")
@@ -82,7 +98,7 @@ class DemoAgent:
 
     def _find(self, query):
         for p in self.peers:
-            if query in (p["fp"], p["id"], p["name"]):
+            if query in (p["fp"], p["id"], p["name"]) or (p.get("nickname") and query == p["nickname"]):
                 return p
         raise ValueError(f"no trusted peer called {query!r}. See: droplet-agent peers")
 
@@ -101,7 +117,8 @@ class DemoAgent:
         cmd = req.get("cmd")
         if cmd == "status":
             from ..mesh import perms
-            return {"id": "slim", "name": "slim", "fp": "9be1" * 16, "port": 1739,
+            return {"id": "slim", "name": self.name, "fp": "9be1" * 16, "port": 1739,
+                    "transfers": [dict(t) for t in self.transfers],
                     "paused_all": self.paused_all, "capabilities": list(perms.CAPABILITIES),
                     "peers": [dict(p, allow=dict(p["allow"])) for p in self.peers],
                     "nearby": [dict(n) for n in self.nearby],
@@ -170,6 +187,35 @@ class DemoAgent:
             if not p["link"]:
                 return {"error": f"{p['name']} isn't reachable directly, and not through the hub either"}
             return {"route": "lan"}
+        if cmd == "transfers":
+            return {"transfers": [dict(t) for t in self.transfers], "queued": []}
+        if cmd == "cancel":
+            t = next((t for t in self.transfers if t["id"].startswith(str(req.get("id") or "-")) and
+                      t["state"] == "active"), None)
+            if t is None:
+                raise ValueError("no transfer with that id is going on (it may have finished already)")
+            t.update(state="cancelled", error="cancelled here", rate=None, eta=None)
+            return {"id": t["id"], "dir": t["dir"], "name": t["name"], "peer": t["peer"]}
+        if cmd == "rename":
+            from ..mesh.trust import check_name
+            self.name = check_name(req.get("name"))
+            return {"name": self.name, "told": sum(1 for p in self.peers if p["link"])}
+        if cmd == "nickname":
+            from ..mesh.trust import check_name
+            p = self._find(req.get("peer"))
+            p["nickname"] = check_name(req.get("nickname") or "", "a nickname", empty_ok=True)
+            return {"name": p["name"], "fp": p["fp"], "nickname": p["nickname"]}
+        if cmd == "link":
+            from ..mesh.links import check_url
+            p = self._find(req.get("peer"))
+            url = check_url(req.get("url"))
+            self.links.append({"fp": p["fp"], "url": url})
+            if p["link"]:
+                self.chat.append(dict(self._msg("out", p["fp"], url, time.time()), kind="link"))
+                return {"how": "link", "route": "lan"}
+            return {"how": "message", "id": secrets.token_hex(8), "kind": "text", "peer": p["name"],
+                    "state": "queued", "route": None, "attempts": 1, "name": None,
+                    "why": "not reachable directly, and no hub knows it right now"}
         if cmd == "unpair":
             p = self._find(req.get("peer"))
             self.peers.remove(p)

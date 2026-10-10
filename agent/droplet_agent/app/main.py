@@ -101,7 +101,7 @@ def follow_scheme(app: QApplication):
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="droplet-agent app", description="Open Droplet's window.")
-    p.add_argument("--page", choices=["devices", "pair", "iphone", "messages", "received", "settings"],
+    p.add_argument("--page", choices=["devices", "pair", "iphone", "messages", "received", "settings", "rename"],
                    help="open on this page")
     p.add_argument("--demo", action="store_true", help="show pretend devices, without the agent")
     args = p.parse_args(argv)

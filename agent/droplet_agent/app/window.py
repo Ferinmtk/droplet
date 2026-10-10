@@ -197,6 +197,10 @@ class Window(QMainWindow):
             self.go("pair")
             self.pages["pair"].show_qr()
             return
+        if page == "rename":    # the tray's Rename this computer…: Settings, asking for the name
+            self.go("settings")
+            QTimer.singleShot(0, self.pages["settings"].rename)
+            return
         keys = [k for k, _t, _i in PAGES]
         if page not in keys:
             return

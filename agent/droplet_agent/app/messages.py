@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QKeyEvent
 from PySide6.QtWidgets import (QFrame, QListWidget, QListWidgetItem, QPlainTextEdit, QScrollArea, QSizePolicy,
                                QSplitter, QVBoxLayout, QWidget)
 
 from . import model
-from .widgets import device_icon, hbox, label, primary, text_color, title, vbox
+from .widgets import button, device_icon, hbox, label, primary, text_color, title, vbox
+
+
+def open_link(url: str) -> bool:
+    """Open a web link from a message in the browser: checked again, http and https only."""
+    from ..mesh.links import check_url
+    try:
+        return QDesktopServices.openUrl(QUrl(check_url(url)))
+    except ValueError:
+        return False
 
 POLL_MS = 2500
 
@@ -45,7 +54,16 @@ class Bubble(QWidget):
         if m.get("state") == "failed":
             note.setStyleSheet(f"color: {text_color('bad', self)};")
         note.setAlignment(Qt.AlignmentFlag.AlignRight if out else Qt.AlignmentFlag.AlignLeft)
-        box.setLayout(vbox(body, note, spacing=3, margins=(12, 8, 12, 6)))
+        parts = [body]
+        self.url = model.message_url(m)
+        self.open = None
+        if self.url:
+            # a link: an Open button (a link from your own device has opened already; it's here again)
+            self.open = button("Open", ("internet-web-browser", "applications-internet"))
+            self.open.setToolTip(f"Open {self.url} in your browser")
+            self.open.clicked.connect(lambda: open_link(self.url))
+            parts.append(hbox(*((None, self.open) if out else (self.open, None)), spacing=0))
+        box.setLayout(vbox(*parts, note, spacing=3, margins=(12, 8, 12, 6)))
         box.setMaximumWidth(520)
         box.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.setLayout(hbox(*((None, box) if out else (box, None)), spacing=0))
@@ -143,7 +161,7 @@ class MessagesPage(QWidget):
 
     def _fill_people(self):
         rows = model.conversations(self.messages, self.status)
-        shape = [(r["peer"]["fp"], r["peer"].get("name"), model.device_state(r["peer"]),
+        shape = [(r["peer"]["fp"], model.display_name(r["peer"]), model.device_state(r["peer"]),
                   (r["last"] or {}).get("id"), (r["last"] or {}).get("state")) for r in rows]
         has = bool(rows)
         self.split.setVisible(has)
@@ -157,10 +175,10 @@ class MessagesPage(QWidget):
             for r in rows:
                 p = r["peer"]
                 when = model.when_text((r["last"] or {}).get("ts"))
-                text = f"{p.get('name')}\n{model.preview(r['last'], 34)}"
+                text = f"{model.display_name(p)}\n{model.preview(r['last'], 34)}"
                 it = QListWidgetItem(device_icon(p.get("os"), model.is_phone(p.get("os"))), text)
                 it.setData(Qt.ItemDataRole.UserRole, p["fp"])
-                it.setToolTip(f"{p.get('name')}: {model.state_text(p)}" + (f" · last message {when}" if when else ""))
+                it.setToolTip(f"{model.display_name(p)}: {model.state_text(p)}" + (f" · last message {when}" if when else ""))
                 it.setSizeHint(QSize(0, 48))
                 self.people.addItem(it)
         for i in range(self.people.count()):
@@ -177,8 +195,9 @@ class MessagesPage(QWidget):
             self.who.setText("")
             self.who_state.setText("")
             return
-        self.who.setText(str(p.get("name")))
-        self.who_state.setText(model.state_text(p))
+        self.who.setText(model.display_name(p))
+        note = model.own_name_note(p)
+        self.who_state.setText(model.state_text(p) + (f" · {note}" if note else ""))
 
     def _picked(self, item, _old=None):
         if item is None:

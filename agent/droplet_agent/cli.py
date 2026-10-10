@@ -1683,7 +1683,7 @@ def main(argv=None) -> int:
     ap = sub.add_parser("app", help="open Droplet's window: your devices, pairing, messages, received files",
                         description="Open Droplet's window (it needs PySide6: pip install 'droplet-agent[app]'). "
                                     "If it's open already, it comes to the front.")
-    ap.add_argument("--page", choices=["devices", "pair", "iphone", "messages", "received", "settings"],
+    ap.add_argument("--page", choices=["devices", "pair", "iphone", "messages", "received", "settings", "rename"],
                     help="open on this page (iphone: the Pair page, showing the code an iPhone scans)")
     ap.add_argument("--demo", action="store_true", help=argparse.SUPPRESS)
     ap.set_defaults(func=cmd_app)
