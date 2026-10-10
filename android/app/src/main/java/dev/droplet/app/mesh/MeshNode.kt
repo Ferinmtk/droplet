@@ -1016,8 +1016,10 @@ class MeshNode(
     }
 
     /** The job waits: a file keeps its own copy from here, since a URI grant dies with the process. */
-    private fun keepWaiting(job: JSONObject, error: String, retry: Boolean) {
+    private fun keepWaiting(job: JSONObject, error: String, retry: Boolean, attempts: Int? = null) {
         var fields = arrayOf<Pair<String, Any?>>("state" to Outbox.QUEUED, "error" to error, "retry" to retry)
+        // in the same update: someone waiting for the job sees the reason with the attempt
+        if (attempts != null) fields += arrayOf<Pair<String, Any?>>("attempts" to attempts)
         if (job.getString("kind") == "file" && !job.optBoolean("spooled")) {
             val dest = File(sendingDir, "${job.getString("id")}-${MeshFiles.safeName(job.optString("name"))}")
             try {
@@ -1053,8 +1055,7 @@ class MeshNode(
                 return "done"
             }
             // paused, here or there: it waits, and goes on resume (a perm, or Resume here)
-            outbox.update(id, "attempts" to job.optInt("attempts") + 1)
-            keepWaiting(job, "waiting: ${r.message}", retry = false)
+            keepWaiting(job, "waiting: ${r.message}", retry = false, attempts = job.optInt("attempts") + 1)
             return "wait"
         }
         outbox.update(id, "state" to Outbox.SENDING, "attempts" to job.optInt("attempts") + 1)
