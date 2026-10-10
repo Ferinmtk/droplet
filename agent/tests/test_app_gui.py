@@ -379,3 +379,13 @@ def test_the_window_has_the_drop_icon(qapp):
     assert not app_icon().isNull()
     assert QApplication.desktopFileName() == "io.github.ferinmtk.Droplet"
     assert Path(appmain.server_name()).name in ("app.sock",) or appmain.server_name().startswith("droplet-app-")
+
+
+def test_the_pair_page_has_the_agent_ask_the_gateway(win, demo):
+    """On a phone's hotspot nothing announces itself: while the Pair page is open, the agent
+    also asks the gateway who it is (docs/mesh.md §9.10), and only then."""
+    win.refresh()
+    assert [c for c in demo.calls if c.get("cmd") == "status"][-1].get("scan") is False
+    win.go("pair")
+    win.refresh()
+    assert [c for c in demo.calls if c.get("cmd") == "status"][-1].get("scan") is True

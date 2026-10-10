@@ -35,8 +35,8 @@ public interface IMeshServerHandler
     /// <summary>Bytes a second when serving files; 0 for no limit.</summary>
     long MaxRate { get; }
 
-    /// <summary>A pairing call: (method, path, body) → (status, body).</summary>
-    (int Status, JsonObject Body) Pair(string method, string path, JsonObject? body);
+    /// <summary>A pairing call: (method, path, body, the client's address) → (status, body).</summary>
+    (int Status, JsonObject Body) Pair(string method, string path, JsonObject? body, string address);
 }
 
 /// <summary>
@@ -46,6 +46,7 @@ public interface IMeshServerHandler
 /// wss://peer:port/mesh                   a trusted peer's link        (client certificate, trusted)
 /// GET|HEAD /mesh/files/&lt;id&gt;             a file offered to that peer  (client certificate, trusted)
 /// POST /mesh/pair, GET /mesh/pair/&lt;r&gt;, POST /mesh/pair/&lt;r&gt;/confirm|cancel   (no client certificate)
+/// POST /mesh/pair/hello                  who this is, on a hotspot    (no client certificate; Hotspot.cs)
 /// </code>
 /// Who may do what is decided in the handshake: TLS asks for a client certificate
 /// without requiring one (<c>AllowCertificate</c>), and the validation callback accepts
@@ -226,7 +227,7 @@ public sealed partial class MeshServer : IAsyncDisposable
         var method = ctx.Request.Method;
         if (path == "/mesh/pair" || path.StartsWith("/mesh/pair/", StringComparison.Ordinal))
         {
-            await PairAsync(ctx, method, path).ConfigureAwait(false);
+            await PairAsync(ctx, method, path, address).ConfigureAwait(false);
             return;
         }
         if (entry is null)
@@ -264,7 +265,7 @@ public sealed partial class MeshServer : IAsyncDisposable
         await RespondAsync(ctx, 404, new JsonObject { ["error"] = "not found" }, close: true).ConfigureAwait(false);
     }
 
-    async Task PairAsync(HttpContext ctx, string method, string path)
+    async Task PairAsync(HttpContext ctx, string method, string path, string address)
     {
         JsonObject? body = null;
         if (method == "POST")
@@ -306,7 +307,7 @@ public sealed partial class MeshServer : IAsyncDisposable
             await RespondAsync(ctx, 405, new JsonObject { ["error"] = "method not allowed" }, close: true).ConfigureAwait(false);
             return;
         }
-        var (status, output) = handler.Pair(method, path, body);
+        var (status, output) = handler.Pair(method, path, body, address);
         var close = ctx.Request.Headers.Connection.ToString().Equals("close", StringComparison.OrdinalIgnoreCase);
         await RespondAsync(ctx, status, output, close).ConfigureAwait(false);
     }
@@ -330,6 +331,10 @@ public sealed partial class MeshServer : IAsyncDisposable
         if (path == "/mesh/pair")
         {
             return ("open", null);
+        }
+        if (path == Hotspot.HelloPath)
+        {
+            return ("hello", null);
         }
         var m = PairPath().Match(path);
         if (!m.Success)
