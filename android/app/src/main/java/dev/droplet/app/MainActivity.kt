@@ -334,7 +334,8 @@ class MainActivity : AppCompatActivity() {
             visibility = if (e.nickname.isNotEmpty()) View.VISIBLE else View.GONE
         }
         v.findViewById<ImageView>(R.id.icon).setImageResource(if (e.os == "android") R.drawable.ic_phone else R.drawable.ic_laptop)
-        val waiting = Mesh.node?.outbox?.forPeer(e.fp)?.size ?: 0
+        // what waits for it (one on its way shows below, with its progress)
+        val waiting = Mesh.node?.outbox?.forPeer(e.fp)?.count { it.optString("state") != dev.droplet.app.mesh.Outbox.SENDING } ?: 0
         val looking = p.route in setOf("seen", "offline") && Mesh.isProbing(e.fp)
         val reached = if (looking) getString(R.string.home_route_looking) else routeText(p.route)
         // paused here, everything paused, or it paused sharing with this phone (docs/mesh.md §9.9)

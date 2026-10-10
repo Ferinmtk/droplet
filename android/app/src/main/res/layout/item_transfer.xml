@@ -6,7 +6,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="10dp"
-    android:background="@drawable/r_pill"
+    android:background="@drawable/r_transfer"
     android:orientation="vertical"
     android:paddingHorizontal="12dp"
     android:paddingTop="8dp"
