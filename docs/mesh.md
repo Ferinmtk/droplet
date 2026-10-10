@@ -6,7 +6,11 @@
   reference the other apps follow: identity, mDNS, the mutual-TLS port,
   the trust list, direct pairing, every message below, routing with the
   outbox, and the `droplet-agent peers | pair | unpair | text | send-file |
-  ring | clip | send` commands.
+  ring | clip | send | allow | pause | resume` commands.
+- **Per-device permissions and Pause** (§9.9): your device or someone
+  else's, a switch per capability, Pause per device and for everything;
+  each device enforces its own, both ways. Linux and Mac agent and the
+  iPhone web app; Windows and Android next.
 - **The hub's roster** (`mesh.py`): §3.1 and §9.
 - **The Android app is a peer** (`android/app/src/main/java/dev/droplet/app/mesh/`
   and `Mesh.kt`): the same protocol, tested against the Linux agent both
@@ -16,6 +20,10 @@
 
 Not yet: the Windows app as a peer, chat history merged on the hub (§6),
 and the TV remote in the apps (§7).
+
+An iPhone, which can't run a peer, connects to the Linux agent from a web
+app over WebRTC instead, with no server: docs/iphone.md (experimental).
+It's kept in the trust list with source `browser`.
 
 Where the design changed while it was built, this document says so, and why.
 §9 is the exact wire protocol, for implementing a peer.
@@ -358,6 +366,8 @@ TLS. `from` in a message is ignored and replaced; `to` isn't needed.
 | `{"t":"notify","app","title","text","key"}` / `{"t":"notify-removed","key"}` | notification mirroring: a phone's notification, shown as a desktop notification and replaced by the next with the same `key`; `notify-removed` takes it away. See below |
 | `{"t":"unpair"}` | "I unpaired you": a `paired` peer removes the sender; a `roster` one is kept (the hub vouches) (*added*) |
 | `{"t":"ping"}` → `{"t":"pong"}` | app-level liveness, as with the hub |
+| `{"t":"perm","paused","allow","caps"}` | how the sender treats you now: a hint for your UI (§9.9) (*added*) |
+| `{"t":"refused","re","id"?,"cap","why","error"}` | the sender didn't take your `re` message: `why` is `"paused"` or `"denied"` (§9.9) (*added*) |
 
 A `cmd` `screenshot` over a link goes back to the requester as an `offer`
 over the mesh, not an upload to the hub.
@@ -442,8 +452,10 @@ and never trusts its own.
 
 ### 9.7 What the Linux agent adds locally
 
-`droplet-agent peers`, `pair [<peer> | --accept | --deny]`, `unpair`,
-`text`, `send-file`, `ring [--stop]`, `clip [--text]` and `send <peer> <json>`
+`droplet-agent peers`, `pair [<peer> | --accept | --deny] [--own | --other]`, `unpair`,
+`text`, `send-file`, `ring [--stop]`, `clip [--text]`, `send <peer> <json>`,
+`allow <peer> <capability> on|off` (or `allow <peer> own|other`), and
+`pause`/`resume <peer> | --all` (§9.9)
 talk to the running agent over `$XDG_RUNTIME_DIR/droplet-agent/control.sock`
 (owner-only, and the peer's uid is checked). Without a hub, `droplet-agent
 run` runs the mesh alone. See `agent/README.md`.
@@ -485,6 +497,28 @@ this is it.
   while the mesh runs (Stay connected), with Notification access, and
   unless **Show phone notifications on my computers** is off
   (`NotifyMirror.kt`).
+- **Permissions and Pause** (§9.9, `mesh/Perms.kt`): the same model, checks
+  and messages as the reference. On a phone, `access` is its SMS, browsing
+  its files and commands (the caps `sms` and `files`), `control` is remote
+  control of its media (the cap `media`), and `notify` is mirroring its
+  notifications to that computer (and showing that computer's here).
+  Pairing asks "Is <name> your device, or someone else's?" once the codes
+  match, on the phone's side only. Each device card on the home screen has
+  Pause/Resume, a "Someone else's" badge, says when it's paused (here, by
+  Pause everything, or by the device itself) and greys out what can't be
+  sent, saying why when tapped; its last refusal shows under it for two
+  minutes. Its ⋮ menu has Permissions: whose device, Pause, and a switch
+  for each capability. Settings → Direct connections has Pause everything
+  (kept in the app's preferences), and so does the Stay connected
+  notification (Pause all, then Resume). Through the hub: `media`, `clip`
+  and `rpc` from the hub's socket are checked against their sender (an
+  `rpc` refused answers `rpc-result` with an error); a ring from the hub
+  names its sender only by name, so a trusted device with that name (one
+  only) gets its own switches; the clipboard and states don't go to the hub
+  as §9.9 says, and neither do notifications for the hub's Phone card while
+  everything is paused. The TV remote and the Bluetooth mouse and keyboard
+  talk to the TV and the computer directly, not over the mesh, so they're
+  unaffected.
 - **Tests** (`android/app/src/test`): `MeshUnitTest` (the certificate
   profile, pairing vectors from the reference, Range, the server's access
   rules over real sockets, two JVM peers pairing and talking) and
@@ -493,4 +527,123 @@ this is it.
   from either side with matching codes, text, a 20 MB file each way
   interrupted and resumed, ring, clip, media and RPC answered by the
   phone's bridges, the roster through a hub, and direct delivery after the
-  hub is stopped.
+  hub is stopped. `PermsTest` ports the reference's permission matrix
+  (each capability both ways, allowed, switched off, paused and everything
+  paused, between two JVM peers), pairing as your own device or someone
+  else's, Pause and resume, and the hub routes; `NoHubTest` checks the same
+  against the real agent from the home screen (the agent's `perm` greying
+  out Clipboard, its refusal shown on the card, a pause the agent hears,
+  a ring refused, a message held until Resume). CI
+  (`.github/workflows/android.yml`) runs them all, with the agent
+  installed from the same commit.
+
+### 9.9 Per-device permissions and Pause (*added*; GitHub issue #59)
+
+Pairing used to trust a device for everything. Now each device decides,
+for each peer, what it shares with it, and can pause it. **Enforcement is
+local**: every device checks what it sends and what it accepts against its
+own settings, whatever the peer says or does. The Linux and Mac agent is
+the reference (`agent/droplet_agent/mesh/perms.py`); the Windows and
+Android apps follow this section. Nothing here changes `v` (still 1): the
+new fields and messages are optional, and an older peer that ignores them
+is treated exactly as before.
+
+**Each trust entry** gets three fields, chosen by this device's owner and
+never sent as such:
+
+| field | values | missing (an entry from before) |
+|---|---|---|
+| `relation` | `"own"` (your device) or `"other"` (someone else's: a deskmate's laptop, a friend's phone) | `"own"` |
+| `allow` | `{capability: bool}`, one per capability below | the relation's defaults |
+| `paused` | `bool` | `false` |
+
+and the device has one **global pause** (Linux: `"mesh": {"paused": true}` in
+config.json): every peer paused at once, while presenting, say.
+
+**The capabilities**, the messages each covers, and the defaults:
+
+| capability | messages | direction | own | other |
+|---|---|---|---|---|
+| `files` | `offer` (§9.5), the iPhone's `file`/`file-end` | both ways | on | on |
+| `chat` | `text` | both ways | on | on |
+| `clipboard` | `clip`: automatic sync *and* a clipboard sent on purpose | both ways | on | **off** |
+| `notify` | `notify`, `notify-removed` | both ways | on | **off** |
+| `control` | `input`, `media`, `cmd` (lock, screenshot), `rpc` `media.*`, `state` of kind `media`, the presentation remote | this device | on | **off** |
+| `ring` | `ring`, `ring-stop` | this device | on | on |
+| `access` | `rpc` `files.*` and `sms.*`, running commands (where a device offers them) | this device | on | **off** |
+
+"Both ways": switched off, it's neither sent to the peer nor taken from
+it. "This device": the switch says what the *peer* may do *here*; what this
+device may do to the peer is the peer's own switch, which it enforces (and
+announces, below). A `state` of kind `battery` needs no capability. `hello`,
+`welcome`, `ping`, `pong`, `perm`, `unpair`, `ack`, `nack`, `refused`,
+`error` and `rpc-result` are always allowed, paused or not, so a link stays
+up, refusals can be explained, and either side can still unpair.
+
+**Asking at pairing.** Each side asks its own owner "Is <name> your
+device, or someone else's?" when it accepts (the responder) or confirms the
+code (the initiator), and stores the answer as `relation` with its
+defaults. The answer isn't sent: the other side asks its own owner. A
+device that can't ask (a script, an older caller) uses `"own"`, as before.
+Every device the hub's roster brings is `"own"` (the same user's hub); a
+roster fetch keeps whatever the owner changed. Existing entries are `"own"`.
+
+**Paused** (the peer, or everything): nothing goes to it (live messages
+fail at once with a reason; chat and files wait in the outbox with the
+error `waiting: <why>` and go on resume), and nothing from it is taken
+except the always-allowed messages above. The link stays open, and a file
+it offered earlier can't be fetched (403).
+
+**Telling the peer** (a hint, never trusted for enforcement):
+
+- `hello` and `welcome` carry `"perm": {"paused": bool, "allow": {…}}`: how
+  the sender treats the receiver. Their `caps` are only what the receiver
+  may use: without `control`, no `input`, `media`, `lock`, `screenshot`;
+  without `clipboard`, no `clipboard`; without `notify`, no `notify`; paused,
+  none. (mDNS and the roster still announce everything.)
+- When the owner changes anything, the sender sends
+  `{"t":"perm","paused":bool,"allow":{…},"caps":[…]}` on any open link.
+- The receiver uses it to grey out its UI ("Paused by Brian's laptop",
+  Send clipboard off) and to not send what would be refused: a live message
+  fails at once with "<name> doesn't allow the clipboard from you" or
+  "<name> paused sharing with you"; chat and files to a peer that paused
+  you wait. A hint counts only while a link is open (the next link's hello
+  brings the latest word); no `perm` at all (an older peer) means
+  everything allowed, as before.
+
+**Refusing**, so the sender can say why:
+
+- A message that's answered (`text`, `offer`, the iPhone's `file`, a `clip`
+  with an `id`), when its capability is **off**: `{"t":"nack","id","error":
+  "<my name> doesn't allow <files|messages|the clipboard|…> from you",
+  "cap","why":"denied"}`. The sender fails it for good and shows the error.
+- The same, while **paused**: `{"t":"refused","re":"<its t>","id","cap",
+  "why":"paused","error":"<my name> paused sharing with you"}`. Not a
+  `nack`: an older sender hears no answer and retries later; a newer one
+  keeps it queued with `waiting: <error>` until a `perm` says `paused:false`.
+- Anything else (`clip` without an id, `input`, `ring`, `notify`, `rpc`…):
+  `{"t":"refused","re","cap","why","error"}`, at most once every 5 seconds
+  for each message type (input arrives many times a second).
+
+**Through the hub** (routes 3–4, §5): the same checks. An outgoing message
+is checked before any route is tried. A message arriving through the hub
+names its sender (`from.id`); a trusted peer with that id gets its own
+switches, and any other device of the hub's counts as your own (the hub's
+web page, say), except that Pause everything stops all of it. A clipboard
+broadcast to the hub reaches every device it has, so it doesn't go to the
+hub while everything is paused, or while any device the hub lists is paused
+or has `clipboard` off here; it still goes directly to the peers that may
+have it.
+
+**The iPhone** (a browser peer, docs/iphone.md §3.3) takes part the same
+way: the computer asks own/other when its owner accepts the pairing, puts
+`perm` in its `welcome`, sends `perm` when it changes, and refuses as above.
+The web app has a Pause per computer, which it enforces itself and
+announces with `perm`.
+
+**Control socket** (Linux; the window and tray use these): `perm-set
+{peer, relation?, allow?: {cap: bool}}` or `{peer, capability, on}`; `pause`
+and `resume` with `{peer}` or `{all: true}`; `pair-answer` and
+`pair-confirm` take `relation`; `status` lists `paused_all`,
+`capabilities`, and for each peer `relation`, `allow`, `paused`, `remote`
+(its last `perm`, while linked) and `refused` (its last refusal).

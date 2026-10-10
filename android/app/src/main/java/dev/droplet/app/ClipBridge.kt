@@ -30,7 +30,7 @@ object ClipBridge {
     private val main = Handler(Looper.getMainLooper())
     private var lastSentAt = 0L
 
-    enum class Result { SENT, EMPTY, SAME, TOO_BIG, OFF, OFFLINE }
+    enum class Result { SENT, EMPTY, SAME, TOO_BIG, OFF, OFFLINE, PAUSED }
 
     private fun fingerprint(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }.take(32)
@@ -54,7 +54,7 @@ object ClipBridge {
      * "droplet pasted from your clipboard" notice doesn't show every time.
      */
     fun onForeground(context: Context) {
-        if (!Prefs.capClipboard || (!Live.state.value.connected && Mesh.state.value.links == 0)) return
+        if (!Prefs.capClipboard || Mesh.pausedAll || (!Live.state.value.connected && Mesh.state.value.links == 0)) return
         val cm = context.getSystemService(ClipboardManager::class.java) ?: return
         val desc = cm.primaryClipDescription ?: return
         if (desc.timestamp != 0L && desc.timestamp == Prefs.clipSeenAt) return
@@ -79,10 +79,13 @@ object ClipBridge {
         if (!manual && print == Prefs.clipLast) return Result.SAME
         val now = SystemClock.elapsedRealtime()
         if (!manual && now - lastSentAt < MIN_GAP_MS) return Result.SAME
-        val hub = Live.send(JSONObject().put("t", "clip").put("text", text))
+        val msg = JSONObject().put("t", "clip").put("text", text)
+        // the hub hands it to every device it has: not while one of them shouldn't have it (docs/mesh.md §9.9)
+        val hubOk = Mesh.hubMayShare(msg)
+        val hub = hubOk && Live.send(msg)
         // and straight to your devices on direct links (all of them, when the hub is down)
         val direct = Mesh.clipToPeers(text, viaHub = hub)
-        if (!hub && !direct) return Result.OFFLINE
+        if (!hub && !direct) return if (Mesh.pausedAll) Result.PAUSED else Result.OFFLINE
         lastSentAt = now
         Prefs.clipLast = print
         return Result.SENT
@@ -100,6 +103,7 @@ object ClipBridge {
         val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
         if (text.isNullOrEmpty()) return Result.EMPTY
         if (text.toByteArray().size > MAX_BYTES) return Result.TOO_BIG
+        if (Mesh.pausedAll) return Result.PAUSED
         val got = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Mesh.clipToPeersNow(text) }
         if (got.isEmpty()) return Result.OFFLINE
         lastSentAt = SystemClock.elapsedRealtime()

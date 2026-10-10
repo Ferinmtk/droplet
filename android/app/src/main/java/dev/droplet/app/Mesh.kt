@@ -22,6 +22,7 @@ import dev.droplet.app.mesh.MeshPairing
 import dev.droplet.app.mesh.NoRoute
 import dev.droplet.app.mesh.Outbox
 import dev.droplet.app.mesh.PeerDirectory
+import dev.droplet.app.mesh.Perms
 import dev.droplet.app.mesh.TrustList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -281,6 +282,53 @@ object Mesh {
 
     fun broadcast(msg: JSONObject): Boolean = node?.broadcast(msg) ?: false
 
+    // --- permissions and Pause (docs/mesh.md §9.9) -------------------------------------
+
+    /** Pause everything: nothing goes to any device, and nothing is taken from one. */
+    val pausedAll: Boolean get() = Prefs.meshPausedAll
+
+    fun pauseEverything(on: Boolean) {
+        Prefs.meshPausedAll = on
+        // the node tells each linked device, off the main thread
+        node?.let { n -> scope.launch { n.pauseEverything(on) } }
+        bump()
+    }
+
+    /** The owner changed a device's switches, its relation, or paused or resumed it. */
+    fun setPerms(fp: String, relation: String? = null, allow: Map<String, Boolean>? = null, paused: Boolean? = null) {
+        val n = node ?: throw NoRoute(app.getString(R.string.mesh_off_now))
+        n.trust.setPerms(fp, relation, allow, paused)   // at once, for the screen; the node then tells the peer
+        scope.launch { runCatching { n.setPerms(fp, relation, allow, paused) } }
+        bump()
+    }
+
+    /**
+     * A message that came through the hub (media, clip, rpc): why it's
+     * refused ("paused" or "denied"), or null. Without the mesh running, only
+     * Pause everything applies.
+     */
+    fun checkHubMessage(msg: JSONObject): String? {
+        node?.let { return it.checkHubMessage(msg) }
+        return if (pausedAll && msg.optString("t") !in Perms.ALWAYS) Perms.PAUSED else null
+    }
+
+    /** Whether a broadcast (clipboard, state) may go to the hub, which hands it to every device it has. */
+    fun hubMayShare(msg: JSONObject): Boolean = node?.hubMayShare(msg) ?: !pausedAll
+
+    /**
+     * A ring through the hub names its sender only by name. A device this
+     * phone trusts with that name (one only) gets its own switches; any other
+     * is one of the hub's own devices, stopped only by Pause everything.
+     */
+    fun mayRingFromHub(fromName: String): Boolean {
+        if (pausedAll) return false
+        val n = node ?: return true
+        val hubId = Prefs.hubId
+        val match = n.trust.all().filter { it.name == fromName && (hubId == null || it.hub == hubId || it.hub.isEmpty()) }
+        val e = match.singleOrNull() ?: return true
+        return Perms.check(e, JSONObject().put("t", "ring"), pausedAll, "in") == null
+    }
+
     // --- notification mirroring, straight to your computers ---------------------------
 
     /** This phone's notifications to paired computers that show them (docs/mesh.md §9.4). */
@@ -332,14 +380,15 @@ object Mesh {
     fun clipToPeers(text: String, viaHub: Boolean): Boolean {
         val n = node ?: return false
         val msg = JSONObject().put("t", "clip").put("text", text)
-        val peers = n.trust.all().filter { "clipboard" in it.caps }
+        // only those that may have it: not paused, clipboard on here, and not refused there
+        val peers = n.trust.all().filter { "clipboard" in it.caps && n.mayGo(it.fp, msg) }
         var sent = false
         val rest = ArrayList<String>()
         for (e in peers) {
             val link = n.openLink(e.fp)
             if (link != null) sent = link.send(msg) || sent else if (!viaHub) rest += e.fp
         }
-        if (rest.isNotEmpty()) scope.launch { for (fp in rest) runCatching { n.direct(fp)?.send(msg) } }
+        if (rest.isNotEmpty()) scope.launch { for (fp in rest) runCatching { n.direct(fp)?.takeIf { n.mayGo(fp, msg) }?.send(msg) } }
         return sent
     }
 
@@ -351,14 +400,27 @@ object Mesh {
     fun clipToPeersNow(text: String): List<String> {
         val n = node ?: return emptyList()
         val msg = JSONObject().put("t", "clip").put("text", text)
-        return n.trust.all().filter { "clipboard" in it.caps }
-            .filter { e -> runCatching { n.direct(e.fp)?.send(msg) == true }.getOrDefault(false) }
+        return n.trust.all().filter { "clipboard" in it.caps && n.mayGo(it.fp, msg) }
+            .filter { e ->
+                // dialled: its welcome says how it treats this phone now
+                runCatching { n.direct(e.fp)?.takeIf { n.mayGo(e.fp, msg) }?.send(msg) == true }.getOrDefault(false)
+            }
             .map { it.name }
     }
 
     // --- for screens ------------------------------------------------------------------
 
-    data class PeerView(val entry: TrustList.Entry, val route: String)
+    /**
+     * A device for screens: how it's reached, what it said about how it treats
+     * this phone ([remote], while linked; a hint), and the last thing it refused.
+     */
+    data class PeerView(val entry: TrustList.Entry, val route: String, val remote: Perms.Remote? = null,
+                        val refusal: MeshNode.Refusal? = null) {
+        /** It paused sharing with this phone (as it last said). */
+        val pausedThere: Boolean get() = remote?.paused == true
+        /** Whether it said it takes [cap] from this phone (yes, when it said nothing). */
+        fun takes(cap: String): Boolean = Perms.remoteRefuses(remote, cap) == null
+    }
 
     /** Peers being looked for right now (see [probe]), so screens can say "looking" rather than "offline". */
     private val probing = ConcurrentHashMap.newKeySet<String>()
@@ -388,8 +450,12 @@ object Mesh {
 
     fun peers(): List<PeerView> {
         val n = node ?: return emptyList()
-        return n.trust.all().map { PeerView(it, n.route(it)) }
+        return n.trust.all().map { e ->
+            PeerView(e, n.route(e), n.remotePerm[e.fp].takeIf { n.openLink(e.fp) != null }, n.refusals[e.fp])
+        }
     }
+
+    fun peerView(fp: String): PeerView? = peers().firstOrNull { it.entry.fp == fp }
 
     fun peer(fp: String): TrustList.Entry? = node?.trust?.get(fp)
 
@@ -429,6 +495,10 @@ object Mesh {
         override fun localAddresses(): List<String> = addresses?.invoke() ?: lanAddresses()
         override fun gateways(): List<String> = gatewayFinder?.invoke() ?: wifiGateways()
         override fun log(msg: String) = Mesh.log(msg)
+        override fun pausedEverything(): Boolean = Prefs.meshPausedAll
+        override fun setPausedEverything(on: Boolean) {
+            Prefs.meshPausedAll = on
+        }
         override fun onChanged() {
             publish()
             bump()

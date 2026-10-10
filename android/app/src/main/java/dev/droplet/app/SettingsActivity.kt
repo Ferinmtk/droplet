@@ -115,9 +115,12 @@ class SettingsActivity : AppCompatActivity() {
             Mesh.enabledChanged()
         }
         b.openPeers.setOnClickListener { startActivity(Intent(this, PeersActivity::class.java)) }
+        b.pauseAll.setOnCheckedChangeListener { _, on -> if (on != Mesh.pausedAll) Mesh.pauseEverything(on) }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                Mesh.state.collect { showMesh(it) }
+                launch { Mesh.state.collect { showMesh(it) } }
+                // Pause all may also come from the notification or the home screen
+                launch { Mesh.changes.collect { b.pauseAll.isChecked = Mesh.pausedAll } }
             }
         }
     }

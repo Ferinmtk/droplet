@@ -31,11 +31,23 @@ class TrustList(private val file: File, private val ownFp: String) {
         /** The hub whose roster lists it: messages may go through that hub. */
         val hub: String = "",
         val added: Long = System.currentTimeMillis() / 1000,
+        /** The owner's answer at pairing: "own" (your device) or "other" (someone else's). docs/mesh.md §9.9. */
+        val relation: String = Perms.OWN_DEVICE,
+        /** A switch per capability ([Perms.CAPABILITIES]). */
+        val allow: Map<String, Boolean> = Perms.OWN,
+        /** Nothing goes to it, and nothing from it is taken, until it's resumed. */
+        val paused: Boolean = false,
     ) {
         fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("fp", fp).put("cert_pem", certPem)
             .put("source", source).put("lan", JSONArray(lan)).put("port", port ?: JSONObject.NULL)
             .put("tailnet_ip", tailnetIp ?: JSONObject.NULL).put("os", os).put("caps", JSONArray(caps))
             .put("hub", hub).put("added", added)
+            .put("relation", relation).put("allow", Perms.allowJson(allow)).put("paused", paused)
+
+        /** The owner's choices about [other], kept over what the hub says. */
+        fun withPermsOf(other: Entry): Entry = copy(relation = other.relation, allow = other.allow, paused = other.paused)
+
+        val isOther: Boolean get() = relation == Perms.OTHER_DEVICE
     }
 
     /** Called (outside the lock) when the set of trusted certificates changed. */
@@ -58,6 +70,8 @@ class TrustList(private val file: File, private val ownFp: String) {
                     source = e.optString("source"), lan = strings(e.optJSONArray("lan")), port = e.opt("port"),
                     tailnetIp = e.optString("tailnet_ip").takeIf { !e.isNull("tailnet_ip") }, os = e.optString("os"),
                     caps = strings(e.optJSONArray("caps")), fp = fp, hub = e.optString("hub"),
+                    relation = e.opt("relation") as? String, allow = e.optJSONObject("allow"),
+                    paused = e.opt("paused") == true,
                 ).copy(added = e.optLong("added").takeIf { it > 0 } ?: (System.currentTimeMillis() / 1000))
                 if (entry.fp != ownFp) peers[entry.fp] = entry
             } catch (x: IllegalArgumentException) {
@@ -112,6 +126,30 @@ class TrustList(private val file: File, private val ownFp: String) {
         }
     }
 
+    /**
+     * Changes what the owner decided about a peer. A new [relation] starts from
+     * its defaults; [allow] then changes only the capabilities it names.
+     * Returns the entry. Throws IllegalArgumentException for a peer that isn't
+     * trusted, a relation that isn't one, or a capability that doesn't exist.
+     */
+    fun setPerms(fp: String, relation: String? = null, allow: Map<String, Boolean>? = null, paused: Boolean? = null): Entry =
+        synchronized(lock) {
+            var e = peers[fp] ?: throw IllegalArgumentException("that peer isn't trusted")
+            if (relation != null) {
+                require(relation in Perms.RELATIONS) { "relation must be one of ${Perms.RELATIONS.joinToString(", ")}" }
+                e = e.copy(relation = relation, allow = Perms.defaults(relation))
+            }
+            if (allow != null) {
+                val unknown = allow.keys.firstOrNull { it !in Perms.CAPABILITIES }
+                require(unknown == null) { "no capability called \"$unknown\"; they are: ${Perms.CAPABILITIES.joinToString(", ")}" }
+                e = e.copy(allow = LinkedHashMap(e.allow).apply { putAll(allow) })
+            }
+            if (paused != null) e = e.copy(paused = paused)
+            peers[fp] = e
+            save()
+            e
+        }
+
     fun remove(fp: String): Entry? = synchronized(lock) {
         peers.remove(fp)?.also { changed(true) }
     }
@@ -138,7 +176,8 @@ class TrustList(private val file: File, private val ownFp: String) {
                 old.source == SOURCE_PAIRED -> old.copy(lan = cleanAddresses(e.lan + old.lan), port = e.port ?: old.port,
                     tailnetIp = e.tailnetIp ?: old.tailnetIp, os = e.os.ifEmpty { old.os },
                     caps = e.caps.ifEmpty { old.caps }, hub = e.hub)
-                else -> e.copy(added = old.added, lan = cleanAddresses(e.lan + old.lan))
+                // the owner's switches and pause are theirs, not the hub's
+                else -> e.copy(added = old.added, lan = cleanAddresses(e.lan + old.lan)).withPermsOf(old)
             }
         }
         changed(peers.mapValues { it.value.certPem } != before)
@@ -180,7 +219,8 @@ class TrustList(private val file: File, private val ownFp: String) {
         /** A checked entry. Throws IllegalArgumentException when the id, certificate or fingerprint is wrong. */
         fun makeEntry(peerId: String?, name: String?, certPem: String?, source: String, lan: List<String> = emptyList(),
                       port: Any? = null, tailnetIp: String? = null, os: String? = "", caps: List<String> = emptyList(),
-                      fp: String? = null, hub: String? = null): Entry {
+                      fp: String? = null, hub: String? = null, relation: String? = null, allow: Any? = null,
+                      paused: Boolean = false): Entry {
             require(source == SOURCE_ROSTER || source == SOURCE_PAIRED) { "bad source" }
             require(peerId != null && PEER_ID.matches(peerId)) { "bad peer id" }
             val der = MeshIdentity.pemToDer(certPem)
@@ -192,6 +232,10 @@ class TrustList(private val file: File, private val ownFp: String) {
                 lan = cleanAddresses(lan), port = p, tailnetIp = tailnetIp?.let { cleanAddresses(listOf(it), 1).firstOrNull() },
                 os = cleanName(os).take(20), caps = cleanCaps(caps),
                 hub = hub?.takeIf { PEER_ID.matches(it) } ?: "",
+                // missing (an entry from before, a roster peer): your own device, with everything on
+                relation = Perms.cleanRelation(relation),
+                allow = Perms.cleanAllow(allow, Perms.cleanRelation(relation)),
+                paused = paused,
             )
         }
 

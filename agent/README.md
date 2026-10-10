@@ -25,12 +25,15 @@ device** and pick this computer. Both screens show the same four digits;
 accept on the computer in [Droplet's window](#droplets-window) or the tray
 (or run `droplet-agent pair`). Other computers pair from the window's
 **Pair a device**, or with `droplet-agent pair <name>` (see [the mesh](#the-mesh-talking-to-your-devices-directly)).
+An iPhone: open Droplet, click **Pair an iPhone** and scan the code (see
+[an iPhone](#an-iphone-experimental)).
 
 The installer needs no sudo. It:
 
 - downloads the agent from droplet's latest GitHub release and checks it
   against the release's `SHA256SUMS.txt` (only its dependencies,
-  `websockets`, `jeepney`, `zeroconf` and `cryptography`, come from PyPI),
+  `websockets`, `jeepney`, `zeroconf` and `cryptography`, and the iPhone
+  link's, about 13 MB, come from PyPI),
 - creates a Python virtual environment in `~/.local/share/droplet-agent`,
   and links `droplet-agent` into `~/.local/bin`,
 - installs and starts a systemd user service, `droplet-agent.service`, which
@@ -152,6 +155,10 @@ over mDNS (`_droplet-peer._tcp`).
 
   The agent also shows a desktop notification when someone asks. Answer
   only if the codes match: that's what proves nobody is in the middle.
+  Each side is then asked **"Is beta your device, or someone else's?"**
+  (`own` or `other`; `--own` / `--other` answer it up front, and a script
+  that can't be asked gets `own`, as before). See
+  [your devices and someone else's](#your-devices-and-someone-elses).
   `droplet-agent unpair beta` undoes it, on both sides if the other is
   reachable.
 
@@ -193,6 +200,85 @@ sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --re
 
 **Without a hub**, `droplet-agent run` (and the service) runs the mesh alone.
 
+### Your devices and someone else's
+
+A device you pair with is either **yours** or **someone else's** (a
+deskmate's laptop, a friend's phone), and that sets what it may do:
+
+| | your device | someone else's |
+|---|---|---|
+| `files`: send and receive files | on | on |
+| `chat`: messages | on | on |
+| `clipboard`: clipboard sync, and a clipboard sent on purpose | on | off |
+| `notify`: notifications mirrored | on | off |
+| `control`: it may use this computer's mouse and keyboard, media, lock, screenshots, presentation remote | on | off |
+| `ring`: it may ring this computer | on | on |
+| `access`: SMS, browsing files, commands, where a device offers them | on | off |
+
+Every switch can be changed any time, and any device can be **paused**:
+nothing goes to it and nothing from it is taken until you resume it (what
+you send it meanwhile waits in the outbox). **Pause everything** does that
+for every device at once, while you present, say.
+
+```sh
+droplet-agent allow beta clipboard on   # one switch (files, chat, clipboard, notify, control, ring, access)
+droplet-agent allow beta other          # start again from someone else's defaults (or: own)
+droplet-agent pause beta                # and: droplet-agent resume beta
+droplet-agent pause --all               # Pause everything (resume --all)
+droplet-agent peers                     # shows each one's relation, what's off, and who's paused
+```
+
+This computer enforces its own switches, both ways, whatever the other
+device does: a clipboard from someone else's laptop is refused with a
+reason it can show ("t15 doesn't allow the clipboard from you"), and this
+computer's clipboard never goes to it. The other device is told how it's
+treated, so its app can grey out what won't work and say "Paused by t15".
+Devices paired before this, and every device your hub lists, are your own,
+with everything on, as before. The protocol: docs/mesh.md §9.9.
+
+### An iPhone (experimental)
+
+An iPhone has no droplet app; it uses droplet's web app
+(`droplet.noxeratech.com/app`, added to the Home Screen), which connects
+straight to this computer over WebRTC, with no server in between
+([docs/iphone.md](../docs/iphone.md)). It's built in and on: there's
+nothing to set up.
+
+1. Open **Droplet** and click **Pair an iPhone** (or pick **Pair an iPhone…**
+   in the tray or menu bar; in a terminal, `droplet-agent pair --qr`).
+   It shows a QR code.
+2. On the iPhone, open `droplet.noxeratech.com/app` in Safari and add it to
+   the Home Screen (Share → Add to Home Screen). Open it from there, tap
+   **Pair a computer**, and scan the code.
+3. Accept on the computer if both show the same four digits.
+
+The iPhone is then a peer like the others: `droplet-agent text iPhone …` and
+`send-file` reach it while its app is open (and wait in the outbox until
+then), and what it sends lands in `~/Downloads/droplet` and the chat.
+
+**If it doesn't work.** `droplet-agent status` has an `iphone:` line, and
+`droplet-agent doctor` checks it:
+
+- *Not installed*: the installer adds the iPhone link's one extra package,
+  aiortc (about 1 MB; the plain `pip install aiortc` would also pull in
+  PyAV, about 100 MB of video codecs it never uses, so it's installed with
+  `--no-deps`). If that failed, `droplet-agent doctor` offers to install it,
+  or run:
+
+  ```sh
+  ~/.local/share/droplet-agent/bin/python -m pip install --no-deps 'aiortc>=1.9'
+  ```
+
+  then restart the agent.
+- *The firewall*: the iPhone connects to UDP port 1739 (or the next free one
+  up to 1749). Fedora's desktop firewall already allows it; elsewhere
+  `droplet-agent doctor` gives the command, such as
+  `sudo firewall-cmd --permanent --add-port=1739-1749/udp && sudo firewall-cmd --reload`
+  or `sudo ufw allow 1739:1749/udp`. On a Mac, say **Allow** if macOS asks
+  whether Python may accept incoming connections.
+- To turn it off: `"iphone": {"enabled": false}` in `config.json` (see
+  [Settings](#settings)).
+
 ## Droplet's window
 
 **Droplet** in the app menu (or `droplet-agent app`) opens a window like the
@@ -201,22 +287,31 @@ Windows app's:
 - **Devices**: each paired device as a card, with how it's reached now
   (*Connected on this network*, *Connected via Tailscale*, *On this network*,
   or *Not reachable*, when what you send waits for it) and **Send files…**,
-  **Send clipboard**, **Ring** and **Message**. **⋯** has Stop ringing, About
-  this device and Unpair. Drop files on a card to send them; the card says
-  when they've arrived, failed, or wait in the outbox.
-- **Pair a device**: the droplet devices on this network, or one by its
-  address. Both screens show the same four digits: **They match**, then
-  accept on the other device.
+  **Send clipboard**, **Ring** and **Message**, and **Pause** / **Resume**.
+  Someone else's device has a **Someone else's** badge and a line saying
+  what's off; a paused one says **Paused** (or *Paused by* it, when it
+  paused this computer), and what can't be used is greyed out. **⋯** has
+  Stop ringing, **Permissions…** (whose device it is, and a switch for each
+  capability with a line on what it does), About this device and Unpair.
+  Drop files on a card to send them; the card says when they've arrived,
+  failed, or wait in the outbox.
+- **Pair a device**: **Pair an iPhone** first (a QR code to scan with
+  droplet's web app on the iPhone), then the droplet devices on this
+  network, or one by its address. Both screens show the same four digits:
+  **They match**, then **My device** or **Someone else's** (two big
+  choices, each saying what it allows), then accept on the other device.
 - A device **asking to pair** shows on top of every page, with its code and
-  **Accept** / **Decline**.
+  **Accept** (which asks: my device, or someone else's?) / **Decline**.
 - **Messages**: a chat with each device, newest at the bottom. Enter sends
   (Shift+Enter for a new line); a message to a device that can't be reached
   waits and goes when it can.
 - **Received**: the latest files your devices sent, to open or show in the
   folder.
-- **Settings**: this computer's name, id and fingerprint; clipboard sync,
-  your phone's notifications and what your devices may control here (saved
-  to `config.json`, and the agent restarts to use them); the tray; about.
+- **Settings**: this computer's name, id and fingerprint; **Pause
+  everything** (at once, no restart; a banner on every page says so, with
+  **Resume everything**); clipboard sync, your phone's notifications and
+  what your devices may control here (saved to `config.json`, and the agent
+  restarts to use them); the tray; about.
 
 Like the tray it's a separate process that does everything through the
 running agent; when the agent isn't running it says so, with **Start it**.
@@ -234,18 +329,24 @@ Without PySide6, Droplet in the app menu starts the tray and says where it is.
 `droplet-agent tray` puts droplet in the system tray. Its menu lists:
 
 - **Open Droplet**: [the window](#droplets-window), when it's installed;
-- this computer's name, then each trusted device with how it can be reached
-  (*connected*, *nearby* on the LAN, or *not reachable*). Each has **Send
-  files…** (the desktop's file picker; a notification says when they've
-  arrived, failed, or are waiting in the outbox), **Send clipboard** and
-  **Ring**;
-- each device **asking to pair**, with its code, and **Accept** / **Decline**.
-  While one is waiting the icon gets an orange dot and asks for attention;
+- **Pair an iPhone…**: the window, showing the code an iPhone scans (without
+  the window, a notification says to run `droplet-agent pair --qr`);
+- this computer's name, and **Pause everything** (or **Resume everything**);
+- each trusted device with how it can be reached (*connected*, *nearby* on
+  the LAN, *not reachable*, or *paused*; *(someone else's)* after the name
+  of one). Each has **Send files…** (the desktop's file picker; a
+  notification says when they've arrived, failed, or are waiting in the
+  outbox), **Send clipboard**, **Ring**, and **Pause** / **Resume**; what
+  that device can't have right now is greyed out;
+- each device **asking to pair**, with its code, and **Accept: it's my
+  device**, **Accept: it's someone else's** / **Decline**. While one is
+  waiting the icon gets an orange dot and asks for attention;
 - **Open received files**.
 
-The tooltip says how many devices are connected. When the agent isn't
-running the icon greys out and the menu says so; it picks up again when
-the agent starts.
+The tooltip says how many devices are connected. While everything is
+paused the icon is greyed with an orange pause sign, and the tooltip
+starts "Everything is paused". When the agent isn't running the icon greys
+out and the menu says so; it picks up again when the agent starts.
 
 It speaks the StatusNotifierItem protocol, so it shows on KDE Plasma, most
 Wayland bars (waybar, and others with a tray), and on GNOME with the
@@ -349,8 +450,10 @@ Then switch Python off under Privacy & Security if you like.
 | `droplet-agent setup --hub URL --code 123456` | link to a given hub (`http://<address>:8000`, or its tailnet URL). `--name NAME` joins as a new device, `--pin` uses the hub's PIN instead of waiting to be allowed |
 | `droplet-agent run` | run in the foreground (the service does this). `--dry-run` only logs what it would do; `-v` for more detail. Without a hub, runs the mesh alone |
 | `droplet-agent peers` | the devices this one talks to directly, who's nearby, who's asking to pair, and what's waiting to be sent |
-| `droplet-agent pair [PEER]` | pair directly with a device; with nothing, answer the devices asking (`--accept`, `--deny`) |
+| `droplet-agent pair [PEER]` | pair directly with a device; with nothing, answer the devices asking (`--accept`, `--deny`); `--qr` pairs an iPhone (see [an iPhone](#an-iphone-experimental)). Asks whether it's your device or someone else's (`--own`, `--other`) |
 | `droplet-agent unpair PEER` | stop trusting a directly paired device |
+| `droplet-agent allow PEER CAPABILITY on\|off` | switch what a device may do (`files`, `chat`, `clipboard`, `notify`, `control`, `ring`, `access`); `allow PEER own\|other` starts again from those defaults. See [your devices and someone else's](#your-devices-and-someone-elses) |
+| `droplet-agent pause PEER`, `resume PEER` | stop sharing anything with a device until resumed; `--all` for everything |
 | `droplet-agent text`, `send-file`, `ring`, `clip`, `send` | send to a device: see [the mesh](#the-mesh-talking-to-your-devices-directly) |
 | `droplet-agent app` | open [Droplet's window](#droplets-window) (`--page` opens it on a page: `devices`, `pair`, `messages`, `received` or `settings`), or bring it to the front |
 | `droplet-agent open` | what Droplet in the app menu runs: starts the tray if it isn't running, and opens the window (without PySide6, says where the tray is). `--install` only adds Droplet to the app menu |
@@ -433,7 +536,8 @@ acceleration to the virtual mouse.
   "screenshot_command": null,
   "clipboard_max_bytes": 262144,
   "mesh": {"enabled": true, "port": null, "downloads": null, "max_rate": 0, "announce": true,
-           "phone_notifications": true}
+           "phone_notifications": true},
+  "iphone": {"enabled": true, "port": null, "app_url": "https://droplet.noxeratech.com/app/"}
 }
 ```
 
@@ -455,6 +559,9 @@ acceleration to the virtual mouse.
   `announce: false` stops announcing over mDNS (peers then need its address).
   `phone_notifications: false` stops showing a paired phone's notifications
   here, and tells the phone not to send them (the `notify` cap goes).
+- **iphone**: [the iPhone link](#an-iphone-experimental). `enabled: false`
+  turns it off (and takes **Pair an iPhone** out of the tray). `port`: its UDP
+  port (`null`: the mesh's port number). `app_url`: the web app its QR code opens.
 
 Restart the service after editing: `systemctl --user restart droplet-agent` (on a Mac:
 `launchctl kickstart -k gui/$(id -u)/io.github.ferinmtk.DropletAgent`).

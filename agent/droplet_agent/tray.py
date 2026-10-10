@@ -93,6 +93,7 @@ class View:
     status: str = ACTIVE
     tooltip: str = ""
     running: bool = True
+    paused: bool = False      # Pause everything is on: the icon says so
 
 
 def _plural(n: int, one: str, many: str) -> str:
@@ -115,22 +116,31 @@ def build_view(status: dict | None, app: bool = True) -> View:
     """The menu, tooltip and status for an answer to the agent's `status` (None: it isn't running).
     `app`: Droplet's window can be opened (PySide6 is installed)."""
     downloads = Item("open-downloads", "Open received files", icon="folder-download", action=("open-downloads",))
-    top = [Item("open-app", "Open Droplet", icon=LAUNCHER_ID, action=("open-app",)),
-           Item("sep-app", separator=True)] if app else []
+    top = [Item("open-app", "Open Droplet", icon=LAUNCHER_ID, action=("open-app",))] if app else []
     if status is None:
+        top = top and [*top, Item("sep-app", separator=True)]
         return View(items=[*top, Item("not-running", "droplet agent isn't running", enabled=False),
                            Item("sep-end", separator=True), downloads],
                     tooltip="droplet agent isn't running", running=False)
+    if (status.get("webrtc_off") or {}).get("why") != "off":   # unless the config switched it off
+        top.append(Item("pair-iphone", "Pair an iPhone…", icon="smartphone", action=("pair-iphone",)))
+    top = top and [*top, Item("sep-app", separator=True)]
 
+    paused_all = bool(status.get("paused_all"))
     items = [*top, Item("header", status.get("name") or "this computer", enabled=False, icon="computer"),
+             Item("pause-all", "Resume everything" if paused_all else "Pause everything",
+                  icon="media-playback-start" if paused_all else "media-playback-pause",
+                  action=("pause-all", not paused_all)),
              Item("sep-top", separator=True)]
     incoming = [r for r in status.get("incoming") or [] if r.get("request")]
     for r in incoming:
         rid, name = str(r["request"]), str(r.get("name") or "a device")
         items.append(Item(f"pair:{rid}", f"{name} wants to pair (code {r.get('code', '?')})",
                           icon="dialog-question", children=[
-                              Item(f"pair:{rid}:accept", "Accept", icon="dialog-ok-apply",
-                                   action=("pair-answer", rid, True, name)),
+                              Item(f"pair:{rid}:accept", "Accept: it's my device", icon="dialog-ok-apply",
+                                   action=("pair-answer", rid, True, name, "own")),
+                              Item(f"pair:{rid}:accept-other", "Accept: it's someone else's",
+                                   icon="system-users", action=("pair-answer", rid, True, name, "other")),
                               Item(f"pair:{rid}:decline", "Decline", icon="dialog-cancel",
                                    action=("pair-answer", rid, False, name)),
                           ]))
@@ -142,14 +152,25 @@ def build_view(status: dict | None, app: bool = True) -> View:
         items.append(Item("no-peers", "No paired devices yet", enabled=False))
     for p in peers:
         pid, name = str(p["id"]), str(p.get("name") or p["id"])
-        items.append(Item(f"peer:{pid}", f"{name} — {peer_state(p)}", icon=OS_ICONS.get(p.get("os") or "", ""),
+        paused = bool(p.get("paused"))
+        allow = p.get("allow") or {}
+        sharing = not paused and not paused_all
+        state = "paused" if paused else peer_state(p)
+        who = " (someone else's)" if p.get("relation") == "other" else ""
+        items.append(Item(f"peer:{pid}", f"{name}{who} — {state}", icon=OS_ICONS.get(p.get("os") or "", ""),
                           children=[
                               Item(f"peer:{pid}:files", "Send files…", icon="document-send",
+                                   enabled=sharing and allow.get("files", True),
                                    action=("send-files", pid, name)),
                               Item(f"peer:{pid}:clip", "Send clipboard", icon="edit-paste",
+                                   enabled=sharing and allow.get("clipboard", True),
                                    action=("send-clipboard", pid, name)),
                               Item(f"peer:{pid}:ring", "Ring", icon="preferences-desktop-notification-bell",
-                                   action=("ring", pid, name)),
+                                   enabled=sharing, action=("ring", pid, name)),
+                              Item(f"peer:{pid}:sep", separator=True),
+                              Item(f"peer:{pid}:pause", "Resume" if paused else "Pause",
+                                   icon="media-playback-start" if paused else "media-playback-pause",
+                                   action=("pause", pid, name, not paused)),
                           ]))
     items += [Item("sep-end", separator=True), downloads]
 
@@ -160,10 +181,12 @@ def build_view(status: dict | None, app: bool = True) -> View:
         tip = _plural(connected, "device", "devices") + " connected"
     else:
         tip = "No devices connected"
+    if paused_all:
+        tip = "Everything is paused. " + tip
     if incoming:
         asking = ", ".join(str(r.get("name") or "a device") for r in incoming)
         tip += f". {asking} {'wants' if len(incoming) == 1 else 'want'} to pair"
-    return View(items=items, status=ATTENTION if incoming else ACTIVE, tooltip=tip)
+    return View(items=items, status=ATTENTION if incoming else ACTIVE, tooltip=tip, paused=paused_all)
 
 
 def _shape(items) -> tuple:
@@ -336,16 +359,49 @@ def badged(pixmaps: list) -> list:
     return out
 
 
+def _rect(b: bytearray, w: int, h: int, x0: float, y0: float, x1: float, y1: float, rgb: tuple):
+    """Paint an opaque rectangle over ARGB pixels, with partly covered edge pixels blended."""
+    for y in range(max(0, int(y0)), min(h, int(y1) + 1)):
+        cy = max(0.0, min(y + 1, y1) - max(y, y0))
+        for x in range(max(0, int(x0)), min(w, int(x1) + 1)):
+            cov = cy * max(0.0, min(x + 1, x1) - max(x, x0))
+            if cov <= 0:
+                continue
+            i = (y * w + x) * 4
+            a0 = b[i] / 255
+            a = cov + a0 * (1 - cov)
+            for k in range(3):
+                b[i + 1 + k] = round((rgb[k] * cov + b[i + 1 + k] * a0 * (1 - cov)) / a) if a else 0
+            b[i] = round(a * 255)
+
+
+def paused_icon(pixmaps: list) -> list:
+    """The icon washed out, with a pause sign: Pause everything is on."""
+    out = []
+    for w, h, px in greyed(pixmaps):
+        b = bytearray(px)
+        r = max(3.5, w * 0.24)
+        cx, cy = w - r - w * 0.02, h - r - h * 0.02
+        _disc(b, w, h, cx, cy, r + max(1.0, w * 0.05), (14, 26, 28))
+        _disc(b, w, h, cx, cy, r, (245, 158, 11))
+        bw, bh, gap = r * 0.32, r * 1.05, r * 0.26
+        for x0 in (cx - gap / 2 - bw, cx + gap / 2):
+            _rect(b, w, h, x0, cy - bh / 2, x0 + bw, cy + bh / 2, (255, 255, 255))
+        out.append((w, h, bytes(b)))
+    return out
+
+
 @dataclass
 class Icons:
     normal: list
     attention: list
     off: list
+    paused: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path = ICON_FILE) -> "Icons":
         px = load_pixmaps(path)
-        return cls(normal=px, attention=badged(px), off=greyed(px))
+        return cls(normal=px, attention=badged(px), off=greyed(px), paused=paused_icon(px))
 
 
 # --- the D-Bus objects -----------------------------------------------------------
@@ -453,14 +509,15 @@ class TrayObjects:
                         (MENU_IFACE, {"Status": self.menu_properties()["Status"]}, [])))
         if old.tooltip != view.tooltip:
             out.append((ITEM_PATH, ITEM_IFACE, "NewToolTip", "", ()))
-        if old.running != view.running:
+        if old.running != view.running or old.paused != view.paused:
             out.append((ITEM_PATH, ITEM_IFACE, "NewIcon", "", ()))
         return out
 
     def item_properties(self) -> dict:
         with self._lock:
             v = self.view
-        icon = self.icons.normal if v.running else self.icons.off
+        icon = self.icons.off if not v.running else (self.icons.paused or self.icons.off) if v.paused \
+            else self.icons.normal
         return {
             "Category": ("s", "Communications"),
             "Id": ("s", "droplet"),
@@ -709,21 +766,56 @@ class Actions:
             return
         self.notify(f"Ringing {name}", self._route(out).capitalize())
 
-    def pair_answer(self, request: str, accept: bool, name: str):
+    def pair_answer(self, request: str, accept: bool, name: str, relation: str = "own"):
         try:
-            out = self._ask({"cmd": "pair-answer", "request": request, "accept": accept})
+            out = self._ask({"cmd": "pair-answer", "request": request, "accept": accept, "relation": relation})
         except RuntimeError as e:
             self.notify(f"Couldn't answer {name}", str(e))
         else:
             if accept:
                 self.notify(f"Paired with {out.get('name') or name}",
-                            "It's in the droplet menu now.")
+                            "It's in the droplet menu now." if relation == "own" else
+                            "As someone else's device: files, messages and ring only. Change that in Droplet's "
+                            "window, under Permissions.")
         self.refresh()
 
-    def open_app(self):
+    def pause(self, peer: str, name: str, on: bool):
+        try:
+            self._ask({"cmd": "pause" if on else "resume", "peer": peer})
+        except RuntimeError as e:
+            self.notify(f"Couldn't {'pause' if on else 'resume'} {name}", str(e))
+        else:
+            self.notify(f"Paused {name}" if on else f"Resumed {name}",
+                        "Nothing goes to it or comes from it until you resume it." if on
+                        else "Sharing with it again.")
+        self.refresh()
+
+    def pause_all(self, on: bool):
+        try:
+            self._ask({"cmd": "pause" if on else "resume", "all": True})
+        except RuntimeError as e:
+            self.notify("Couldn't change that", str(e))
+        else:
+            self.notify("Everything is paused" if on else "Everything is resumed",
+                        "Nothing is shared with any device until you resume." if on else "Sharing again.")
+        self.refresh()
+
+    def open_app(self, page: str | None = None):
         """Droplet's window: a second one just brings the open one up."""
-        subprocess.Popen([sys.executable, "-m", "droplet_agent", "app"], stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen([sys.executable, "-m", "droplet_agent", "app", *(["--page", page] if page else [])],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+
+    def pair_iphone(self):
+        """Droplet's window on the Pair page, showing the code an iPhone scans. Without the
+        window (no PySide6), say how to show the code in a terminal."""
+        from . import app
+        if app.available():
+            self.open_app("iphone")
+            return
+        self.notify("Pair an iPhone",
+                    "On the iPhone, open droplet.noxeratech.com/app in Safari and add it to the Home Screen. "
+                    "Then, in a terminal here, run: droplet-agent pair --qr  and scan the code it shows.")
 
     def open_downloads(self):
         from . import config

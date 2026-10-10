@@ -14,11 +14,24 @@ requires-python = ">=3.9"
 # elsewhere, as pure Python. cryptography makes the mesh's key and
 # certificate and checks pairing signatures; it has wheels for x86-64 and
 # ARM64 Linux (glibc and musl).
+#
+# The rest is the iPhone link (docs/iphone.md), always on: segno draws the QR code; aioice,
+# pyee, pylibsrtp, pyOpenSSL and google-crc32c are what aiortc needs for a data channel
+# (about 10 MB). Each has wheels for Linux x86-64 and ARM64 and for macOS Intel and Apple
+# silicon, on Python 3.9 to 3.14 (or is pure Python). aiortc itself isn't listed: its own
+# requirements pull in PyAV (FFmpeg, about 100 MB), which a data channel never uses, so
+# install.sh (and droplet-agent doctor) adds it with pip install --no-deps aiortc.
 dependencies = [
     "websockets>=15.0",
     "jeepney>=0.8",
     "zeroconf>=0.132",
     "cryptography>=42.0",
+    "segno>=1.5",
+    "aioice>=0.10.1,<1",
+    "pyee>=13",
+    "pylibsrtp>=0.10",
+    "pyopenssl>=25",
+    "google-crc32c>=1.1",
 ]
 
 [project.optional-dependencies]
@@ -27,12 +40,16 @@ dependencies = [
 # file manager). On macOS nothing else is needed: remote control, the clipboard's change count
 # and the permission checks call the system frameworks through ctypes.
 app = ["PySide6-Essentials>=6.6"]
+# aiortc the plain way, PyAV and all (~100 MB more). Not needed: install.sh adds aiortc
+# without PyAV (pip install --no-deps aiortc), and the agent stands in for PyAV.
+iphone = ["aiortc>=1.9"]
 
 [project.scripts]
 droplet-agent = "droplet_agent.cli:main"
 
 [tool.setuptools]
-packages = ["droplet_agent", "droplet_agent.app", "droplet_agent.inject", "droplet_agent.mesh"]
+packages = ["droplet_agent", "droplet_agent.app", "droplet_agent.inject", "droplet_agent.mesh",
+            "droplet_agent.webrtc"]
 
 [tool.setuptools.package-data]
 # the tray icon's pixels, made by tools/make_tray_icon.py, and the 512 px drop for Droplet.app

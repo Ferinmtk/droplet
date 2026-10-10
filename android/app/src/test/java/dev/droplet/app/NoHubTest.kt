@@ -23,6 +23,8 @@ import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import dev.droplet.app.mesh.MeshIdentity
 import dev.droplet.app.mesh.PeerDirectory
+import dev.droplet.app.mesh.Perms
+import dev.droplet.app.mesh.Refused
 import dev.droplet.app.mesh.Seen
 import dev.droplet.app.mesh.TrustList
 import okhttp3.MediaType.Companion.toMediaType
@@ -210,6 +212,10 @@ class NoHubTest {
             if (f.exists()) f.readLines().map { JSONObject(it) } else emptyList()
         }
         fun downloads() = File(root, "h/Downloads/droplet")
+        /** The agent's status entry for the peer [fp]: relation, allow, paused, and its `remote` and `refused`. */
+        fun peer(fp: String): JSONObject? = status().optJSONArray("peers")?.let { a ->
+            (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.optString("fp") == fp }
+        }
         fun trusts(fp: String): String? = File(root, "h/.config/droplet-agent/mesh/trust.json").let { f ->
             if (!f.exists()) null else JSONObject(f.readText()).getJSONObject("peers").optJSONObject(fp)?.getString("source")
         }
@@ -328,6 +334,11 @@ class NoHubTest {
         assertEquals("both screens show the same code", code, incoming.getJSONObject(0).getString("code"))
         assertEquals("robo phone", incoming.getJSONObject(0).getString("name"))
         pair.findViewById<View>(R.id.code_yes).performClick()
+        // "Is linux-a your device, or someone else's?": this phone's own answer, never sent
+        val ask = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        assertTrue(ask.isShowing)
+        ask.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick()
+        idle()
         assertTrue("waiting for the agent", pair.visible(R.id.code_wait))
         val ans = a.ctl(JSONObject().put("cmd", "pair-answer").put("request", incoming.getJSONObject(0).getString("request")).put("accept", true))
         assertEquals("accepted", ans.getString("state"))
@@ -434,6 +445,54 @@ class NoHubTest {
         targets()!!.getChildAt(0).performClick()
         runStartedService(UploadService::class.java)
         waitFor("the agent has the shared text") { a.chat().any { it.getString("body") == "shared from another app" } }
+
+        // --- per-device permissions and Pause, with the reference agent (docs/mesh.md §9.9) -----------------
+        assertEquals("paired as your own device", Perms.OWN, node.trust.get(a.fp)!!.allow)
+        assertEquals("own", a.peer(node.identity.fp)?.optString("relation"))
+        // the agent switches the clipboard off for the phone: the phone hears it and greys Clipboard out
+        a.ctl(JSONObject().put("cmd", "perm-set").put("peer", "robo phone").put("capability", "clipboard").put("on", false))
+        waitFor("the phone hears the agent's perm") { node.remotePerm[a.fp]?.allow?.get("clipboard") == false }
+        waitFor("Clipboard greyed out") { card().findViewById<View>(R.id.act_clip).alpha < 1f }
+        val sendClip = runCatching { node.clip(a.fp, "not sent") }.exceptionOrNull()
+        assertTrue("$sendClip", sendClip is Refused && !sendClip.local)
+        assertEquals("linux-a doesn't allow the clipboard from you", sendClip!!.message)
+        // sent anyway (as an older phone would): the agent refuses it, and the card says why
+        node.openLink(a.fp)!!.send(JSONObject().put("t", "clip").put("text", "not for linux"))
+        waitFor("the agent's refusal") { node.refusals[a.fp]?.cap == "clipboard" }
+        waitFor("the card says why") {
+            "linux-a doesn't allow the clipboard from you" in card().findViewById<TextView>(R.id.route).text.toString()
+        }
+        assertFalse("not for linux" in a.logText())
+        a.ctl(JSONObject().put("cmd", "perm-set").put("peer", "robo phone").put("capability", "clipboard").put("on", true))
+        waitFor("the clipboard back on") { node.remotePerm[a.fp]?.allow?.get("clipboard") == true }
+        // the phone pauses the agent from its card: the agent is told, and can't ring the phone
+        card().findViewById<View>(R.id.pause).performClick()
+        assertTrue(node.trust.get(a.fp)!!.paused)
+        waitFor("the agent hears the pause") { a.peer(node.identity.fp)?.optJSONObject("remote")?.optBoolean("paused") == true }
+        waitFor("the card says paused") { card().findViewById<TextView>(R.id.route).text.startsWith("Paused") }
+        val ring = a.ctl(JSONObject().put("cmd", "ring").put("peer", "robo phone"))
+        assertEquals(ring.toString(), "robo phone paused sharing with you", ring.optString("error"))
+        // a raw link with the agent's identity, as an older agent would ring: the phone's welcome says
+        // it's paused (and offers nothing), and the ring is refused, saying why; the phone doesn't ring
+        val replies = py("link", a.root.path, lan, phonePort.toString(), node.identity.fp, """{"t":"ring"}""")
+            .lines().mapNotNull { runCatching { JSONObject(it) }.getOrNull() }
+        val welcome = replies.first { it.optString("t") == "welcome" }
+        assertTrue(welcome.toString(), welcome.getJSONObject("perm").getBoolean("paused"))
+        assertEquals(0, welcome.getJSONArray("caps").length())
+        val no = replies.first { it.optString("t") == "refused" }
+        assertEquals("ring", no.getString("re"))
+        assertEquals("paused", no.getString("why"))
+        assertEquals("robo phone paused sharing with you", no.getString("error"))
+        assertNull(Ringer.ringing)
+        // a message from the phone waits for the resume
+        val held = node.sendText(a.fp, "after the pause")
+        val waited = node.awaitJob(held.getString("id"), 10_000)!!
+        assertEquals("queued", waited.getString("state"))
+        assertEquals("waiting: linux-a is paused: resume it to send", waited.getString("error"))
+        card().findViewById<View>(R.id.pause).performClick()
+        assertFalse(node.trust.get(a.fp)!!.paused)
+        waitFor("the held message reaches the agent") { a.chat().any { it.getString("body") == "after the pause" } }
+        waitFor("the agent hears the resume") { a.peer(node.identity.fp)?.optJSONObject("remote")?.optBoolean("paused") == false }
 
         // --- and no hub anywhere, all along ---------------------------------------------------------------
         assertFalse(Prefs.hasHub)

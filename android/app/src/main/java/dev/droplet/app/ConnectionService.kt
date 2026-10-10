@@ -86,12 +86,21 @@ class ConnectionService : Service() {
         scope.launch {
             Mesh.state.collect { if (!Prefs.hasHub && networkUp) setState(directState()) }
         }
+        // Pause all, from here or the app: the notification says so, and offers Resume
+        scope.launch {
+            Mesh.changes.collect { showState() }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!Prefs.stayConnected || !(Prefs.hasHub || Prefs.meshEnabled)) {
             stopSelf()
             return START_NOT_STICKY
+        }
+        // the notification's Pause all / Resume (docs/mesh.md §9.9)
+        when (intent?.action) {
+            ACTION_PAUSE_ALL -> Mesh.pauseEverything(true)
+            ACTION_RESUME_ALL -> Mesh.pauseEverything(false)
         }
         kick()
         return START_STICKY
@@ -149,7 +158,8 @@ class ConnectionService : Service() {
         try {
             val ring = Hub.ring()
             when {
-                ring != null && ring.id != Prefs.silencedRing -> Ringer.start(this, ring)
+                // through the hub too, a device paused (or not allowed to ring) here doesn't ring this phone
+                ring != null && ring.id != Prefs.silencedRing && Mesh.mayRingFromHub(ring.from) -> Ringer.start(this, ring)
                 ring == null && Ringer.ringing != null -> Ringer.stop(this, tellHub = false)
             }
             val now = SystemClock.elapsedRealtime()
@@ -241,23 +251,39 @@ class ConnectionService : Service() {
 
     // --- the persistent notification -----------------------------------------
 
-    private fun notification(text: String): Notification =
-        NotificationCompat.Builder(this, Notifs.CH_CONNECTION)
+    private fun notification(text: String): Notification {
+        val paused = Mesh.pausedAll
+        return NotificationCompat.Builder(this, Notifs.CH_CONNECTION)
             .setSmallIcon(R.drawable.ic_drop)
-            .setContentTitle(getString(R.string.conn_title))
-            .setContentText(text)
+            .setContentTitle(getString(if (paused) R.string.conn_title_paused else R.string.conn_title))
+            .setContentText(if (paused) getString(R.string.conn_paused_text) else text)
             .setOngoing(true)
             .setSilent(true)
             .setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(Notifs.openApp(this))
-            .addAction(R.drawable.ic_remote, getString(R.string.remote_action), Notifs.openRemote(this))
             .apply {
-                if (Prefs.capClipboard) addAction(R.drawable.ic_clip, getString(R.string.clip_action), Notifs.sendClipboard(this@ConnectionService))
+                // Android shows three actions at most
+                var n = 0
+                if (paused) {
+                    addAction(0, getString(R.string.conn_resume_all), pauseIntent(false)); n++
+                } else {
+                    addAction(R.drawable.ic_remote, getString(R.string.remote_action), Notifs.openRemote(this@ConnectionService)); n++
+                    if (Prefs.capClipboard) {
+                        addAction(R.drawable.ic_clip, getString(R.string.clip_action), Notifs.sendClipboard(this@ConnectionService)); n++
+                    }
+                    addAction(0, getString(R.string.conn_pause_all), pauseIntent(true)); n++
+                }
+                if (n < 3) addAction(0, getString(R.string.settings), Notifs.openSettings(this@ConnectionService))
             }
-            .addAction(0, getString(R.string.settings), Notifs.openSettings(this))
             .build()
+    }
+
+    private fun pauseIntent(on: Boolean): PendingIntent =
+        PendingIntent.getService(this, if (on) 4 else 5,
+            Intent(this, ConnectionService::class.java).setAction(if (on) ACTION_PAUSE_ALL else ACTION_RESUME_ALL),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
     /** What the polls found; shown unless the live connection has something better to say. */
     private fun setState(text: String) {
@@ -271,7 +297,7 @@ class ConnectionService : Service() {
         val text = if (live.connected) {
             live.describe(this) + (Router.shortLabel(this)?.let { " · $it" } ?: "")
         } else pollText.ifEmpty { getString(R.string.conn_connecting) }
-        val key = text + Prefs.capClipboard
+        val key = text + Prefs.capClipboard + Mesh.pausedAll
         if (key == state) return
         state = key
         if (Notifs.allowed(this)) NotificationManagerCompat.from(this).notify(Notifs.ID_CONNECTION, notification(text))
@@ -313,6 +339,8 @@ class ConnectionService : Service() {
     companion object {
         private const val POLL_MS = 15_000L
         private const val ACTION_POLL = "dev.droplet.app.POLL"
+        const val ACTION_PAUSE_ALL = "dev.droplet.app.PAUSE_ALL"
+        const val ACTION_RESUME_ALL = "dev.droplet.app.RESUME_ALL"
         private const val LIVE_TAG = "service"
         private const val ROUTER_TAG = "service"
         private const val MESH_TAG = "service"

@@ -1,8 +1,14 @@
 # droplet.noxeratech.com
 
 The page people land on when you send them droplet. One static file, no build step,
-no framework: `index.html` with the styles inline, three screenshots, and `_redirects`
-for the short links.
+no framework: `index.html` with the styles and script inline, the screenshots in `shots/`,
+`og.png` for link previews, and `_redirects` for the short links. The only thing it loads
+from elsewhere is its font (Plus Jakarta Sans, from Google Fonts).
+
+`app/` is droplet for iPhone: a web app (no build step either) that connects straight to
+your computers over WebRTC, with no server. It's served from here once, then kept by its
+service worker. See `docs/iphone.md`. The landing page's iPhone tab links to it.
+`app/vendor/jsQR.js` is jsQR 1.4.0 (Apache-2.0), unmodified.
 
 ## Deploying it (once)
 
@@ -28,7 +34,11 @@ buttons never need editing:
 | `/android` | `releases/latest/download/droplet-android.apk` |
 | `/windows` | `releases/latest/download/droplet-windows.exe` |
 | `/linux` | the agent's README, at Install (a page to read: the install is a command) |
-| `/linux.sh` | `releases/latest/download/install-agent.sh`, for `curl -fsSL <site>/linux.sh \| sh` |
+| `/linux.sh`, `/mac.sh` | `releases/latest/download/install-agent.sh`, for `curl -fsSL <site>/linux.sh \| sh` (the same installer does both) |
+| `/mac` | the agent's README, at On a Mac |
+| `/store` | Droplet on the Microsoft Store |
+| `/iphone` | `/app/`, the iPhone web app |
+| `/privacy` | `docs/privacy.md` |
 | `/releases`, `/source` | GitHub |
 
 **This only works if every release keeps those exact asset names.** A release with
@@ -38,19 +48,29 @@ names and put the version in the release title.
 
 ## The screenshots
 
-`shots/` holds rendered screens from the app's own screenshot tests, not photographs of
-anyone's phone: the devices in them ("slim", "Wanjiru's Pixel") are fictitious. Regenerate
-them with:
+`shots/` holds rendered screens, not photographs of anyone's phone: the devices in them
+("slim", "Wanjiru's Pixel") are fictitious. The Android ones come from the app's screenshot
+tests (`DROPLET_SHOTS=/tmp/shots ./gradlew :app:testReleaseUnitTest --tests '*ScreensTest*'`),
+the desktop one from Droplet's window, and the iPhone ones from the web app's end-to-end test
+in WebKit. They're WebP, 540 px wide for phones, each well under 50 KB; convert new ones with
+`magick in.png -resize 540x -quality 82 out.webp`.
 
-```bash
-cd android
-DROPLET_SHOTS=/tmp/shots ./gradlew :app:testReleaseUnitTest --tests '*ScreensTest*'
-```
+`og.png` (1200×630) is the picture WhatsApp, X and the rest show for a link. It's the hero
+artwork with the headline, rendered from HTML with Playwright.
 
-then copy `home-devices.png`, `setup-choose.png` and `pair-code.png` over the ones here.
+## The hero
+
+The picture at the top is a small demo you can play with: tap **Send** on the phone (or drag
+the item towards the laptop) and it turns into a droplet, flies over and lands in the laptop's
+Received tray. Untouched, it plays by itself every few seconds while it's on screen, and the
+headline's word follows what's being passed (photos, links, PDFs, notes). It's inline SVG and
+the last block of the script in `index.html`; the items are the `ITEMS` list and the
+`it-*` symbols. With reduced motion it doesn't play by itself, and a tap just swaps the
+picture without the flight.
 
 ## Editing it
 
-Keep it honest: it promises no account, no cloud and nothing in the middle, and it warns
-people about the SmartScreen and "unknown apps" prompts rather than letting them be
-surprised. If those stop being true, change the page.
+Keep it honest: it promises no account, no cloud and nothing in the middle, and it tells
+people about Android's "unknown apps" prompt rather than letting them be surprised.
+The "Get Droplet" button picks the visitor's system from the browser; add `?os=android`
+(or `iphone`, `windows`, `mac`, `linux`) to the address to see another one. If those stop being true, change the page.

@@ -307,12 +307,22 @@ def test_the_menu_bar_shows_the_trays_menu(monkeypatch):
     bar = macmenu.MenuBar(call=call, notify=lambda t, b: notes.append((t, b)), sync=True)
     bar.kick()
     top = [a.text() for a in bar.menu.actions() if not a.isSeparator()]
-    assert top[0] == "Open Droplet"
+    assert top[:2] == ["Open Droplet", "Pair an iPhone…"]
     assert "friend wants to pair (code 1234)" in top
     assert "phone — connected" in top
     assert top[-1] == "Quit droplet's menu bar icon"
     peer = next(a for a in bar.menu.actions() if a.text() == "phone — connected").menu()
-    assert [a.text() for a in peer.actions()] == ["Send files…", "Send clipboard", "Ring"]
+    assert [a.text() for a in peer.actions() if not a.isSeparator()] == ["Send files…", "Send clipboard", "Ring",
+                                                                          "Pause"]
+    # Pause everything shows on the menu bar icon
+    assert "Pause everything" in top
+    status["paused_all"], status["incoming"] = True, []
+    bar.kick()
+    assert "Resume everything" in [a.text() for a in bar.menu.actions()]
+    assert bar.icon.icon().cacheKey() == bar.icons["paused"].cacheKey()
+    status["paused_all"] = False
+    status["incoming"] = [{"request": "r1", "name": "friend", "code": "1234"}]
+    bar.kick()
 
     # files are picked on the GUI thread, then sent by the tray's Actions
     sent = []

@@ -81,6 +81,21 @@ class AgentHost(Host):
     def hub_ring(self, device_id: str, stop: bool) -> None:
         hub.ring(self._route(), self.cfg["token"], device_id, stop)
 
+    # --- Pause everything (mesh/perms.py): "mesh": {"paused": true} in the config ----------------
+
+    def paused_everything(self) -> bool:
+        return (self.cfg.get("mesh") or {}).get("paused") is True
+
+    def set_paused_everything(self, on: bool) -> None:
+        self.cfg.setdefault("mesh", {})["paused"] = bool(on)
+        try:
+            # read fresh and written back, so settings changed by hand meanwhile survive
+            fresh = config.load()
+            fresh.setdefault("mesh", {})["paused"] = bool(on)
+            config.save(fresh)
+        except (OSError, ValueError) as e:
+            log.warning("mesh: couldn't save Pause everything in the config (it holds until a restart): %s", e)
+
     # --- the roster -------------------------------------------------------------------
 
     def hub_up(self):
@@ -145,7 +160,11 @@ def start_mesh(agent, cfg: dict, *, dry_run: bool):
     agent.peers_broadcast = node.broadcast
     agent.on_roster = host.roster_changed
     agent.on_hub_up = host.hub_up
+    agent.hub_check = node.check_hub_message
+    agent.hub_share = node.hub_may_share
     node.start()
+    from .webrtc.bridge import start_bridge
+    start_bridge(node, cfg)
     threading.Thread(target=host.roster_loop, args=(agent.stop,), name="mesh-roster-loop", daemon=True).start()
     return node, host
 

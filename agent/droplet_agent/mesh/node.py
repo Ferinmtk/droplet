@@ -32,7 +32,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import DEFAULT_PORT, OS_NAME, PROTOCOL_VERSION
+from . import DEFAULT_PORT, OS_NAME, PROTOCOL_VERSION, perms
 from .control import ControlServer
 from .desktop import Desktop
 from .discovery import Directory, txt_records
@@ -42,7 +42,7 @@ from .outbox import DONE, FAILED, QUEUED, SENDING, Outbox
 from .pairing import ACCEPTED, CANCELLED, DENIED, EXPIRED, Incoming, Outgoing, PairError
 from .server import Server
 from .tlsctx import ServerContexts, client_context
-from .trust import TrustList, clean_addresses, clean_port, make_entry
+from .trust import TrustList, clean_addresses, clean_port, make_browser_entry, make_entry
 from .wslink import Link, LinkError, client_handshake, server_handshake
 
 log = logging.getLogger("droplet_agent.mesh")
@@ -98,6 +98,18 @@ class Host:
     def hub_text(self, device_id: str, body: str) -> None: raise NoRoute("no hub")
     def hub_upload(self, device_id: str, path: Path, name: str, mime: str) -> None: raise NoRoute("no hub")
     def hub_ring(self, device_id: str, stop: bool) -> None: raise NoRoute("no hub")
+    # Pause everything (perms.py): kept by the host, so it survives a restart
+    _paused_all = False
+    def paused_everything(self) -> bool: return self._paused_all
+    def set_paused_everything(self, on: bool) -> None: self._paused_all = bool(on)
+
+
+class Refused(ValueError):
+    """Not sent: this device's own settings say no (`local`), or the peer said it would refuse."""
+
+    def __init__(self, text: str, why: str, cap: str | None, local: bool):
+        super().__init__(text)
+        self.why, self.cap, self.local = why, cap, local
 
 
 class PeerSource:
@@ -249,11 +261,21 @@ class MeshNode:
         self._wlock = threading.Lock()
         self._kick = threading.Event()
         self._accepted: dict[str, float] = {}    # fp → when this device accepted its pairing request
+        # what each linked peer said about how it treats this device (its `perm`): a hint only
+        self.remote_perm: dict[str, dict] = {}
+        self.refusals: dict[str, dict] = {}       # fp → the last thing it refused, and why
+        self._refused_at: dict[tuple, float] = {}  # (fp, type) → when we last told it no
         self.stop = threading.Event()
         self.server: Server | None = None
         self.directory: Directory | None = None
         self.control: ControlServer | None = None
         self.port = 0
+        # the iPhone link (droplet_agent/webrtc), when it's on: it adds control commands ("qr")
+        # and a "webrtc" section to the status. When it isn't running, webrtc_off says why
+        # ({"why": "off" | "missing" | "broken" | "failed", "text"}; webrtc.bridge.start_bridge)
+        self.webrtc = None
+        self.webrtc_off: dict | None = None
+        self.control_ext: dict = {}
 
     # --- who we are -------------------------------------------------------------
 
@@ -269,9 +291,149 @@ class MeshNode:
         return txt_records(peer_id=self.peer_id, fp=self.identity.fp, name=self.name,
                            caps=self.host.mesh_caps(), hub_id=self.host.hub_id())
 
-    def hello(self, t: str = "hello") -> dict:
-        return {"t": t, "id": self.peer_id, "name": self.name, "caps": self.host.mesh_caps(), "os": OS_NAME,
-                "v": PROTOCOL_VERSION, "port": self.port}
+    def hello(self, t: str = "hello", fp: str | None = None) -> dict:
+        """Our hello (or welcome) to the peer `fp`: the caps it may use, and how we treat it."""
+        out = {"t": t, "id": self.peer_id, "name": self.name, "caps": self.host.mesh_caps(), "os": OS_NAME,
+               "v": PROTOCOL_VERSION, "port": self.port}
+        if fp is not None:
+            out["caps"] = self.caps_for(fp)
+            out["perm"] = self.perm_for(fp)
+        return out
+
+    # --- permissions (perms.py) ---------------------------------------------------------
+
+    CAP_NEEDS = {"input": "control", "media": "control", "lock": "control", "screenshot": "control",
+                 "clipboard": "clipboard", "notify": "notify"}
+
+    @property
+    def paused_all(self) -> bool:
+        return bool(self.host.paused_everything())
+
+    def caps_for(self, fp: str) -> list[str]:
+        """The caps a peer is told about: only what it may use here."""
+        entry = self.trust.get(fp)
+        if entry is None or entry.get("paused") or self.paused_all:
+            return []
+        return [c for c in self.host.mesh_caps() if c not in self.CAP_NEEDS or perms.allowed(entry, self.CAP_NEEDS[c])]
+
+    def perm_for(self, fp: str) -> dict:
+        return perms.remote_view(self.trust.get(fp), self.paused_all)
+
+    def may_send(self, fp: str, msg: dict, entry: dict | None = None) -> None:
+        """Raise Refused unless `msg` may go to the peer: by this device's settings, then by what
+        the peer said it would take (a hint, so nothing goes that it would only refuse)."""
+        entry = entry or self.trust.get(fp)
+        no = perms.check(entry, msg, self.paused_all, "out")
+        name = (entry or {}).get("name") or "that device"
+        if no:
+            raise Refused(perms.local_text(name, no[0], no[1], self.paused_all), no[0], no[1], True)
+        # only while a link is open: its hello brought the peer's latest word, and a peer that
+        # changed its mind while away says so in the hello of the next link
+        remote = self.remote_perm.get(fp) if self.open_link(fp) is not None else None
+        why = perms.remote_refuses(remote, perms.capability(msg))
+        if why and msg.get("t") not in perms.ALWAYS:
+            cap = perms.capability(msg)
+            raise Refused(perms.refusal_text(name, why, cap), why, cap, False)
+
+    def set_perms(self, fp: str, *, relation=None, allow=None, paused=None) -> dict:
+        entry = self.trust.set_perms(fp, relation=relation, allow=allow, paused=paused)
+        log.info("mesh: %s: %s%s", entry["name"], "paused" if entry["paused"] else "sharing",
+                 "; " + ", ".join(f"{c} {'on' if v else 'off'}" for c, v in entry["allow"].items())
+                 if relation is not None or allow is not None else "")
+        self._tell_perms([fp])
+        return entry
+
+    def pause_everything(self, on: bool):
+        self.host.set_paused_everything(on)
+        log.info("mesh: %s", "everything paused" if on else "everything resumed")
+        self._tell_perms(list(self.links))
+
+    def _tell_perms(self, fps):
+        """Tell linked peers how they're treated now (perm), and send what waited for a resume."""
+        for fp in fps:
+            link = self.open_link(fp)
+            if link is not None:
+                link.send({"t": "perm", **self.perm_for(fp), "caps": self.caps_for(fp)})
+        self._kick.set()
+
+    def _refuse(self, link, entry: dict, msg: dict, why: str, cap: str):
+        """Say no to the sender, so it can show why. Acknowledged messages get an answer for that
+        id: a nack for good when the capability is off, `refused` when paused (it waits, and goes
+        on resume). The rest get one `refused` every few seconds at most."""
+        t = msg.get("t")
+        text = perms.refusal_text(self.name, why, cap)
+        log.info("mesh: refused %s from %s: %s", t, entry["name"], "paused" if why == "paused" else f"{cap} is off")
+        mid = msg.get("id") if isinstance(msg.get("id"), str) and len(msg["id"]) <= 64 else None
+        if mid and t in ("text", "offer", "clip", "file"):
+            if why == "denied":
+                link.send({"t": "nack", "id": mid, "error": text, "cap": cap, "why": why})
+            else:
+                link.send({"t": "refused", "re": t, "id": mid, "cap": cap, "why": why, "error": text})
+            return
+        key, now = (link.fp, t), time.monotonic()
+        with self._lock:
+            if now - self._refused_at.get(key, -1e9) < 5:
+                return
+            self._refused_at[key] = now
+        link.send({"t": "refused", "re": t, "cap": cap, "why": why, "error": text})
+
+    def _remote_perm(self, fp: str, v):
+        got = perms.parse_remote(v)
+        with self._lock:
+            if got is None:
+                self.remote_perm.pop(fp, None)      # an older peer: it takes everything, as before
+            else:
+                self.remote_perm[fp] = got
+                if not got["paused"]:
+                    old = self.refusals.get(fp)
+                    if old and old["why"] == "paused":
+                        self.refusals.pop(fp, None)
+
+    def _got_refused(self, link, entry: dict, msg: dict):
+        why = msg.get("why") if msg.get("why") in ("paused", "denied") else "denied"
+        cap = msg.get("cap") if msg.get("cap") in perms.CAPABILITIES else None
+        text = str(msg.get("error") or perms.refusal_text(entry["name"], why, cap))[:200]
+        self.refusals[link.fp] = {"re": str(msg.get("re") or "")[:20], "cap": cap, "why": why, "text": text,
+                                  "ts": time.time()}
+        log.info("mesh: %s refused: %s", entry["name"], text)
+        oid = msg.get("id")
+        if isinstance(oid, str):
+            waiter = self._acks.get(oid)
+            if waiter is not None and waiter[3] == link.fp:
+                waiter[1], waiter[2] = False, f"{why}: {text}"
+                waiter[0].set()
+            self.offers.resolve(link.fp, oid, False, f"{why}: {text}")
+
+    def check_hub_message(self, msg: dict) -> str | None:
+        """A message that came through the hub: why it's refused, or None. The sender is the hub's
+        device `from.id`; one this device trusts gets its own switches, any other device of the
+        hub's is your own (the same user's hub)."""
+        sender = (msg.get("from") or {}).get("id") if isinstance(msg.get("from"), dict) else None
+        entry = None
+        if isinstance(sender, str):
+            found = [e for e in self.trust.all() if e["id"] == sender and e["source"] != "browser"]
+            entry = found[0] if found else None
+        if entry is None:
+            if self.paused_all and msg.get("t") not in perms.ALWAYS:
+                return "paused"
+            return None
+        no = perms.check(entry, msg, self.paused_all, "in")
+        return no[0] if no else None
+
+    def hub_may_share(self, msg: dict) -> bool:
+        """Whether a broadcast (clip, state) may go to the hub, which hands it to every device it
+        has. Not while everything is paused, and a clipboard not while any device the hub lists
+        is paused or has the clipboard off here."""
+        if self.paused_all:
+            return False
+        cap = perms.capability(msg)
+        if cap not in ("clipboard",):
+            return True
+        hub_id = self.host.hub_id()
+        for e in self.trust.all():
+            if hub_id and e.get("hub") == hub_id and (e.get("paused") or not perms.allowed(e, cap)):
+                return False
+        return True
 
     def announce_body(self) -> dict:
         """What the hub's roster needs from this device (POST /api/mesh/announce)."""
@@ -304,7 +466,7 @@ class MeshNode:
     def close(self):
         self.stop.set()
         self._kick.set()
-        for c in (self.control, self.directory, self.server):
+        for c in (self.control, self.directory, self.server, self.webrtc):
             if c is not None:
                 try:
                     c.close()
@@ -351,6 +513,8 @@ class MeshNode:
                 if any(link.address == gw and not link.closed for links in self.links.values() for link in links):
                     continue
             for entry in self.trust.all():
+                if entry["source"] == "browser":
+                    continue   # a browser is never dialled: it connects when it's open
                 fp, port = entry["fp"], entry.get("port") or DEFAULT_PORT
                 if self.open_link(fp) is not None or (gw, fp) in self._gateway_misses:
                     continue
@@ -463,7 +627,7 @@ class MeshNode:
         link.kind, link.port = kind, port
         self._add_link(link)
         link.start()
-        link.send(self.hello())
+        link.send(self.hello(fp=fp))
         if not link.ready.wait(HELLO_TIMEOUT):
             link.close(1008, "no welcome")
             return None
@@ -501,7 +665,7 @@ class MeshNode:
         if link or not dial:
             return link
         entry = self.trust.get(fp)
-        if entry is None:
+        if entry is None or entry["source"] == "browser":
             return None
         with self._lock:
             lock = self._dial_locks.setdefault(fp, threading.Lock())
@@ -517,14 +681,19 @@ class MeshNode:
         return None
 
     def broadcast(self, msg: dict) -> bool:
-        """Send to every peer with an open link (state, clipboard)."""
+        """Send to every peer with an open link (state, clipboard) that may have it."""
         sent = False
         with self._lock:
             fps = list(self.links)
         for fp in fps:
             link = self.open_link(fp)
-            if link is not None:
-                sent = link.send(msg) or sent
+            if link is None:
+                continue
+            try:
+                self.may_send(fp, msg)
+            except Refused:
+                continue
+            sent = link.send(msg) or sent
         return sent
 
     # --- what arrives -------------------------------------------------------------
@@ -542,13 +711,29 @@ class MeshNode:
                                  os_name=msg.get("os"), caps=msg.get("caps") if isinstance(msg.get("caps"), list) else None,
                                  address=None if link.outbound else link.address,
                                  tailnet=link.kind == "tailnet")
+                self._remote_perm(link.fp, msg.get("perm"))
                 if t == "hello":
-                    link.send(self.hello("welcome"))
+                    link.send(self.hello("welcome", link.fp))
                     log.info("mesh: %s connected from %s", entry["name"], link.address)
                 link.ready.set()
                 for kind, data in (self.host.last_states() or {}).items():
-                    link.send({"t": "state", "kind": kind, "data": data})
+                    st = {"t": "state", "kind": kind, "data": data}
+                    if perms.check(entry, st, self.paused_all, "out") is None:
+                        link.send(st)
                 self._kick.set()
+            return
+        if t == "perm":
+            self._remote_perm(link.fp, msg)
+            if isinstance(msg.get("caps"), list):
+                self.trust.learn(link.fp, caps=msg["caps"])
+            self._kick.set()     # a resume: what waited for it goes now
+            return
+        if t == "refused":
+            self._got_refused(link, entry, msg)
+            return
+        no = perms.check(entry, msg, self.paused_all, "in")
+        if no is not None:
+            self._refuse(link, entry, msg, *no)
             return
         sender = {"id": entry["id"], "name": entry["name"]}
         if t == "ping":
@@ -581,7 +766,7 @@ class MeshNode:
             if isinstance(msg.get("key"), str):
                 self.desktop.close_notification(f"{link.fp}:{msg['key']}")
         elif t == "unpair":
-            if entry["source"] == "paired":
+            if entry["source"] in ("paired", "browser"):
                 log.info("mesh: %s unpaired from this device", entry["name"])
                 self.trust.remove(link.fp)
             else:
@@ -593,6 +778,10 @@ class MeshNode:
         elif t in ("input", "media", "cmd", "clip", "rpc"):
             out = {k: v for k, v in msg.items() if k not in ("from", "to")}
             out["from"] = sender   # who sent it is the authenticated peer, whatever the message says
+            if t == "clip":
+                # the iPhone's web app can't watch the clipboard: a clip from it is always
+                # someone tapping "Send clipboard" there, so it's applied even with sync off
+                out["explicit"] = link.kind == "webrtc"
             self.host.dispatch_remote(out, PeerSource(self, link.fp, entry["name"]))
         # hello, welcome, pong, rpc-result and anything newer: nothing to do
 
@@ -666,6 +855,7 @@ class MeshNode:
     def send_live(self, fp: str, msg: dict) -> str:
         """input, media, cmd: direct, else through the hub. Returns the route; raises NoRoute."""
         entry = self._entry(fp)
+        self.may_send(fp, msg, entry)
         link = self.direct(fp)
         if link is not None and link.send(msg):
             return link.kind
@@ -675,6 +865,7 @@ class MeshNode:
 
     def ring(self, fp: str, stop: bool = False) -> str:
         entry = self._entry(fp)
+        self.may_send(fp, {"t": "ring"}, entry)
         link = self.direct(fp)
         if link is not None and link.send({"t": "ring-stop" if stop else "ring"}):
             return link.kind
@@ -687,13 +878,28 @@ class MeshNode:
         entry = self._entry(fp)
         if not isinstance(text, str) or not text or len(text.encode("utf-8", "surrogatepass")) > 256 * 1024:
             raise ValueError("clipboard text must be 1 byte to 256 KB")
+        msg = {"t": "clip", "text": text}
+        self.may_send(fp, msg, entry)
         link = self.direct(fp)
-        if link is not None and link.send({"t": "clip", "text": text}):
+        if link is not None and not getattr(link, "fits", lambda _m: True)(msg):
+            raise ValueError(f"that's too much text for {entry['name']}'s web app in one go (256 KB at most)")
+        if link is not None and link.send(msg):
             return link.kind
-        # the hub has no addressed clipboard message: it goes to all your devices' clipboards
-        if self._hub_has_it_live(entry) and self.host.hub_send({"t": "clip", "text": text}):
+        if entry["source"] == "browser":
+            raise NoRoute(f"{entry['name']} isn't connected: open droplet on it, on the same Wi-Fi")
+        # the hub has no addressed clipboard message: it goes to all your devices' clipboards,
+        # so not while any of them shouldn't have it
+        if self._hub_has_it_live(entry) and self.hub_may_share(msg) and self.host.hub_send({"t": "clip", "text": text}):
             return "hub"
         raise NoRoute(f"{entry['name']} isn't reachable directly, and not through the hub either")
+
+    def _may_queue(self, fp: str, msg: dict, entry: dict):
+        """Chat and files: refused at once when a switch says no; a pause only makes them wait."""
+        try:
+            self.may_send(fp, msg, entry)
+        except Refused as e:
+            if e.why != "paused":
+                raise
 
     def _entry(self, fp: str) -> dict:
         entry = self.trust.get(fp)
@@ -707,6 +913,7 @@ class MeshNode:
         entry = self._entry(fp)
         if not isinstance(body, str) or not body.strip() or len(body.encode("utf-8", "surrogatepass")) > MAX_TEXT:
             raise ValueError("a message must be 1 byte to 64 KB of text")
+        self._may_queue(fp, {"t": "text"}, entry)
         job = self.outbox.add_text(fp, entry["name"], body)
         self._kick.set()
         return job
@@ -717,6 +924,7 @@ class MeshNode:
         if not path.is_file():
             raise ValueError(f"{path} isn't a file")
         mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        self._may_queue(fp, {"t": "offer"}, entry)
         job = self.outbox.add_file(fp, entry["name"], path, safe_name(path.name), mime)
         if cleanup:
             self.outbox.update(job["id"], cleanup=True)
@@ -796,6 +1004,16 @@ class MeshNode:
             if why:
                 self._finish(job, FAILED, error=why)
                 return "done"
+        try:
+            self.may_send(job["fp"], {"t": "text" if job["kind"] == "text" else "offer"}, entry)
+        except Refused as e:
+            if e.why == "paused":
+                # paused, here or there: it waits, and goes on resume (perm, or Resume here)
+                self.outbox.update(job["id"], state=QUEUED, attempts=job["attempts"] + 1, retry=False,
+                                   error=f"waiting: {e}")
+                return "wait"
+            self._finish(job, FAILED, error=str(e))
+            return "done"
         self.outbox.update(job["id"], state=SENDING, attempts=job["attempts"] + 1)
         link = self.direct(job["fp"])
         if link is None and self._just_accepted(job["fp"]):
@@ -804,10 +1022,23 @@ class MeshNode:
             timer.daemon = True
             timer.start()
         if link is not None:
-            got = self._direct_text(link, job) if job["kind"] == "text" else self._direct_file(link, job)
+            if job["kind"] == "text":
+                got = self._direct_text(link, job)
+            elif hasattr(link, "send_file"):
+                got = link.send_file(job)    # a browser: the file goes over its data channel
+            else:
+                got = self._direct_file(link, job)
             if got == "ok":
                 self._finish(job, DONE, route=link.kind, error=None)
                 return "done"
+            if got.startswith("paused:"):
+                # the peer paused sharing with us: wait for its perm saying it resumed
+                self.outbox.update(job["id"], state=QUEUED, error=f"waiting: {got[len('paused:'):].strip()}",
+                                   retry=False)
+                with self._lock:
+                    rp = self.remote_perm.setdefault(job["fp"], {"paused": True, "allow": {}})
+                    rp["paused"] = True
+                return "wait"
             if got.startswith("refused:"):
                 self._finish(job, FAILED, error=got[len("refused:"):].strip() or "the peer refused it")
                 return "done"
@@ -840,6 +1071,8 @@ class MeshNode:
                 return "the link dropped"
             if not waiter[0].wait(ACK_TIMEOUT):
                 return "no answer"
+            if not waiter[1] and waiter[2].startswith("paused:"):
+                return waiter[2]
             return "ok" if waiter[1] else f"refused: {waiter[2]}"
         finally:
             self._acks.pop(job["id"], None)
@@ -861,11 +1094,19 @@ class MeshNode:
                 if self.trust.get(link.fp) is None:
                     return "refused: not trusted any more"
             ok, error = offer.result or (False, "")
+            if not ok and error.startswith("paused:"):
+                return error
             return "ok" if ok else f"refused: {error}"
         finally:
             self.offers.remove(job["id"])
 
     def serve_file(self, sock, oid: str, fp: str, req, send_head):
+        try:
+            self.may_send(fp, {"t": "offer"})
+        except Refused as e:
+            if e.local:
+                send_head(403, {"Content-Length": "0"})   # paused (or switched off) since it was offered
+                return
         self.offers.serve(sock, oid, fp, req.headers, req.method, send_head)
 
     # --- pairing --------------------------------------------------------------------
@@ -937,7 +1178,9 @@ class MeshNode:
         raise ValueError(f"no peer called {t!r} is announcing itself on this network. "
                          "Give its address instead: droplet-agent pair <address>[:port]")
 
-    def pair_confirm(self, rid: str, yes: bool) -> dict:
+    def pair_confirm(self, rid: str, yes: bool, relation: str = "own") -> dict:
+        """The owner here says the codes match (or not), and whether the other device is theirs
+        ("own") or someone else's ("other"), which sets what it may do (perms.py)."""
         og = self.outgoing.get(rid)
         if og is None:
             raise ValueError("no such pairing request")
@@ -945,6 +1188,9 @@ class MeshNode:
             og.cancel()
             og.state = CANCELLED
             return {"state": og.state}
+        if relation not in perms.RELATIONS:
+            raise ValueError("relation must be \"own\" or \"other\"")
+        og.relation = relation
         og.local_ok = True
         threading.Thread(target=self._pair_wait, args=(og,), name="mesh-pair", daemon=True).start()
         return {"state": og.state}
@@ -962,7 +1208,8 @@ class MeshNode:
                     entry = make_entry(peer_id=og.peer["id"], name=og.peer["name"], cert_pem=der_to_pem(og.der),
                                        source="paired", os_name=og.peer.get("os") or "", port=og.port,
                                        lan=[] if is_tailnet(og.host) else [og.host],
-                                       tailnet_ip=og.host if is_tailnet(og.host) else None)
+                                       tailnet_ip=og.host if is_tailnet(og.host) else None,
+                                       relation=getattr(og, "relation", "own"))
                     self.trust.add_paired(entry)
                     log.info("mesh: paired with %s (%s)", entry["name"], entry["fp"])
                     og.state = ACCEPTED
@@ -976,24 +1223,34 @@ class MeshNode:
             time.sleep(1.5)
         og.state = EXPIRED
 
-    def pair_answer(self, rid: str, accept: bool) -> dict:
+    def pair_answer(self, rid: str, accept: bool, relation: str = "own") -> dict:
+        """The owner's answer to a device asking to pair: and, accepting, whether it's theirs
+        ("own") or someone else's ("other")."""
+        if accept and relation not in perms.RELATIONS:
+            raise ValueError("relation must be \"own\" or \"other\"")
         r = self.incoming.answer(rid, accept)
         if r is None:
             raise ValueError("no such pairing request waiting (it may have expired)")
         self.desktop.close_notification(f"pair-{rid}")
-        if accept:
+        if accept and r.get("kind") == "browser":
+            self.trust.add_browser(make_browser_entry(name=r["name"], key=r["der"], os_name=r["os"] or "ios",
+                                                      relation=relation))
+            log.info("mesh: paired with %s (%s), a browser, %s", r["name"], r["fp"], relation)
+        elif accept:
             self.trust.add_paired(make_entry(peer_id=r["id"], name=r["name"], cert_pem=der_to_pem(r["der"]),
-                                             source="paired", os_name=r["os"]))
+                                             source="paired", os_name=r["os"], relation=relation))
             with self._lock:
                 self._accepted[r["fp"]] = time.monotonic()
-            log.info("mesh: paired with %s (%s)", r["name"], r["fp"])
+            log.info("mesh: paired with %s (%s), %s", r["name"], r["fp"],
+                     "your own device" if relation == "own" else "someone else's")
         else:
             log.info("mesh: refused to pair with %s", r["name"])
-        return {"state": ACCEPTED if accept else DENIED, "name": r["name"], "fp": r["fp"]}
+        return {"state": ACCEPTED if accept else DENIED, "name": r["name"], "fp": r["fp"],
+                **({"relation": relation} if accept else {})}
 
     def unpair(self, fp: str) -> dict:
         entry = self._entry(fp)
-        if entry["source"] != "paired":
+        if entry["source"] not in ("paired", "browser"):
             raise ValueError(f"{entry['name']} is trusted because your hub lists it. Remove it on the hub, "
                              "and every device stops trusting it.")
         told = False
@@ -1024,12 +1281,18 @@ class MeshNode:
         peers = []
         for e in self.trust.all():
             link = self.open_link(e["fp"])
-            peers.append({k: e[k] for k in ("id", "name", "fp", "source", "lan", "port", "tailnet_ip", "os", "hub")}
+            peers.append({k: e[k] for k in ("id", "name", "fp", "source", "lan", "port", "tailnet_ip", "os", "hub",
+                                            "relation", "allow", "paused")}
                          | {"link": f"{link.kind} {link.address}" if link else None,
-                            "on_lan": any(s.fp == e["fp"] for s in seen)})
+                            "on_lan": any(s.fp == e["fp"] for s in seen),
+                            # what it said about how it treats this device (a hint), and its last no
+                            "remote": self.remote_perm.get(e["fp"]) if link else None,
+                            "refused": self.refusals.get(e["fp"])})
         trusted = {e["fp"] for e in peers}
         return {
             "id": self.peer_id, "name": self.name, "fp": self.identity.fp, "port": self.port,
+            "paused_all": self.paused_all,
+            "capabilities": list(perms.CAPABILITIES),
             "peers": peers,
             "nearby": [{"id": s.id, "name": s.name, "fp": s.fp, "os": s.os, "addresses": s.addresses,
                         "port": s.port} for s in seen if s.fp not in trusted],
@@ -1038,6 +1301,8 @@ class MeshNode:
                        for j in self.outbox.queued()],
             "refused": self.server.refused if self.server else 0,
             "caps": self.host.mesh_caps(),   # what this device offers right now
+            "webrtc": self.webrtc.status() if self.webrtc is not None else None,
+            "webrtc_off": self.webrtc_off if self.webrtc is None else None,
         }
 
     def chat_history(self, fp: str | None = None, n: int = 100) -> list[dict]:
@@ -1085,12 +1350,29 @@ class MeshNode:
             if cmd == "pair-start":
                 return self.pair_start(str(req.get("target") or ""))
             if cmd == "pair-confirm":
-                return self.pair_confirm(str(req.get("request")), bool(req.get("yes")))
+                return self.pair_confirm(str(req.get("request")), bool(req.get("yes")),
+                                         str(req.get("relation") or "own"))
             if cmd == "pair-status":
                 og = self.outgoing.get(str(req.get("request")))
                 return {"state": og.state if og else EXPIRED}
             if cmd == "pair-answer":
-                return self.pair_answer(str(req.get("request")), bool(req.get("accept")))
+                return self.pair_answer(str(req.get("request")), bool(req.get("accept")),
+                                        str(req.get("relation") or "own"))
+            if cmd == "perm-set":
+                entry = self.resolve(str(req.get("peer") or ""))
+                allow = req.get("allow")
+                if req.get("capability") is not None:
+                    allow = {str(req["capability"]): req.get("on")}
+                e = self.set_perms(entry["fp"], relation=req.get("relation"), allow=allow)
+                return {k: e[k] for k in ("name", "fp", "relation", "allow", "paused")}
+            if cmd in ("pause", "resume"):
+                on = cmd == "pause"
+                if req.get("all"):
+                    self.pause_everything(on)
+                    return {"paused_all": self.paused_all}
+                entry = self.resolve(str(req.get("peer") or ""))
+                e = self.set_perms(entry["fp"], paused=on)
+                return {k: e[k] for k in ("name", "fp", "relation", "allow", "paused")} | {"paused_all": self.paused_all}
             if cmd == "unpair":
                 return self.unpair(self.resolve(str(req.get("peer") or ""))["fp"])
             if cmd in ("text", "send-file"):
@@ -1114,6 +1396,19 @@ class MeshNode:
                 if not isinstance(msg, dict) or msg.get("t") not in LIVE:
                     raise ValueError(f"only {', '.join(LIVE)} messages can be sent this way")
                 return {"route": self.send_live(self.resolve(str(req.get("peer") or ""))["fp"], msg)}
+            if cmd in self.control_ext:
+                return self.control_ext[cmd](req)
+            if cmd == "qr":
+                off = self.webrtc_off or {}
+                if off.get("why") == "missing":
+                    return {"error": "This computer can't pair an iPhone yet: the iPhone link isn't installed. "
+                                     "Run droplet-agent doctor in a terminal: it installs it (a small download)."}
+                if off.get("why") in ("failed", "broken"):
+                    return {"error": f"{off['text'][:1].upper()}{off['text'][1:]}. droplet-agent doctor may say more."}
+                if not off:
+                    return {"error": "The iPhone link is starting. Try again in a moment."}
+                return {"error": "The iPhone link is switched off on this computer. Turn it on with "
+                                 "\"iphone\": {\"enabled\": true} in the config, and restart the agent."}
             return {"error": f"unknown command {cmd!r}"}
         except (ValueError, TypeError, NoRoute) as e:
             return {"error": str(e)}

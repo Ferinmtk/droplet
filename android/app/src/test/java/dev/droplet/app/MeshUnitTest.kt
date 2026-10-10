@@ -218,9 +218,9 @@ class MeshUnitTest {
         override fun hubConnected() = false
         override fun hubOnline(deviceId: String) = false
         override fun hubSend(msg: JSONObject) = false
-        override fun hubText(deviceId: String, body: String) = throw IOException("no hub")
-        override fun hubUpload(deviceId: String, source: String, name: String, mime: String, size: Long) = throw IOException("no hub")
-        override fun hubRing(deviceId: String, stop: Boolean) = throw IOException("no hub")
+        override fun hubText(deviceId: String, body: String): Unit = throw IOException("no hub")
+        override fun hubUpload(deviceId: String, source: String, name: String, mime: String, size: Long): Unit = throw IOException("no hub")
+        override fun hubRing(deviceId: String, stop: Boolean): Unit = throw IOException("no hub")
         override fun openSource(source: String, from: Long): InputStream = File(source).inputStream().also { it.skip(from) }
         override fun sourceSize(source: String) = File(source).takeIf { it.isFile }?.length()
         override fun spool(source: String, dest: File) { File(source).copyTo(dest, true) }

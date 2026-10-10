@@ -13,6 +13,52 @@ OS_NAMES = {"android": "Android", "ios": "iPhone", "windows": "Windows", "linux"
 PHONES = ("android", "ios")
 
 
+# --- your device, or someone else's (mesh/perms.py) -------------------------------------------
+
+RELATION_CHOICES = [
+    ("own", "My device", "Everything on: files, messages, clipboard, notifications, remote control and ring."),
+    ("other", "Someone else's", "A deskmate's laptop, a friend's phone: files, messages and ring only. "
+                                "No clipboard, notifications or remote control."),
+]
+
+
+def is_other(p: dict) -> bool:
+    return p.get("relation") == "other"
+
+
+def is_paused(p: dict) -> bool:
+    return bool(p.get("paused"))
+
+
+def paused_by_it(p: dict) -> bool:
+    """It paused sharing with this computer (what it said; a hint)."""
+    return bool((p.get("remote") or {}).get("paused"))
+
+
+def allows(p: dict, cap: str) -> bool:
+    """This computer shares `cap` with it, and it said it takes it (as far as it said)."""
+    if not (p.get("allow") or {}).get(cap, True):
+        return False
+    return (p.get("remote") or {}).get("allow", {}).get(cap, True) is not False
+
+
+def can_send(p: dict, cap: str, paused_all: bool = False) -> bool:
+    return not (paused_all or is_paused(p) or paused_by_it(p)) and allows(p, cap)
+
+
+def perm_summary(p: dict) -> str:
+    """"Clipboard, notifications and remote control off": what's switched off for it, in a line."""
+    from ..mesh.perms import NOUNS
+    off = [c for c, on in (p.get("allow") or {}).items() if not on]
+    if not off:
+        return "Everything allowed"
+    names = [NOUNS.get(c, c) for c in off]
+    names[0] = names[0][:1].upper() + names[0][1:]
+    if len(names) == 1:
+        return f"{names[0]} off"
+    return f"{', '.join(names[:-1])} and {names[-1]} off"
+
+
 def device_state(p: dict) -> str:
     if p.get("link"):
         return CONNECTED
@@ -23,6 +69,10 @@ def device_state(p: dict) -> str:
 
 def state_text(p: dict) -> str:
     """How a device is reached now, in a few words (the Android home screen's wording)."""
+    if is_paused(p):
+        return "Paused: nothing is shared with it"
+    if paused_by_it(p):
+        return f"Paused by {p.get('name') or 'it'}"
     link = str(p.get("link") or "")
     if link.startswith("tailnet"):
         return "Connected via Tailscale"
@@ -81,6 +131,7 @@ def grouped_fp(fp: str, group: int = 4, per_line: int = 0) -> str:
 
 
 ROUTES = {"lan": "directly, over the network", "tailnet": "directly, over Tailscale",
+          "webrtc": "directly, to its web app",
           "hub": "through the hub", "hub-mailbox": "to the hub's mailbox (it's offline)"}
 
 
@@ -271,6 +322,7 @@ class PairFlow:
         self.peer: dict = {}
         self.address = ""
         self.error = ""
+        self.relation = "own"
 
     @property
     def name(self) -> str:
@@ -300,15 +352,23 @@ class PairFlow:
         self.state = "code"
 
     def confirm(self, yes: bool) -> dict | None:
-        if self.state not in ("code", "waiting") or not self.request:
+        """The codes match (then: is it yours? see choose), or cancel."""
+        if self.state not in ("code", "relation", "waiting") or not self.request:
             return None
         if not yes:
             self.state = "cancelled"
-        elif self.state == "code":
-            self.state = "waiting"
-        else:
+            return {"cmd": "pair-confirm", "request": self.request, "yes": False}
+        if self.state == "code":
+            self.state = "relation"
+        return None
+
+    def choose(self, relation: str) -> dict | None:
+        """"own" or "other": the answer to "Is it your device, or someone else's?"."""
+        if self.state != "relation" or relation not in ("own", "other"):
             return None
-        return {"cmd": "pair-confirm", "request": self.request, "yes": yes}
+        self.relation = relation
+        self.state = "waiting"
+        return {"cmd": "pair-confirm", "request": self.request, "yes": True, "relation": relation}
 
     def on_confirmed(self, answer: dict | None, error: str | None = None):
         if self.state == "waiting" and (error or not answer or answer.get("error")):
@@ -336,6 +396,7 @@ class PairFlow:
             "pick": "Pair a device",
             "asking": f"Asking {n}…",
             "code": f"Pairing with {n}",
+            "relation": f"Is {n} your device, or someone else's?",
             "waiting": f"Waiting for {n} to accept",
             "paired": f"Paired with {n}",
             "declined": f"{n} said no",
@@ -350,8 +411,10 @@ class PairFlow:
             "pick": "",
             "asking": "",
             "code": f"Does {n} show the same code?",
+            "relation": "It decides what it may do here. You can change it later, under Permissions.",
             "waiting": f"On {n}, accept the request if it shows this code.",
-            "paired": f"You can send to {n} now. It's in Devices.",
+            "paired": f"You can send to {n} now. It's in Devices" + (
+                ", as someone else's device." if self.relation == "other" else "."),
             "declined": "Nothing was paired. You can ask again.",
             "expired": f"{n} didn't answer in time. Nothing was paired; you can ask again.",
             "cancelled": "",

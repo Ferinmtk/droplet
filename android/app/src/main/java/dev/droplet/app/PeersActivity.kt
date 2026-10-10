@@ -22,6 +22,7 @@ import com.google.android.material.snackbar.Snackbar
 import dev.droplet.app.databinding.ActivityPeersBinding
 import dev.droplet.app.mesh.MeshNode
 import dev.droplet.app.mesh.MeshPairing
+import dev.droplet.app.mesh.Perms
 import dev.droplet.app.mesh.Seen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -242,12 +243,12 @@ class PeersActivity : AppCompatActivity() {
         b.codeHelp.text = getString(R.string.pair_check_out, og.peerName)
         b.codeYes.visibility = View.VISIBLE
         b.codeYes.setText(R.string.pair_they_match)
-        b.codeYes.setOnClickListener { confirmOutgoing(og) }
+        b.codeYes.setOnClickListener { askRelation(og.peerName) { relation -> if (outgoing === og) confirmOutgoing(og, relation) } }
         b.codeNo.setText(R.string.pair_no_match)
         if (og.peerOs.isNotEmpty()) b.doneIcon.setImageResource(iconFor(og.peerOs))
     }
 
-    private fun confirmOutgoing(og: MeshPairing.Outgoing) {
+    private fun confirmOutgoing(og: MeshPairing.Outgoing, relation: String) {
         b.codeYes.visibility = View.GONE
         b.codeNo.setText(R.string.cancel)
         b.codeWait.visibility = View.VISIBLE
@@ -255,12 +256,12 @@ class PeersActivity : AppCompatActivity() {
         b.codeHelp.text = getString(R.string.pair_accept_there, og.peerName)
         val n = Mesh.node ?: return
         runCatching {
-            n.pairConfirm(og.request!!, true) { state ->
+            n.pairConfirm(og.request!!, true, relation) { state ->
                 runOnUiThread {
                     if (isDestroyed || outgoing !== og) return@runOnUiThread
                     outgoing = null
                     when (state) {
-                        MeshPairing.ACCEPTED -> showDone(og.peerName)
+                        MeshPairing.ACCEPTED -> showDone(og.peerName, relation)
                         else -> {
                             show(Panel.LIST)
                             say(getString(R.string.mesh_pair_failed, when (state) {
@@ -312,18 +313,37 @@ class PeersActivity : AppCompatActivity() {
         b.codeYes.visibility = View.VISIBLE
         b.codeYes.setText(R.string.pair_they_match)
         b.codeYes.setOnClickListener {
-            incoming = null
-            decide(r, true)
+            askRelation(r.name) { relation ->
+                if (incoming !== r) return@askRelation
+                incoming = null
+                decide(r, true, relation)
+            }
         }
         b.codeNo.setText(R.string.pair_no_match)
         b.codeNo.setOnClickListener { cancelCode() }
         b.doneIcon.setImageResource(iconFor(r.os))
     }
 
-    private fun decide(r: MeshPairing.Request, accept: Boolean) {
+    /**
+     * "Is <name> your device, or someone else's?" (docs/mesh.md §9.9), asked
+     * once the codes match, on each side for itself: the answer stays here.
+     * Dismissed, nothing happens and the code stays on screen.
+     */
+    private fun askRelation(name: String, then: (String) -> Unit) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.perm_ask_title, name))
+            .setMessage(R.string.perm_ask_body)
+            .setPositiveButton(R.string.perm_ask_own) { _, _ -> then(Perms.OWN_DEVICE) }
+            .setNegativeButton(R.string.perm_ask_other) { _, _ -> then(Perms.OTHER_DEVICE) }
+            .show()
+    }
+
+    private fun decide(r: MeshPairing.Request, accept: Boolean, relation: String = Perms.OWN_DEVICE) {
         lifecycleScope.launch {
-            val res = withContext(Dispatchers.IO) { runCatching { (Mesh.node ?: error(getString(R.string.mesh_off_now))).pairAnswer(r.request, accept) } }
-            res.onSuccess { if (accept) showDone(r.name) }
+            val res = withContext(Dispatchers.IO) {
+                runCatching { (Mesh.node ?: error(getString(R.string.mesh_off_now))).pairAnswer(r.request, accept, relation) }
+            }
+            res.onSuccess { if (accept) showDone(r.name, relation) }
                 .onFailure {
                     if (accept) show(Panel.LIST)
                     say(getString(R.string.mesh_failed, it.message ?: it.javaClass.simpleName))
@@ -331,9 +351,10 @@ class PeersActivity : AppCompatActivity() {
         }
     }
 
-    private fun showDone(name: String) {
+    private fun showDone(name: String, relation: String) {
         show(Panel.DONE)
         b.doneTitle.text = getString(R.string.mesh_paired, name)
+        b.doneBody.setText(if (relation == Perms.OTHER_DEVICE) R.string.perm_done_other else R.string.pair_done_body)
     }
 
     private fun shareDownloadLink() {

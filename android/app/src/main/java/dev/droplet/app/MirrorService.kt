@@ -149,6 +149,11 @@ class MirrorService : NotificationListenerService() {
             // no named device to file them under; nothing to do until there is
             return
         }
+        if (Mesh.pausedAll) {
+            // Pause everything: what's posted meanwhile never reaches the hub; removals go on resume
+            synchronized(lock) { posted.clear() }
+            return
+        }
         val (items, gone, fresh) = synchronized(lock) {
             Triple(posted.values.toList(), removed.toList(), sync)
         }

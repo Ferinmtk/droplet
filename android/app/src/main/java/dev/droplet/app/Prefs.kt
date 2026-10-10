@@ -182,6 +182,11 @@ object Prefs {
         get() = sp.getBoolean("mesh_enabled", true)
         set(v) = sp.edit { putBoolean("mesh_enabled", v) }
 
+    /** Pause everything (docs/mesh.md §9.9): nothing goes to any device and nothing is taken from one. */
+    var meshPausedAll: Boolean
+        get() = sp.getBoolean("mesh_paused_all", false)
+        set(v) = sp.edit(commit = true) { putBoolean("mesh_paused_all", v) }
+
     /** This phone's device id on the hub, learned from the live connection: the mesh peer id. */
     var meshDeviceId: String?
         get() = sp.getString("mesh_device_id", null)

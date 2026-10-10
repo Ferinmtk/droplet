@@ -35,7 +35,9 @@ DEFAULTS: dict = {
     # true while a new device waits for one of yours to let it in
     "pending": False,
     # each capability can be switched off here; the agent then neither
-    # advertises it nor acts on it
+    # advertises it nor acts on it. "clipboard" is automatic clipboard sync; text
+    # someone sends on purpose from the iPhone's web app (it can't sync by itself,
+    # only on a tap) is put on the clipboard even with it off
     "caps": {c: True for c in CAPS},
     # "auto" picks the first that works: portal, then uinput, then x11 (on a Mac, quartz)
     "input_backend": "auto",
@@ -63,6 +65,19 @@ DEFAULTS: dict = {
         # show your phone's notifications here, sent straight from the phone
         # (the "notify" cap tells the phone to send them)
         "phone_notifications": True,
+        # Pause everything: nothing is shared with any device (sent or taken) until it's
+        # false again. Each device can also be paused on its own (the trust list)
+        "paused": False,
+    },
+    # the iPhone link: the droplet web app on an iPhone connects straight to this
+    # computer over WebRTC, with no server (docs/iphone.md). On unless this says false;
+    # without its parts (aiortc), the agent runs without it and `droplet-agent doctor` says so.
+    "iphone": {
+        "enabled": True,
+        # UDP. null: the mesh's port number (1739, or the one it found free)
+        "port": None,
+        # the web app the QR code opens
+        "app_url": "https://droplet.noxeratech.com/app/",
     },
 }
 

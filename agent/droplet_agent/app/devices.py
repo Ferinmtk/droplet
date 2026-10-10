@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -14,6 +15,17 @@ from .widgets import (GOOD, Card, button, device_icon, dot, hbox, icon, icon_lab
                       title, vbox)
 
 TONES = {"busy": None, "ok": "good", "warn": "warn", "bad": "bad"}
+
+
+def clipboard_secret(mime) -> bool:
+    """A password manager marked the clipboard secret: never send it (as clip.py's sync doesn't)."""
+    from ..clip import PASSWORD_HINT
+    if mime is not None and mime.hasFormat(PASSWORD_HINT) and bytes(mime.data(PASSWORD_HINT)).strip() == b"secret":
+        return True
+    if sys.platform == "darwin":
+        from .. import macos
+        return macos.pasteboard_concealed()
+    return False
 
 
 class DeviceCard(Card):
@@ -33,6 +45,14 @@ class DeviceCard(Card):
         self.state = label(muted=True)
         self.transfer = label(wrap=True)
         self.transfer.hide()
+        self.other_badge = label("Someone else's")
+        self.other_badge.setObjectName("badge")
+        self.other_badge.setToolTip("Paired as someone else's device: files, messages and ring only, unless "
+                                    "you changed its Permissions.")
+        self.paused_badge = label("Paused")
+        self.paused_badge.setObjectName("badge")
+        self.paused_badge.setProperty("tone", "paused")
+        self.perms_line = label(muted=True, wrap=True)
 
         more = QToolButton()
         more.setText("⋯")
@@ -42,6 +62,8 @@ class DeviceCard(Card):
         more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(more)
         menu.addAction(icon("media-playback-stop"), "Stop ringing", lambda: page.ring(self.peer, stop=True))
+        menu.addAction(icon("security-medium", "preferences-system-privacy", "dialog-password"), "Permissions…",
+                       lambda: page.permissions(self.peer))
         menu.addAction(icon("help-about", "dialog-information"), "About this device",
                        lambda: page.about(self.peer))
         menu.addSeparator()
@@ -53,16 +75,18 @@ class DeviceCard(Card):
         self.b_clip = button("Send clipboard", ("edit-paste",))
         self.b_ring = button("Ring", ("preferences-desktop-notification-bell", "audio-volume-high"))
         self.b_msg = button("Message", ("mail-message-new", "dialog-messages", "mail-send"))
+        self.b_pause = button("Pause", ("media-playback-pause",))
         self.b_files.clicked.connect(lambda: page.pick_files(self.peer))
         self.b_clip.clicked.connect(lambda: page.send_clipboard(self.peer))
         self.b_ring.clicked.connect(lambda: page.ring(self.peer))
         self.b_msg.clicked.connect(lambda: page.message(self.peer))
+        self.b_pause.clicked.connect(lambda: page.pause(self.peer, not model.is_paused(self.peer)))
 
-        head = vbox(hbox(self.name, None, self.more),
+        head = vbox(hbox(self.name, self.other_badge, self.paused_badge, None, self.b_pause, self.more, spacing=8),
                     hbox(self.state_dot, self.state, None, spacing=6), spacing=2)
         actions = hbox(self.b_files, self.b_clip, self.b_ring, self.b_msg, None, spacing=6)
-        lay = hbox(vbox(self.icon, None), vbox(head, actions, self.transfer, spacing=10), spacing=14,
-                   margins=(16, 14, 12, 14))
+        lay = hbox(vbox(self.icon, None), vbox(head, actions, self.perms_line, self.transfer, spacing=10),
+                   spacing=14, margins=(16, 14, 12, 14))
         self.setLayout(lay)
         self.files_dropped.connect(lambda paths: page.send_files(self.peer, paths))
         self.update_peer(peer)
@@ -75,6 +99,30 @@ class DeviceCard(Card):
         self.state_dot.setPixmap(dot(color))
         osl = model.os_label(peer.get("os"))
         self.state.setText(model.state_text(peer) + (f" · {osl}" if osl else ""))
+        paused, paused_all = model.is_paused(peer), self.page.paused_all
+        if paused or model.paused_by_it(peer) or paused_all:
+            self.state_dot.setPixmap(dot("#F59E0B"))
+        self.other_badge.setVisible(model.is_other(peer))
+        self.paused_badge.setVisible(paused)
+        self.b_pause.setText("Resume" if paused else "Pause")
+        self.b_pause.setIcon(icon("media-playback-start" if paused else "media-playback-pause"))
+        self.b_pause.setToolTip(f"Share with {self.name.text()} again" if paused else
+                                f"Stop sharing anything with {self.name.text()} until you resume")
+        for b, cap in ((self.b_files, "files"), (self.b_clip, "clipboard"), (self.b_ring, "ring"),
+                       (self.b_msg, "chat")):
+            # paused: files and messages can still be written; they wait for the resume
+            ok = model.allows(peer, cap) if cap in ("files", "chat") else model.can_send(peer, cap, paused_all)
+            b.setEnabled(ok)
+        # what's off, in a line, when it isn't everything on
+        line = model.perm_summary(peer)
+        if paused_all:
+            line = "Everything is paused on this computer (Settings)."
+        elif model.paused_by_it(peer):
+            line = f"{self.name.text()} paused sharing with this computer. What you send waits."
+        elif paused:
+            line = "Nothing goes to it or comes from it until you resume. What you send waits."
+        self.perms_line.setText(line)
+        self.perms_line.setVisible(line != "Everything allowed")
         self.setToolTip(f"Drop files here to send them to {self.name.text()}")
 
     def show_transfer(self, t: model.Transfer | None):
@@ -125,6 +173,8 @@ class DevicesPage(QWidget):
         self.cards: dict[str, DeviceCard] = {}
         self.transfers: dict[str, model.Transfer] = {}
         self._shape = None
+        self.paused_all = False
+        self.capabilities: list = []
 
         pair = button("Pair a device", ("list-add", "network-connect"))
         pair.clicked.connect(lambda: win.go("pair"))
@@ -166,6 +216,8 @@ class DevicesPage(QWidget):
 
     # --- the agent's status ---
     def set_status(self, status: dict | None):
+        self.paused_all = bool((status or {}).get("paused_all"))
+        self.capabilities = list((status or {}).get("capabilities") or [])
         ps = model.peers(status)
         shape = [p["fp"] for p in ps]
         if shape != self._shape:
@@ -238,7 +290,11 @@ class DevicesPage(QWidget):
 
     def send_clipboard(self, peer: dict):
         name = peer.get("name")
-        text = QGuiApplication.clipboard().text()
+        cb = QGuiApplication.clipboard()
+        if clipboard_secret(cb.mimeData()):
+            self.win.say("A password manager marked what's on the clipboard secret; it wasn't sent.")
+            return
+        text = cb.text()
         if not text:
             self.win.say("The clipboard holds no text.")
             return
@@ -262,8 +318,33 @@ class DevicesPage(QWidget):
     def message(self, peer: dict):
         self.win.go("messages", fp=peer["fp"])
 
+    def pause(self, peer: dict, on: bool):
+        name = peer.get("name")
+
+        def done(r):
+            if r.ok:
+                self.win.say(f"Paused {name}: nothing goes to it or comes from it until you resume." if on
+                             else f"Resumed {name}.")
+            else:
+                self.win.say(f"Couldn't {'pause' if on else 'resume'} {name}: {r.error}")
+            self.win.refresh()
+        self.win.agent.ask({"cmd": "pause" if on else "resume", "peer": peer["fp"]}, done)
+
+    def permissions(self, peer: dict, dialog=None):
+        from .perms import PermissionsDialog
+        dlg = dialog or PermissionsDialog(self, peer, self.capabilities or None)
+        if not dlg.exec():
+            return
+        name = peer.get("name")
+
+        def done(r):
+            self.win.say(f"Saved {name}'s permissions." if r.ok else f"Couldn't save them: {r.error}")
+            self.win.refresh()
+        self.win.agent.ask(dlg.values(), done)
+
     def about(self, peer: dict):
-        how = "Paired directly" if peer.get("source") == "paired" else "Trusted because your hub lists it"
+        how = "Paired directly" if peer.get("source") in ("paired", "browser") else "Trusted because your hub lists it"
+        how += ", as someone else's device" if model.is_other(peer) else ", as your own device"
         where = ", ".join(peer.get("lan") or []) or "not known yet"
         QMessageBox.information(
             self, str(peer.get("name")),

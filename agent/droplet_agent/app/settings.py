@@ -108,6 +108,16 @@ class SettingsPage(QWidget):
         self.apply_note = label("The agent restarts to use these, which takes a few seconds.", muted=True,
                                 wrap=True)
 
+        # Pause everything: at once, no restart
+        self.pause_all = QCheckBox("Pause everything")
+        self.pause_all.toggled.connect(self._pause_all)
+        pause_box = QGroupBox("Pause")
+        pause_box.setLayout(vbox(
+            self.pause_all,
+            label("Stops all sharing with every device, both ways, until you turn it off: while you present, "
+                  "say. Files and messages you send meanwhile wait. To pause one device, use Pause on its card.",
+                  muted=True, wrap=True), spacing=6, margins=(12, 12, 12, 12)))
+
         # the tray
         self.tray = QCheckBox("Show droplet in the menu bar, from when you log in" if MAC
                               else "Show droplet in the system tray, from when you sign in")
@@ -127,8 +137,8 @@ class SettingsPage(QWidget):
 
         body = QWidget()
         body.setObjectName("scrollbody")
-        body.setLayout(vbox(me, everyday, remote, hbox(self.apply_note, self.apply), tray_box, about, None,
-                            spacing=14, margins=(0, 0, 8, 0)))
+        body.setLayout(vbox(me, pause_box, everyday, remote, hbox(self.apply_note, self.apply), tray_box, about,
+                            None, spacing=14, margins=(0, 0, 8, 0)))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(body)
@@ -162,6 +172,9 @@ class SettingsPage(QWidget):
             return
         self.name.setText(str(status.get("name") or ""))
         self.ident.setText(str(status.get("id") or ""))
+        self.pause_all.blockSignals(True)
+        self.pause_all.setChecked(bool(status.get("paused_all")))
+        self.pause_all.blockSignals(False)
         self.fp.setText(model.grouped_fp(str(status.get("fp") or ""), per_line=8))
 
     # --- changing ---
@@ -192,6 +205,9 @@ class SettingsPage(QWidget):
         ok, text = result if isinstance(result, tuple) else (False, str(getattr(result, "error", result)))
         self.win.say(text)
         self.win.refresh_soon()
+
+    def _pause_all(self, on: bool):
+        self.win.pause_everything(on)
 
     def _tray(self, on: bool):
         from .. import tray

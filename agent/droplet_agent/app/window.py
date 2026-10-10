@@ -152,8 +152,22 @@ class Window(QMainWindow):
         self.banners = QVBoxLayout()
         self.banners.setSpacing(8)
         self.banners.setContentsMargins(24, 0, 24, 0)
+        # Pause everything is on: said on every page, with the way back
+        self.paused_banner = QFrame()
+        self.paused_banner.setObjectName("banner")
+        resume = primary("Resume everything")
+        resume.clicked.connect(lambda: self.pause_everything(False))
+        self.paused_banner.setLayout(hbox(
+            icon_label(icon("media-playback-pause"), 28),
+            vbox(label("Everything is paused", size=1.5, bold=True),
+                 label("Nothing is shared with any device, either way, until you resume.", muted=True, wrap=True),
+                 spacing=2), None, resume, spacing=10, margins=(14, 10, 14, 10)))
+        self.paused_banner.hide()
+        pb = QVBoxLayout()
+        pb.setContentsMargins(24, 0, 24, 0)
+        pb.addWidget(self.paused_banner)
         right = QWidget()
-        right.setLayout(vbox(14, self.banners, self.stack, spacing=4))
+        right.setLayout(vbox(14, pb, self.banners, self.stack, spacing=4))
         main = QWidget()
         main.setLayout(hbox(side, right, spacing=0))
 
@@ -179,6 +193,10 @@ class Window(QMainWindow):
                 page.load()     # what it shows is fetched when it's opened
 
     def go(self, page: str, **kw):
+        if page == "iphone":    # the Pair page, showing the code an iPhone scans
+            self.go("pair")
+            self.pages["pair"].show_qr()
+            return
         keys = [k for k, _t, _i in PAGES]
         if page not in keys:
             return
@@ -224,7 +242,8 @@ class Window(QMainWindow):
         if not running:
             return
         self.me.setText(f"on {status.get('name') or 'this computer'}")
-        self.summary.setText(model.summary(status))
+        self.summary.setText(("Everything paused · " if status.get("paused_all") else "") + model.summary(status))
+        self.paused_banner.setVisible(bool(status.get("paused_all")))
         for p in self.pages.values():
             if hasattr(p, "set_status"):
                 p.set_status(status)
@@ -245,16 +264,37 @@ class Window(QMainWindow):
         for r in requests:
             self.banners.addWidget(Banner(self, r))
 
+    def ask_relation(self, r: dict) -> str | None:
+        """Is the device asking to pair yours, or someone else's? None: not answered."""
+        from .perms import RelationDialog
+        dlg = RelationDialog(self, str(r.get("name") or "the device"), str(r.get("code") or ""))
+        return dlg.relation if dlg.exec() else None
+
     def answer(self, r: dict, accept: bool):
         name = r.get("name") or "the device"
+        relation = "own"
+        if accept:
+            relation = self.ask_relation(r)
+            if relation is None:
+                return     # it still waits; answer again from the banner
 
         def done(reply):
             if reply.ok:
-                self.say(f"Paired with {reply.data.get('name') or name}." if accept else f"Declined {name}.")
+                self.say((f"Paired with {reply.data.get('name') or name}"
+                          + (", as someone else's device." if relation == "other" else ".")) if accept
+                         else f"Declined {name}.")
             else:
                 self.say(f"Couldn't answer {name}: {reply.error}")
             self.refresh()
-        self.agent.ask({"cmd": "pair-answer", "request": r.get("request"), "accept": accept}, done)
+        self.agent.ask({"cmd": "pair-answer", "request": r.get("request"), "accept": accept,
+                        "relation": relation}, done)
+
+    def pause_everything(self, on: bool):
+        def done(reply):
+            self.say(("Everything is paused: nothing is shared with any device until you resume." if on
+                      else "Everything is resumed.") if reply.ok else f"Couldn't change that: {reply.error}")
+            self.refresh()
+        self.agent.ask({"cmd": "pause" if on else "resume", "all": True}, done)
 
     # --- the window ---
     def changeEvent(self, e):

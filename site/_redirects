@@ -1,7 +1,12 @@
-# Short links to the newest release assets. Cloudflare Pages serves these.
+# Short links. Cloudflare serves these. The download links go to the newest release's assets.
 /android   https://github.com/Ferinmtk/droplet/releases/latest/download/droplet-android.apk   302
 /windows   https://github.com/Ferinmtk/droplet/releases/latest/download/droplet-windows.exe   302
+/store     https://apps.microsoft.com/detail/9N8VX22MW0N4                                      302
 /linux     https://github.com/Ferinmtk/droplet/blob/main/agent/README.md#install             302
 /linux.sh  https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh     302
+/mac       https://github.com/Ferinmtk/droplet/blob/main/agent/README.md#on-a-mac            302
+/mac.sh    https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh     302
+/iphone    /app/                                                                               302
 /releases  https://github.com/Ferinmtk/droplet/releases                                        302
 /source    https://github.com/Ferinmtk/droplet                                                 302
+/privacy   https://github.com/Ferinmtk/droplet/blob/main/docs/privacy.md                      302
