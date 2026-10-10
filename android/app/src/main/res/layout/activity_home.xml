@@ -146,14 +146,112 @@
             android:orientation="vertical" />
 
         <!-- ============ your devices ============ -->
-        <TextView
-            android:id="@+id/devices_title"
-            style="@style/Droplet.Teal.Eyebrow"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
             android:layout_marginTop="24dp"
-            android:text="@string/home_devices" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/devices_title"
+                style="@style/Droplet.Teal.Eyebrow"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:text="@string/home_devices" />
+
+            <!-- Select: send to several devices at once -->
+            <TextView
+                android:id="@+id/select"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:background="@drawable/r_pill"
+                android:gravity="center"
+                android:paddingHorizontal="12dp"
+                android:text="@string/home_select"
+                android:textColor="@color/r_accent"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:visibility="visible" />
+        </LinearLayout>
+
+        <!-- sending to several: who's ticked, All my devices, and what to send them -->
+        <LinearLayout
+            android:id="@+id/select_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/r_card"
+            android:orientation="vertical"
+            android:paddingHorizontal="14dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="14dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/select_count"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="@color/r_text"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    tools:text="2 devices ticked" />
+
+                <TextView
+                    android:id="@+id/select_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:background="@drawable/r_pill"
+                    android:gravity="center"
+                    android:paddingHorizontal="12dp"
+                    android:text="@string/home_select_all_mine"
+                    android:textColor="@color/r_accent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+
+                <LinearLayout android:id="@+id/several_files" style="@style/Droplet.Teal.Action" android:layout_marginEnd="4dp">
+                    <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_files"
+                        tools:ignore="ContentDescription,UseAppTint" />
+                    <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_files" />
+                </LinearLayout>
+
+                <LinearLayout android:id="@+id/several_message" style="@style/Droplet.Teal.Action" android:layout_marginHorizontal="4dp">
+                    <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_message"
+                        tools:ignore="ContentDescription,UseAppTint" />
+                    <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_message" />
+                </LinearLayout>
+
+                <LinearLayout android:id="@+id/several_link" style="@style/Droplet.Teal.Action" android:layout_marginHorizontal="4dp">
+                    <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_share"
+                        tools:ignore="ContentDescription,UseAppTint" />
+                    <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_link" />
+                </LinearLayout>
+
+                <LinearLayout android:id="@+id/several_clip" style="@style/Droplet.Teal.Action" android:layout_marginStart="4dp">
+                    <ImageView style="@style/Droplet.Teal.ActionIcon" android:src="@drawable/ic_clip"
+                        tools:ignore="ContentDescription,UseAppTint" />
+                    <TextView style="@style/Droplet.Teal.ActionLabel" android:text="@string/home_act_clip" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/devices"

@@ -15,6 +15,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.droplet.app.databinding.ActivityChatBinding
+import dev.droplet.app.mesh.Links
 import dev.droplet.app.mesh.Outbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -61,20 +62,27 @@ class ChatActivity : AppCompatActivity() {
     private fun render() {
         val n = Mesh.node
         val peer = n?.trust?.get(fp)
-        b.toolbar.title = peer?.name ?: getString(R.string.mesh_act_text)
-        b.route.text = peer?.let { Mesh.describeRoute(this, n.route(it)) } ?: ""
+        b.toolbar.title = peer?.label ?: getString(R.string.mesh_act_text)
+        // a nickname here: its own name too, small
+        b.route.text = peer?.let { p ->
+            Mesh.describeRoute(this, n.route(p)) + (p.nickname.takeIf { it.isNotEmpty() }?.let { " · " + p.name } ?: "")
+        } ?: ""
         b.send.isEnabled = peer != null
         val msgs = n?.chat?.recent(fp).orEmpty()
         val waiting = n?.outbox?.forPeer(fp).orEmpty().filter { it.optString("kind") == "text" }
         b.messages.removeAllViews()
         if (msgs.isEmpty() && waiting.isEmpty()) {
-            b.messages.addView(bubble(getString(R.string.mesh_chat_empty, peer?.name ?: "?"), null, mine = false, dim = true))
+            b.messages.addView(bubble(getString(R.string.mesh_chat_empty, peer?.label ?: "?"), null, mine = false, dim = true))
         }
         for (m in msgs) {
             val mine = m.optString("dir") == "out"
+            val body = m.optString("body")
+            // a link, or a message that's nothing but one: an Open button (never opened by itself here)
+            val url = if (m.optString("kind") == "link") Links.checkUrlOrNull(body) else Links.onlyUrl(body)
             val meta = DateUtils.getRelativeTimeSpanString((m.optDouble("ts") * 1000).toLong()).toString() +
-                (m.optString("route").takeIf { mine && it.isNotEmpty() && it != "null" }?.let { " · " + Mesh.describeRoute(this, it) } ?: "")
-            b.messages.addView(bubble(m.optString("body"), meta, mine))
+                (m.optString("route").takeIf { mine && it.isNotEmpty() && it != "null" }?.let { " · " + Mesh.describeRoute(this, it) } ?: "") +
+                (if (m.optBoolean("opened")) " · " + getString(R.string.link_was_opened) else "")
+            b.messages.addView(bubble(body, meta, mine, url = url))
         }
         for (j in waiting) {
             val meta = when (j.optString("state")) {
@@ -86,7 +94,7 @@ class ChatActivity : AppCompatActivity() {
         b.scroll.post { b.scroll.fullScroll(android.view.View.FOCUS_DOWN) }
     }
 
-    private fun bubble(text: String, meta: String?, mine: Boolean, dim: Boolean = false): LinearLayout {
+    private fun bubble(text: String, meta: String?, mine: Boolean, dim: Boolean = false, url: String? = null): LinearLayout {
         val pad = (10 * resources.displayMetrics.density).toInt()
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -108,6 +116,17 @@ class ChatActivity : AppCompatActivity() {
                 else -> R.color.text
             }))
             textSize = 15f
+        })
+        if (url != null) box.addView(com.google.android.material.button.MaterialButton(this,
+            null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            id = R.id.open_link
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setText(R.string.link_open)
+            setOnClickListener {
+                if (!Mesh.openUrl(this@ChatActivity, url)) {
+                    Toast.makeText(this@ChatActivity, R.string.no_app_for_link, Toast.LENGTH_LONG).show()
+                }
+            }
         })
         if (meta != null) box.addView(TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)

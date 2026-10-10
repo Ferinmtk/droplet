@@ -67,7 +67,7 @@ class Outbox(private val file: File) {
         synchronized(lock) {
             val j = jobs[id] ?: return
             fields.forEach { (k, v) -> j.put(k, v ?: JSONObject.NULL) }
-            if (j.optString("state") == DONE || j.optString("state") == FAILED) {
+            if (j.optString("state") in FINISHED) {
                 finished[id] = jobs.remove(id)!!
                 while (finished.size > 200) finished.remove(finished.keys.first())
             }
@@ -95,6 +95,9 @@ class Outbox(private val file: File) {
         const val SENDING = "sending"
         const val DONE = "done"
         const val FAILED = "failed"
+        /** Stopped by either end (docs/mesh.md §9.10): never offered again. */
+        const val CANCELLED = "cancelled"
+        val FINISHED = setOf(DONE, FAILED, CANCELLED)
         fun newId(): String = ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
     }
 }

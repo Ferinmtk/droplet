@@ -518,6 +518,114 @@ class ScreensTest {
         }
     }
 
+    /**
+     * Progress and Cancel, links, rename and nicknames, several devices
+     * (docs/mesh.md §9.10): a file on its way on a card, Select, a link with
+     * its Open button, the nickname, link and rename dialogs, and the share
+     * sheet picking several devices for a shared link.
+     */
+    @Test
+    fun transfersLinksAndNames() {
+        assumeTrue(out.isNotEmpty())
+        val tmp = java.nio.file.Files.createTempDirectory("feature-shots").toFile()
+        val others = mutableListOf<dev.droplet.app.mesh.MeshNode>()
+        try {
+            val phone = noHubPhone(tmp)
+            val slim = peer(tmp, "slim", "linux", listOf("clipboard", "input", "media")).also { others += it }
+            pairWith(phone, slim)
+            val brian = peer(tmp, "bk-thinkpad", "linux", listOf("clipboard")).also { others += it }
+            pairWith(phone, brian)
+            Mesh.setNickname(brian.identity.fp, "Brian's laptop")
+            // a big file on its way to slim, slowly enough to see it move
+            phone.offerRate = 384L * 1024
+            val video = File(tmp, "holiday-video.mp4").apply { writeBytes(ByteArray(24 shl 20)) }
+            val job = phone.sendFile(slim.identity.fp, video.path, video.name, "video/mp4", video.length())
+            val c = Robolectric.buildActivity(MainActivity::class.java).setup()
+            val devices = c.get().findViewById<android.widget.LinearLayout>(R.id.devices)
+            fun card(name: String) = (0 until devices.childCount).map { devices.getChildAt(it) }
+                .first { it.findViewById<android.widget.TextView>(R.id.name).text.toString() == name }
+            waitMain("the transfer under way", 30_000) {
+                devices.childCount == 2 && (phone.transfers.get(job.getString("id"))?.rate ?: 0L) > 0L
+            }
+            Thread.sleep(1500)
+            idleFor(600)
+            shoot(c.get(), "features-home-transfer")
+
+            // Select: tick both, or All my devices
+            c.get().findViewById<android.view.View>(R.id.select).performClick()
+            idleFor(100)
+            card("slim").performClick()
+            idleFor(200)
+            shoot(c.get(), "features-home-select")
+
+            // the dialogs: Send a link, Nickname
+            val entry = phone.trust.get(brian.identity.fp)!!
+            val clipboard = ApplicationProvider.getApplicationContext<android.app.Application>()
+                .getSystemService(android.content.ClipboardManager::class.java)
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("t", "https://example.com/slides"))
+            MainActivity::class.java.getDeclaredMethod("askLink", List::class.java).apply { isAccessible = true }
+                .invoke(c.get(), listOf(entry))
+            idleFor(200)
+            shootDialog("features-link-dialog")
+            org.robolectric.shadows.ShadowDialog.getLatestDialog().dismiss()
+            MainActivity::class.java.getDeclaredMethod("askNickname", dev.droplet.app.mesh.TrustList.Entry::class.java)
+                .apply { isAccessible = true }.invoke(c.get(), entry)
+            idleFor(200)
+            shootDialog("features-nickname-dialog")
+            org.robolectric.shadows.ShadowDialog.getLatestDialog().dismiss()
+            runCatching { phone.cancel(job.getString("id")) }
+            idleFor(300)
+            shoot(c.get(), "features-home-cancelled")
+            c.pause().stop().destroy()
+
+            // Messages: a link from your own device, opened; one that's just a message with a link
+            val slimFp = slim.identity.fp
+            val now = System.currentTimeMillis() / 1000.0
+            phone.chat.add(org.json.JSONObject().put("id", "l1").put("dir", "in").put("fp", slimFp).put("name", "slim")
+                .put("body", "https://example.com/slides").put("ts", now - 120).put("kind", "link").put("opened", true))
+            phone.chat.add(org.json.JSONObject().put("id", "l2").put("dir", "in").put("fp", slimFp).put("name", "slim")
+                .put("body", "https://github.com/Ferinmtk/droplet/releases").put("ts", now - 60))
+            phone.chat.add(org.json.JSONObject().put("id", "l3").put("dir", "out").put("fp", slimFp).put("name", "slim")
+                .put("body", "Got them, thanks").put("ts", now - 30).put("route", "lan"))
+            val chat = Robolectric.buildActivity(ChatActivity::class.java,
+                ChatActivity.intent(ApplicationProvider.getApplicationContext(), slimFp)).setup()
+            idleFor(300)
+            shoot(chat.get(), "features-chat-links")
+            chat.pause().stop().destroy()
+
+            // Settings: Rename this phone
+            val st = Robolectric.buildActivity(SettingsActivity::class.java).setup()
+            st.get().findViewById<android.view.View>(R.id.rename).performClick()
+            idleFor(200)
+            shootDialog("features-rename-dialog")
+            org.robolectric.shadows.ShadowDialog.getLatestDialog().dismiss()
+            st.pause().stop().destroy()
+
+            // the share sheet: a shared web page goes as a link, to several devices
+            val share = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(android.content.Intent.EXTRA_TEXT, "https://example.com/article")
+            val sheet = Robolectric.buildActivity(ShareActivity::class.java, share).setup()
+            fun targets(): android.widget.LinearLayout? =
+                org.robolectric.shadows.ShadowDialog.getLatestDialog()?.findViewById(R.id.targets)
+            waitMain("both devices in the sheet") { targets()?.childCount == 2 }
+            idleFor(200)
+            shootDialog("features-share-link")
+            org.robolectric.shadows.ShadowDialog.getLatestDialog().findViewById<android.view.View>(R.id.several).performClick()
+            idleFor(100)
+            targets()!!.getChildAt(0).performClick()
+            targets()!!.getChildAt(1).performClick()
+            idleFor(200)
+            shootDialog("features-share-several")
+            sheet.pause().stop().destroy()
+        } finally {
+            others.forEach { it.close() }
+            releaseMesh()
+            Mesh.addresses = null
+            Prefs.noHub = false
+            tmp.deleteRecursively()
+        }
+    }
+
     @Test
     fun pairing() {
         assumeTrue(out.isNotEmpty())

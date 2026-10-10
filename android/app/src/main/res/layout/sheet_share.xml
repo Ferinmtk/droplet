@@ -29,6 +29,15 @@
             android:textColor="@color/text"
             android:textSize="20sp"
             android:textStyle="bold" />
+
+        <!-- send to several devices at once -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/several"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/share_several"
+            android:visibility="gone" />
     </LinearLayout>
 
     <TextView
@@ -58,6 +67,16 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:orientation="vertical" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/send_several"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="24dp"
+        android:layout_marginTop="8dp"
+        android:enabled="false"
+        android:text="@string/share_send_several_none"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/status"

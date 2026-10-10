@@ -66,4 +66,14 @@
         android:textColor="@color/accent"
         android:textSize="11sp"
         android:visibility="gone" />
+
+    <!-- sending to several: ticked to include this device -->
+    <com.google.android.material.checkbox.MaterialCheckBox
+        android:id="@+id/check"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:clickable="false"
+        android:focusable="false"
+        android:visibility="gone" />
 </LinearLayout>
