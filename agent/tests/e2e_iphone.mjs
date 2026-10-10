@@ -372,8 +372,107 @@ try {
   check("a browser that isn't paired is refused", refused === "refused, unpaired", refused);
   await other.close();
 
+  // --- progress and Cancel, both ways (docs/mesh.md §9.10) ---
+  await page.click(".device-card .device");
+  await page.waitForSelector("#peer:not([hidden])");
+  await waitUntil(async () => (await page.textContent("#peer-state")) === "Connected", 15000);
+  const partials = () => fs.readdirSync(downloads).filter((f) => f.startsWith(".droplet-"));
+  const transfersOf = async (dir) => ((await control({ cmd: "transfers" })).transfers || []).filter((t) => t.dir === dir);
+  // the computer sends a big file; the app shows how far it has got, and cancels it
+  const huge = path.join(ROOT, "huge from linux.bin");
+  fs.writeFileSync(huge, crypto.randomBytes(48 * 1024 * 1024));
+  const hj = await control({ cmd: "send-file", peer: me.fp, path: huge, wait: 0 });
+  const inRow = `#t-in-${hj.id}`;
+  const showing = await waitUntil(async () => {
+    const t = await page.textContent(inRow).catch(() => "");
+    return /\d+%\s+of\s+[\d.]+\s+MB/.test(t) ? t : null;
+  }, 20000, 100);
+  check("a file from the computer shows its progress in the app", showing, showing);
+  const speed = await waitUntil(async () => { const t = await page.textContent(inRow).catch(() => ""); return /MB\/s · \d+\s+(s|min)\s+left/.test(t) ? t : null; }, 10000, 100);
+  check("…with its speed and time left", speed, speed);
+  await shot(page, "10-progress");
+  await page.click(`${inRow} .cancel`);
+  const hjEnd = await waitUntil(async () => { const j = await control({ cmd: "job", id: hj.id, wait: 0 }); return j.state === "cancelled" ? j : null; }, 10000);
+  check("Cancel in the app stops the computer's send, and says who", hjEnd && /cancelled it$/.test(hjEnd.why || ""), JSON.stringify(hjEnd));
+  check("…the app says it's cancelled, and keeps nothing of it", (await page.textContent(inRow)).includes("Cancelled")
+    && await page.evaluate(() => [...window.droplet.sessions.values()][0]._in.size === 0));
+  // the computer cancels a file it's sending the app
+  const hj2 = await control({ cmd: "send-file", peer: me.fp, path: huge, wait: 0 });
+  await waitUntil(async () => (await page.textContent(`#t-in-${hj2.id}`).catch(() => "")).includes("%"), 20000, 100);
+  const c2 = await control({ cmd: "cancel", id: hj2.id });
+  check("the computer cancels a send to the app", c2.dir === "out", JSON.stringify(c2));
+  check("…and the app shows it was cancelled there", await waitUntil(async () => (await page.textContent(`#t-in-${hj2.id}`)).includes("Cancelled by t15-e2e"), 10000), await page.textContent("#transfers"));
+  // the app sends a big file; the computer cancels it: the partial file goes, the app is told
+  await page.evaluate(() => { document.getElementById("transfers").replaceChildren(); });
+  const upBig = crypto.randomBytes(40 * 1024 * 1024);
+  await page.setInputFiles("#file-input", { name: "big from iphone.mov", mimeType: "video/quicktime", buffer: upBig });
+  const goingIn = await waitUntil(async () => (await transfersOf("in")).find((t) => t.state === "active" && t.done > 0), 20000, 100);
+  check("the computer lists a file arriving from the app, with real byte counts", goingIn && goingIn.name === "big from iphone.mov", JSON.stringify(goingIn));
+  await control({ cmd: "cancel", id: goingIn.id });
+  check("the computer cancels it: the app says so", await waitUntil(async () => (await page.textContent("#transfers")).includes("t15-e2e cancelled it"), 10000), await page.textContent("#transfers"));
+  check("…and nothing of it is left on the computer", await waitUntil(() => !partials().length && !fs.existsSync(path.join(downloads, "big from iphone.mov")), 5000), partials());
+  // the app cancels its own send
+  await page.evaluate(() => { document.getElementById("transfers").replaceChildren(); });
+  await page.setInputFiles("#file-input", { name: "another.mov", mimeType: "video/quicktime", buffer: upBig });
+  await waitUntil(async () => (await page.textContent("#transfers")).includes("%"), 20000, 100);
+  await page.click("#transfers .transfer .cancel");
+  const cancelledIn = await waitUntil(async () => (await transfersOf("in")).find((t) => t.name === "another.mov" && t.state === "cancelled"), 10000);
+  check("Cancel on a send in the app: the computer drops it", cancelledIn && await waitUntil(() => !partials().length, 5000), JSON.stringify(cancelledIn));
+  check("…and the app says Cancelled", (await page.textContent("#transfers")).includes("Cancelled"));
+  await shot(page, "11-cancelled");
+
+  // --- links ---
+  await page.evaluate(() => { document.getElementById("transfers").replaceChildren(); });
+  await page.click("#send-link");
+  await page.fill("#link-url", "javascript:alert(1)");
+  await page.click("#link-go");
+  check("Send a link refuses anything but a web link", (await page.textContent("#link-why")).includes("Only web links"));
+  await page.fill("#link-url", "https://example.com/from-the-iphone");
+  await shot(page, "12-send-link");
+  await page.click("#link-go");
+  check("a link from the app (your own device) opens on the computer",
+    await waitUntil(() => agentLog().includes("would open (dry run): https://example.com/from-the-iphone"), 10000));
+  const linkMsg = (await control({ cmd: "chat" })).messages.find((m) => m.body === "https://example.com/from-the-iphone");
+  check("…and is in its Messages as a link", linkMsg && linkMsg.kind === "link" && linkMsg.dir === "in", JSON.stringify(linkMsg));
+  const sentLink = await control({ cmd: "link", peer: me.fp, url: "https://example.com/from-linux" });
+  check("a link from the computer reaches the app as a link", sentLink.how === "link" && sentLink.route === "webrtc", JSON.stringify(sentLink));
+  const openA = await waitUntil(async () => page.$eval("#messages li.link:last-child a.open-link", (a) => [a.href, a.target, a.rel]).catch(() => null), 10000);
+  check("…with an Open button (a web app can't open it by itself)", openA && openA[0] === "https://example.com/from-linux" && openA[1] === "_blank" && /noopener/.test(openA[2]), JSON.stringify(openA));
+  const bad = await control({ cmd: "link", peer: me.fp, url: "file:///etc/passwd" });
+  check("the computer won't send a file: link", bad.error && bad.error.includes("only web links"), JSON.stringify(bad));
+  await sleep(300);
+  await shot(page, "13-link-open-button");
+
+  // --- names ---
+  const rn = await control({ cmd: "rename", name: "t15 renamed" });
+  check("renaming the computer tells the app at once", rn.told >= 1 && await waitUntil(async () => (await page.textContent("#peer-name")) === "t15 renamed", 10000), JSON.stringify(rn));
+  await control({ cmd: "rename", name: "t15-e2e" });
+  await waitUntil(async () => (await page.textContent("#peer-name")) === "t15-e2e", 10000);
+  await page.click("#peer-menu");
+  await page.click("#nickname");
+  await page.fill("#name-input", "Office PC");
+  await page.click("#name-save");
+  check("a nickname for the computer shows here, with its own name small",
+    await waitUntil(async () => (await page.textContent("#peer-name")) === "Office PC", 5000)
+      && (await page.textContent("#peer-own-name")) === "its own name: t15-e2e",
+    (await page.textContent("#peer-name")) + " / " + (await page.textContent("#peer-own-name")));
+  check("…and is never sent (the computer still calls itself t15-e2e)", (await control({ cmd: "status" })).name === "t15-e2e");
+  await shot(page, "14-nickname");
+  await page.click("#peer .back");
+  await page.waitForSelector("#home:not([hidden])");
+  await page.click("#rename-me");
+  await page.fill("#name-input", "bad\u0007name");
+  await page.click("#name-save");
+  check("renaming the iPhone checks the name", (await page.textContent("#name-why")).includes("control characters"));
+  await page.fill("#name-input", "Ann's  iPhone");
+  await shot(page, "15-rename-iphone");
+  await page.click("#name-save");
+  const renamed = await waitUntil(async () => (await control({ cmd: "status" })).peers.find((p) => p.fp === me.fp && p.name === "Ann's iPhone"), 10000);
+  check("renaming the iPhone tells the computer at once", renamed, JSON.stringify((await control({ cmd: "status" })).peers));
+  check("…and the home screen shows it", (await page.textContent("#me-name")) === "Ann's iPhone");
+
   // --- unpair from the computer ---
-  const un = await control({ cmd: "unpair", peer: me.name });
+  const un = await control({ cmd: "unpair", peer: me.fp });
   check("unpairing on the computer tells the app", un.told, JSON.stringify(un));
   const gone = await waitUntil(async () => page.isVisible("#empty"), 10000);
   check("…which forgets the computer", gone);

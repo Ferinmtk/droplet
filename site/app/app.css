@@ -155,3 +155,30 @@ progress::-moz-progress-bar { background: var(--aqua); }
 .paused-row .btn { min-height: 40px; padding: 8px 16px; flex: none; }
 .composer input:disabled { opacity: 0.5; }
 #file-label.disabled { opacity: 0.4; pointer-events: none; }
+
+/* transfers: Cancel while one goes */
+.transfer .chip.cancel { color: var(--coral); flex: none; }
+.transfer.ended span { color: var(--dim); }
+
+/* links: an Open button on a message that's a link */
+.chat li.link .body { display: block; }
+.chat li.link .open-link { margin-top: 8px; }
+.chat li.out.link { text-align: right; }
+.chat li.out.link .body { text-align: left; }
+.chat li .open-link {
+  display: inline-flex; align-items: center; min-height: 36px; padding: 6px 16px;
+  background: var(--aqua); color: #04232a; border-radius: 999px; font-weight: 700; font-size: 15px; text-decoration: none;
+}
+.link-form { padding: 4px 12px 0; }
+.link-form .fine { margin: 6px 0 8px; }
+.link-form .btn, .sheet-body .btn { min-height: 44px; }
+.row.end { justify-content: flex-end; margin-top: 10px; }
+.link-form .note, #name-why { color: var(--coral); margin-top: 6px; }
+
+/* names */
+.me-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; color: var(--dim); font-size: 15px; }
+.me-row b { color: var(--ink); }
+.own-name { font-size: 13px; color: var(--dim); }
+.own-name::before { content: " · "; }
+.sheet-body h2 { font-size: 19px; margin: 6px 0 0; }
+.sheet-body .fine { margin-top: 6px; }

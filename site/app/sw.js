@@ -3,7 +3,7 @@
 // used from the next start. Bump VERSION when the list of files changes, and with each
 // new version of the app, so installed iPhones fetch all of it again.
 
-const VERSION = "droplet-app-v3";
+const VERSION = "droplet-app-v4";
 const SHELL = [
   "./", "index.html", "app.css", "app.js", "rtc.js", "proto.js", "crypto.js", "store.js", "scan.js",
   "vendor/jsQR.js", "manifest.webmanifest",

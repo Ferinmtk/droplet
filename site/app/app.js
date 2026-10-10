@@ -2,7 +2,7 @@
 // while the app is open (it's foreground-only: iOS suspends a web app in the background).
 
 import { identity, parsePairing } from "./crypto.js";
-import { Session } from "./proto.js";
+import { Session, checkName, webUrl } from "./proto.js";
 import { scan } from "./scan.js";
 import * as db from "./store.js";
 
@@ -43,6 +43,15 @@ function size(n) {
 }
 
 const when = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+// what this iPhone calls a computer: its nickname here (never sent), else its own name
+const shown = (p) => (p && (p.nickname || p.name)) || "the computer";
+
+function eta(s) {
+  if (s < 60) return `${Math.max(1, Math.round(s))} s left`;
+  if (s < 3600) return `${Math.round(s / 60)} min left`;
+  return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min left`;
+}
 
 function show(view) {
   for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== view;
@@ -153,10 +162,28 @@ function attach(peer, s) {
     if (await db.messages.get(id)) return;
     await db.messages.put({ id, fp: peer.fp, dir: "in", body: m.body, ts: m.ts || Date.now() / 1000 });
     if (current && current.fp === peer.fp) renderMessages();
-    else toast(`${peer.name}: ${m.body.slice(0, 80)}`);
+    else toast(`${shown(peer)}: ${m.body.slice(0, 80)}`);
   });
   s.addEventListener("file-progress", (e) => {
-    if (current && current.fp === peer.fp) transferRow(`in-${e.detail.id}`, `↓ ${e.detail.name}`, e.detail.got, e.detail.size);
+    if (current && current.fp === peer.fp) transferRow(`in-${e.detail.id}`, `↓ ${e.detail.name}`, e.detail.got, e.detail.size, null, () => s.cancel(e.detail.id));
+  });
+  s.addEventListener("file-cancelled", (e) => {
+    const d = e.detail;
+    if (current && current.fp === peer.fp) transferRow(`in-${d.id}`, `↓ ${d.name}`, 0, 0, d.here ? "Cancelled" : `Cancelled by ${shown(peer)}`);
+  });
+  s.addEventListener("link", async (e) => {
+    const m = e.detail;
+    const id = `${peer.fp}:in:${m.id}`;
+    if (await db.messages.get(id)) return;
+    await db.messages.put({ id, fp: peer.fp, dir: "in", kind: "link", body: m.url, ts: m.ts || Date.now() / 1000 });
+    if (current && current.fp === peer.fp) renderMessages();
+    else toast(`${shown(peer)} sent a link: open it from its messages`);
+  });
+  s.addEventListener("rename", async (e) => {
+    peer.name = e.detail.name;
+    await db.peers.put(peer);
+    renderDevices();
+    if (current && current.fp === peer.fp) { current.name = peer.name; $("peer-name").textContent = shown(peer); }
   });
   s.keepFile = async (f) => {
     if (await db.files.get(f.id)) return;
@@ -208,14 +235,15 @@ async function renderDevices() {
   currentPeers.clear();
   for (const p of list) currentPeers.set(p.fp, p);
   const box = $("devices");
-  box.replaceChildren(...list.sort((a, b) => a.name.localeCompare(b.name)).map((p) => {
+  $("me-name").textContent = myName;
+  box.replaceChildren(...list.sort((a, b) => shown(a).localeCompare(shown(b))).map((p) => {
     const on = status.get(p.fp) === "connected";
     const fresh = clips.filter((c) => c.fp === p.fp && c.fresh).length;
     const r = remoteOf(p.fp);
     const pausedHere = !!p.paused, pausedThere = !!(on && r && r.paused);
     const b = el("button", { className: "device" },
       el("i", { className: "dot" + (pausedHere || pausedThere ? " paused" : on ? " on" : "") }),
-      el("div", {}, el("b", { textContent: p.name }), el("span", { textContent: stateText(p.fp) })),
+      el("div", {}, el("b", { textContent: shown(p) }), el("span", { textContent: stateText(p.fp) })),
       pausedHere ? el("em", { className: "badge paused", textContent: "Paused" })
         : fresh ? el("em", { className: "badge", textContent: "New clipboard", title: `${fresh} new` }) : null);
     b.onclick = () => openPeer(p);
@@ -379,7 +407,8 @@ async function pairWith(text) {
   $("pair-error").hidden = true;
   let qr;
   try { qr = parsePairing(text); } catch (e) { pairError(e.message); return; }
-  const name = $("my-name").value.trim().slice(0, 40) || "iPhone";
+  let name;
+  try { name = checkName($("my-name").value, "The name", true) || "iPhone"; } catch (_) { name = myName; }
   if (name !== myName) { myName = name; await db.kv.set("name", name); }
   if (scanning) { scanning.stop(); scanning = null; }
   $("pair-scan").hidden = true;
@@ -434,7 +463,9 @@ async function pairWith(text) {
 // --- one computer ---
 async function openPeer(peer) {
   current = peer;
-  $("peer-name").textContent = peer.name;
+  $("peer-name").textContent = shown(peer);
+  $("peer-own-name").textContent = peer.nickname ? `its own name: ${peer.name}` : "";
+  $("peer-own-name").hidden = !peer.nickname;
   renderPeerState();
   $("transfers").replaceChildren();
   show("peer");
@@ -472,8 +503,13 @@ function renderPeerState() {
 async function renderMessages() {
   if (!current) return;
   const list = await db.messages.forPeer(current.fp);
-  $("messages").replaceChildren(...list.map((m) => el("li", { className: m.dir + (m.state === "failed" ? " failed" : "") },
-    m.body, el("small", { textContent: m.state === "failed" ? `Not sent: ${m.error || "not connected"}` : when(m.ts) }))));
+  $("messages").replaceChildren(...list.map((m) => {
+    const url = webUrl(m.body);
+    // a link (sent as one, or a message that's only a link): Open, in a new tab, on a tap
+    const open = url && m.body.trim() === url ? el("a", { className: "open-link", href: url, target: "_blank", rel: "noopener noreferrer", textContent: "Open" }) : null;
+    return el("li", { className: m.dir + (m.state === "failed" ? " failed" : "") + (open ? " link" : "") },
+      open ? el("span", { className: "body", textContent: m.body }) : m.body, open, el("small", { textContent: m.state === "failed" ? `Not sent: ${m.error || "not connected"}` : when(m.ts) }));
+  }));
   const sc = $("peer-scroll");
   sc.scrollTop = sc.scrollHeight;
 }
@@ -505,17 +541,42 @@ async function saveFile(f) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-function transferRow(key, label, done, total, failed) {
+const rates = new Map();   // transfer key → { t0, d0, at, rate }
+
+// one file on its way: its name, how far (bytes, %, speed, time left), and Cancel while it goes.
+// Redrawn at most 4 times a second, except when it ends.
+function transferRow(key, label, done, total, ended, cancel) {
   let row = document.getElementById(`t-${key}`);
   if (!row) {
-    row = el("div", { className: "transfer", id: `t-${key}` }, el("div", {}, el("b"), el("span"), el("progress", { max: 1 })));
+    const x = el("button", { className: "chip cancel", textContent: "Cancel" });
+    row = el("div", { className: "transfer", id: `t-${key}` }, el("div", {}, el("b"), el("span"), el("progress", { max: 1 })), x);
     $("transfers").append(row);
   }
+  const now = performance.now();
+  const r = rates.get(key) || { t0: now, d0: done, at: 0, rate: 0 };
+  if (!ended && done < total && now - r.at < 250) return row;
+  if (now - r.t0 > 500) { r.rate = (done - r.d0) / ((now - r.t0) / 1000); r.t0 = now; r.d0 = done; }
+  r.at = now;
+  rates.set(key, r);
   row.querySelector("b").textContent = label;
-  row.querySelector("span").textContent = failed ? failed : `${size(done)} of ${size(total)}`;
+  const x = row.querySelector(".cancel");
+  x.hidden = !!ended || !cancel || (total && done >= total);
+  if (cancel) x.onclick = () => { x.disabled = true; cancel(); };
+  let text;
+  if (ended) text = ended;
+  else {
+    const pct = total ? Math.floor((done * 100) / total) : 0;
+    const bits = [`${pct}% of ${size(total)}`];
+    if (r.rate > 0 && done < total) bits.push(`${size(r.rate)}/s`, eta((total - done) / r.rate));
+    // a line breaks only between the bits, never inside "5 s left"
+    text = bits.map((b) => b.replace(/ /g, " ")).join(" · ");
+  }
+  row.querySelector("span").textContent = text;
+  row.classList.toggle("ended", !!ended);
   const bar = row.querySelector("progress");
   bar.max = total || 1;
   bar.value = total ? done : 1;
+  bar.hidden = !!ended;
   return row;
 }
 
@@ -538,20 +599,102 @@ async function sendMessage() {
   if (current === peer) renderMessages();
 }
 
+async function sendLink() {
+  const peer = current;
+  const s = peer && sessions.get(peer.fp);
+  const input = $("link-url");
+  let url;
+  try {
+    url = webUrl(input.value);
+    if (!url) throw new Error("Only web links (http:// or https://) can be sent.");
+  } catch (e) { $("link-why").textContent = e.message; $("link-why").hidden = false; return; }
+  $("link-form").hidden = true;
+  input.value = "";
+  const rec = { id: `${peer.fp}:out:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`, fp: peer.fp, dir: "out", kind: "link", body: url, ts: Date.now() / 1000 };
+  try {
+    if (!s) throw new Error("not connected");
+    const how = await s.sendLink(url);
+    toast(how === "link" ? `Sent to ${shown(peer)}: it opens there if it's yours.` : `Sent to ${shown(peer)} as a message.`);
+  } catch (e) {
+    rec.state = "failed";
+    rec.error = e.message;
+  }
+  await db.messages.put(rec);
+  if (current === peer) renderMessages();
+}
+
+function openLinkForm() {
+  $("link-why").hidden = true;
+  $("link-form").hidden = false;
+  $("link-url").focus();
+}
+
+async function pasteLink() {
+  try {
+    const t = await navigator.clipboard.readText();
+    if (t) $("link-url").value = t.trim();
+  } catch (_) { toast("droplet can't see the clipboard unless you tap Paste when iOS asks."); }
+}
+
+// --- names: this iPhone's, and a nickname for a computer (only here) ---
+let naming = null;   // { kind: "me" } | { kind: "nick", peer }
+
+function openNameSheet(kind, peer) {
+  naming = { kind, peer };
+  $("name-title").textContent = kind === "me" ? "Rename this iPhone" : `What do you call ${peer.name}?`;
+  $("name-help").textContent = kind === "me" ? "Your computers show this name. Those connected now see it at once."
+    : `Shown here instead of “${peer.name}”. Only on this iPhone: it's never sent. Leave it empty for its own name.`;
+  $("name-input").value = kind === "me" ? myName : peer.nickname || "";
+  $("name-input").placeholder = kind === "me" ? "iPhone" : peer.name;
+  $("name-why").hidden = true;
+  $("name-sheet").hidden = false;
+  $("name-input").focus();
+}
+
+async function saveName() {
+  let name;
+  try { name = checkName($("name-input").value, naming.kind === "me" ? "The name" : "A nickname", naming.kind !== "me"); } catch (e) {
+    $("name-why").textContent = e.message;
+    $("name-why").hidden = false;
+    return;
+  }
+  $("name-sheet").hidden = true;
+  if (naming.kind === "me") {
+    myName = name;
+    await db.kv.set("name", name);
+    for (const s of sessions.values()) s.sendRename(name);
+    toast(`This iPhone is called ${name} now.`);
+  } else {
+    const rec = (await peerRecord(naming.peer.fp)) || naming.peer;
+    rec.nickname = name;
+    await db.peers.put(rec);
+    currentPeers.set(rec.fp, rec);
+    if (current && current.fp === rec.fp) {
+      current.nickname = name;
+      $("peer-name").textContent = shown(rec);
+      $("peer-own-name").textContent = name ? `its own name: ${rec.name}` : "";
+      $("peer-own-name").hidden = !name;
+    }
+    toast(name ? `${rec.name} is called ${name} on this iPhone.` : `${rec.name} goes by its own name again.`);
+  }
+  renderDevices();
+}
+
 async function sendFiles(list) {
   const peer = current;
   const s = peer && sessions.get(peer.fp);
   for (const file of list) {
     const key = `out-${Math.random().toString(16).slice(2)}`;
     if (!s) { transferRow(key, `↑ ${file.name}`, 0, file.size, "Not sent: not connected"); continue; }
-    transferRow(key, `↑ ${file.name}`, 0, file.size);
+    let id = null;
+    const stop = () => { if (id) s.cancel(id); };
+    transferRow(key, `↑ ${file.name}`, 0, file.size, null, stop);
     try {
-      await s.sendFile(file, (n) => transferRow(key, `↑ ${file.name}`, n, file.size));
-      const row = transferRow(key, `↑ ${file.name}`, file.size, file.size);
-      row.querySelector("span").textContent = `Sent · ${size(file.size)}`;
+      await s.sendFile(file, (n) => transferRow(key, `↑ ${file.name}`, n, file.size, null, stop), (got) => { id = got; });
+      const row = transferRow(key, `↑ ${file.name}`, file.size, file.size, `Sent · ${size(file.size)}`);
       row.classList.add("done");
     } catch (e) {
-      transferRow(key, `↑ ${file.name}`, 0, file.size, `Not sent: ${e.message}`);
+      transferRow(key, `↑ ${file.name}`, 0, file.size, e.cancelled ? e.message : `Not sent: ${e.message}`);
     }
   }
 }
@@ -565,6 +708,16 @@ async function main() {
   $("pair-go").onclick = () => pairWith($("pair-link").value);
   $("pair-link").addEventListener("keydown", (e) => { if (e.key === "Enter") pairWith($("pair-link").value); });
   $("send").onclick = sendMessage;
+  $("send-link").onclick = openLinkForm;
+  $("link-go").onclick = sendLink;
+  $("link-paste").onclick = pasteLink;
+  $("link-cancel").onclick = () => { $("link-form").hidden = true; };
+  $("link-url").addEventListener("keydown", (e) => { if (e.key === "Enter") sendLink(); });
+  $("rename-me").onclick = () => openNameSheet("me");
+  $("nickname").onclick = () => { $("sheet").hidden = true; if (current) openNameSheet("nick", currentPeers.get(current.fp) || current); };
+  $("name-save").onclick = saveName;
+  $("name-cancel").onclick = () => { $("name-sheet").hidden = true; };
+  $("name-input").addEventListener("keydown", (e) => { if (e.key === "Enter") saveName(); });
   $("send-clip").onclick = () => current && sendClipboard(current, $("send-clip"));
   $("composer").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
   $("file-input").onchange = (e) => { const files = [...e.target.files]; e.target.value = ""; sendFiles(files); };
@@ -607,4 +760,4 @@ async function main() {
 main().catch((e) => { document.body.textContent = `droplet couldn't start: ${e.message || e}`; });
 
 // for tests and debugging
-window.droplet = { sessions, status, db, clips };
+window.droplet = { sessions, status, db, clips, webUrl, checkName };
