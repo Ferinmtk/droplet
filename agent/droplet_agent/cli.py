@@ -340,12 +340,47 @@ def _short(fp: str) -> str:
     return fp[:16] if fp else "?"
 
 
+def _perm_line(p: dict) -> str:
+    """"your device, paused; off: clipboard, control"."""
+    rel = "someone else's" if p.get("relation") == "other" else "your device"
+    allow = p.get("allow") or {}
+    off = [c for c, on in allow.items() if not on]
+    bits = [rel] + (["PAUSED"] if p.get("paused") else [])
+    return ", ".join(bits) + "; " + (f"off: {', '.join(off)}" if off else "everything allowed")
+
+
+def _ask_relation(name: str, args) -> str | None:
+    """"Is <name> your device, or someone else's?" From --own/--other, else asked; "own" when
+    nobody can answer (a script), as before this was asked."""
+    if getattr(args, "other", False):
+        return "other"
+    if getattr(args, "own", False) or not _interactive():
+        return "own"
+    print(f"\nIs {name} your device, or someone else's (a deskmate's laptop, a friend's phone)?")
+    print("  own:   everything on: files, messages, clipboard, notifications, remote control, ring")
+    print("  other: files, messages and ring only; clipboard, notifications and remote control off")
+    while True:
+        try:
+            ans = input("[own/other] ").strip().lower()
+        except EOFError:
+            return None
+        if ans in ("own", "o", "mine", "my", "m"):
+            return "own"
+        if ans in ("other", "someone", "someone else's", "s", "guest"):
+            return "other"
+        if ans in ("", "q", "quit", "cancel"):
+            return None
+        print("Answer own or other.")
+
+
 def cmd_peers(args) -> int:
     st = _ask_agent({"cmd": "status"})
     if st is None:
         return 1
     print(f"this device: {st['name']} (id {st['id']}), mesh port {st['port']}")
     print(f"fingerprint: {st['fp']}")
+    if st.get("paused_all"):
+        print("EVERYTHING IS PAUSED: nothing is shared with any device. Resume with: droplet-agent resume --all")
     print()
     if st["peers"]:
         print("Trusted:")
@@ -354,6 +389,10 @@ def cmd_peers(args) -> int:
                 p["source"], "from the hub's roster")
             where = p["link"] or ("on this network" if p["on_lan"] else "not seen")
             print(f"  {p['name']:<20} {p['id']:<16} {_short(p['fp'])}  {how}; {where}")
+            print(f"  {'':<20} {_perm_line(p)}")
+            remote = p.get("remote") or {}
+            if remote.get("paused"):
+                print(f"  {'':<20} it paused sharing with this device")
     else:
         print("No trusted peers yet. Pair with: droplet-agent pair <name or address>")
     if st["nearby"]:
@@ -389,15 +428,25 @@ def _pick_request(incoming: list, which: str | None) -> dict | None:
     return None
 
 
-def _answer(r: dict, accept: bool) -> int:
-    out = _ask_agent({"cmd": "pair-answer", "request": r["request"], "accept": accept})
+def _answer(r: dict, accept: bool, args=None) -> int:
+    relation = "own"
+    if accept:
+        relation = _ask_relation(r["name"], args)
+        if relation is None:
+            print("Not answered; it's still waiting (droplet-agent pair to answer).", file=sys.stderr)
+            return 1
+    out = _ask_agent({"cmd": "pair-answer", "request": r["request"], "accept": accept, "relation": relation})
     if out is None:
         return 1
-    print(f"Paired with {out['name']}." if accept else f"Refused {out['name']}.")
+    if not accept:
+        print(f"Refused {out['name']}.")
+    else:
+        print(f"Paired with {out['name']}, " + ("your own device." if relation == "own" else
+              "someone else's device: files, messages and ring only. Change it with droplet-agent allow."))
     return 0
 
 
-def _pair_qr() -> int:
+def _pair_qr(args=None) -> int:
     """Show a QR code for the iPhone web app, then answer the pairing request it makes."""
     import time as _time
     out = _ask_agent({"cmd": "qr"})
@@ -429,7 +478,7 @@ def _pair_qr() -> int:
                     ans = input(f"Does {r['name']} show the same code? Pair with it? [y/N] ").strip().lower()
                 except EOFError:
                     ans = ""
-                rc = _answer(r, ans in ("y", "yes"))
+                rc = _answer(r, ans in ("y", "yes"), args)
                 if ans in ("y", "yes") and rc == 0:
                     return 0
             _time.sleep(1)
@@ -443,7 +492,7 @@ def _pair_qr() -> int:
 def cmd_pair(args) -> int:
     import time as _time
     if args.qr:
-        return _pair_qr()
+        return _pair_qr(args)
     if args.accept is not None or args.deny is not None:
         st = _ask_agent({"cmd": "status"})
         if st is None:
@@ -453,7 +502,7 @@ def cmd_pair(args) -> int:
             return 1
         accept = args.accept is not None
         r = _pick_request(st["incoming"], (args.accept if accept else args.deny) or None)
-        return 1 if r is None else _answer(r, accept)
+        return 1 if r is None else _answer(r, accept, args)
     if not args.peer:
         # the interactive way to answer: show each request and its code
         st = _ask_agent({"cmd": "status"})
@@ -469,7 +518,7 @@ def cmd_pair(args) -> int:
                 ans = input(f"Does {r['name']} show the same code? Pair with it? [y/N] ").strip().lower()
             except EOFError:
                 ans = ""
-            _answer(r, ans in ("y", "yes"))
+            _answer(r, ans in ("y", "yes"), args)
         return 0
     out = _ask_agent({"cmd": "pair-start", "target": args.peer}, timeout=30)
     if out is None:
@@ -485,7 +534,10 @@ def cmd_pair(args) -> int:
     except EOFError:
         ans = ""
     yes = ans in ("y", "yes")
-    if _ask_agent({"cmd": "pair-confirm", "request": out["request"], "yes": yes}) is None:
+    relation = _ask_relation(peer["name"], args) if yes else "own"
+    if relation is None:
+        yes = False
+    if _ask_agent({"cmd": "pair-confirm", "request": out["request"], "yes": yes, "relation": relation}) is None:
         return 1
     if not yes:
         print("Cancelled; nothing was paired.")
@@ -496,7 +548,8 @@ def cmd_pair(args) -> int:
         if st is None:
             return 1
         if st["state"] == "accepted":
-            print(f"Paired with {peer['name']}.")
+            print(f"Paired with {peer['name']}" + (", your own device." if relation == "own" else
+                  ", someone else's device: files, messages and ring only. Change it with droplet-agent allow."))
             return 0
         if st["state"] != "waiting":
             print(f"Not paired: the request was {st['state']}.", file=sys.stderr)
@@ -513,6 +566,55 @@ def cmd_unpair(args) -> int:
     return 0
 
 
+def cmd_allow(args) -> int:
+    from .mesh import perms
+    if args.capability in ("own", "other") and args.state is None:
+        out = _ask_agent({"cmd": "perm-set", "peer": args.peer, "relation": args.capability})
+        if out is None:
+            return 1
+        print(f"{out['name']} is " + ("your own device" if out["relation"] == "own" else "someone else's device")
+              + "; " + _perm_line(out).split("; ", 1)[1] + ".")
+        return 0
+    if args.capability not in perms.CAPABILITIES or args.state not in ("on", "off"):
+        print("Usage: droplet-agent allow <device> <capability> on|off   (or: droplet-agent allow <device> own|other)\n"
+              "Capabilities:\n" + "\n".join(f"  {c:<10} {perms.CAPABILITIES[c]}: {perms.EXPLAIN[c]}"
+                                             for c in perms.CAPABILITIES), file=sys.stderr)
+        return 2
+    out = _ask_agent({"cmd": "perm-set", "peer": args.peer, "capability": args.capability,
+                      "on": args.state == "on"})
+    if out is None:
+        return 1
+    print(f"{perms.CAPABILITIES[args.capability]} with {out['name']}: {args.state}.")
+    return 0
+
+
+def _pause(args, on: bool) -> int:
+    if args.all == bool(args.peer):
+        print(f"Say which device, or --all: droplet-agent {'pause' if on else 'resume'} <device> | --all",
+              file=sys.stderr)
+        return 2
+    out = _ask_agent({"cmd": "pause" if on else "resume", **({"all": True} if args.all else {"peer": args.peer})})
+    if out is None:
+        return 1
+    if args.all:
+        print("Everything is paused: nothing is shared with any device until you resume (droplet-agent resume --all)."
+              if on else "Everything is resumed.")
+    else:
+        print(f"Paused {out['name']}: nothing goes to it or comes from it until you resume it. What you send it waits."
+              if on else f"Resumed {out['name']}.")
+        if not on and out.get("paused_all"):
+            print("Everything is still paused, though: droplet-agent resume --all")
+    return 0
+
+
+def cmd_pause(args) -> int:
+    return _pause(args, True)
+
+
+def cmd_resume(args) -> int:
+    return _pause(args, False)
+
+
 ROUTE_TEXT = {"lan": "directly, over the LAN", "tailnet": "directly, over Tailscale",
               "webrtc": "directly, to its web app",
               "hub": "through the hub", "hub-mailbox": "to the hub's mailbox (it's offline)"}
@@ -525,6 +627,10 @@ def _report_job(job: dict, what: str) -> int:
     if job["state"] == "failed":
         print(f"{what} failed: {job.get('why')}", file=sys.stderr)
         return 1
+    why = job.get("why") or ""
+    if why.startswith("waiting: "):
+        print(f"Waiting: {why[len('waiting: '):]}. It's kept in the outbox and sent on resume.")
+        return 0
     print(f"{job['peer']} can't be reached right now ({job.get('why') or 'no route'}). "
           "It's kept in the outbox and sent as soon as it or the hub can be reached.")
     return 0
@@ -1240,10 +1346,33 @@ def main(argv=None) -> int:
     g.add_argument("--deny", nargs="?", const="", metavar="WHICH", help="refuse it")
     g.add_argument("--qr", action="store_true",
                    help="pair an iPhone: show a QR code for droplet's web app to scan")
+    rel = pr.add_mutually_exclusive_group()
+    rel.add_argument("--own", action="store_true",
+                     help="it's your own device: everything allowed (the default when nobody can be asked)")
+    rel.add_argument("--other", action="store_true",
+                     help="it's someone else's: files, messages and ring only; no clipboard, notifications "
+                          "or remote control")
     pr.set_defaults(func=cmd_pair)
     up = sub.add_parser("unpair", help="stop trusting a directly paired device")
     up.add_argument("peer")
     up.set_defaults(func=cmd_unpair)
+    al = sub.add_parser("allow", help="switch what a device may do on or off",
+                        description="droplet-agent allow <device> <capability> on|off, or "
+                                    "droplet-agent allow <device> own|other to start again from that "
+                                    "relation's defaults. Capabilities: files, chat, clipboard, notify, "
+                                    "control, ring, access. See droplet-agent peers.")
+    al.add_argument("peer")
+    al.add_argument("capability")
+    al.add_argument("state", nargs="?", choices=["on", "off"])
+    al.set_defaults(func=cmd_allow)
+    pa = sub.add_parser("pause", help="stop sharing anything with a device (or with all: --all) until resumed")
+    pa.add_argument("peer", nargs="?")
+    pa.add_argument("--all", action="store_true", help="pause everything, with every device")
+    pa.set_defaults(func=cmd_pause)
+    rs = sub.add_parser("resume", help="share with a paused device again (or everything: --all)")
+    rs.add_argument("peer", nargs="?")
+    rs.add_argument("--all", action="store_true", help="resume everything")
+    rs.set_defaults(func=cmd_resume)
     tx = sub.add_parser("text", help="send a chat message to a device")
     tx.add_argument("peer")
     tx.add_argument("message")

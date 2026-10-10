@@ -65,6 +65,9 @@ DEFAULTS: dict = {
         # show your phone's notifications here, sent straight from the phone
         # (the "notify" cap tells the phone to send them)
         "phone_notifications": True,
+        # Pause everything: nothing is shared with any device (sent or taken) until it's
+        # false again. Each device can also be paused on its own (the trust list)
+        "paused": False,
     },
     # the iPhone link: the droplet web app on an iPhone connects straight to this
     # computer over WebRTC, with no server (docs/iphone.md). On unless this says false;

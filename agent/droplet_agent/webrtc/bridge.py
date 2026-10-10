@@ -188,6 +188,22 @@ class Bridge(Host):
     def downloads(self) -> Path:
         return self.node.downloads
 
+    def perm(self, fp: str) -> dict | None:
+        return self.node.perm_for(fp)
+
+    def refuse_file(self, conn: Conn, msg: dict) -> dict | None:
+        from ..mesh import perms
+        entry = self.node.trust.get(conn.fp)
+        no = perms.check(entry, {"t": "file"}, self.node.paused_all, "in")
+        if no is None:
+            return None
+        why, cap = no
+        text = perms.refusal_text(self.node.name, why, cap)
+        log.info("webrtc: refused a file from %s: %s", conn.name, "paused" if why == "paused" else "files are off")
+        if why == "paused":
+            return {"t": "refused", "re": "file", "id": msg["id"], "cap": cap, "why": why, "error": text}
+        return {"t": "nack", "id": msg["id"], "error": text, "cap": cap, "why": why}
+
     def closed(self, conn: Conn):
         self.conns.discard(conn)
         link = getattr(conn, "link", None)

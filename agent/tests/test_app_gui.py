@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 from droplet_agent import config  # noqa: E402
 from droplet_agent.app import main as appmain  # noqa: E402
 from droplet_agent.app.agent import Agent  # noqa: E402
-from droplet_agent.app.demo import ASKING_FP, LINUX_FP, PHONE_FP, DemoAgent  # noqa: E402
+from droplet_agent.app.demo import ASKING_FP, LINUX_FP, PHONE_FP, WIN_FP, DemoAgent  # noqa: E402
 from droplet_agent.app.window import Window  # noqa: E402
 
 
@@ -70,11 +70,88 @@ def test_the_window_shows_the_devices_and_who_asks_to_pair(win):
 
 def test_accepting_a_pairing_request(win, demo):
     banner = win.banners.itemAt(0).widget()
+    asked = []
+    win.ask_relation = lambda r: asked.append(r["name"]) or "other"
     win.answer(banner.r, True)
+    assert asked == ["anna-phone"]
     assert not demo.incoming and any(p["fp"] == ASKING_FP for p in demo.peers)
+    assert demo.calls[-2]["relation"] == "other"
     assert win.banners.count() == 0
-    assert ASKING_FP in win.pages["devices"].cards
-    assert "Paired with anna-phone" in win.statusBar().currentMessage()
+    card = win.pages["devices"].cards[ASKING_FP]
+    assert not card.other_badge.isHidden() and not card.b_clip.isEnabled() and card.b_files.isEnabled()
+    assert win.statusBar().currentMessage() == "Paired with anna-phone, as someone else's device."
+
+
+def test_closing_the_relation_question_leaves_the_request_waiting(win, demo):
+    banner = win.banners.itemAt(0).widget()
+    win.ask_relation = lambda r: None
+    win.answer(banner.r, True)
+    assert demo.incoming and not any(c.get("cmd") == "pair-answer" for c in demo.calls)
+
+
+def test_the_relation_dialog_has_two_big_choices(win):
+    from droplet_agent.app.perms import RelationDialog
+    dlg = RelationDialog(win, "anna-phone", "4817")
+    assert "Is anna-phone your device, or someone else's?" in texts(dlg)
+    dlg.choice.buttons["other"].click()
+    assert dlg.result() == dlg.DialogCode.Accepted and dlg.relation == "other"
+
+
+def test_pause_and_resume_a_device(win, demo):
+    page = win.pages["devices"]
+    phone = next(p for p in demo.peers if p["fp"] == PHONE_FP)
+    card = page.cards[PHONE_FP]
+    assert card.b_pause.text() == "Pause" and card.paused_badge.isHidden()
+    card.b_pause.click()
+    assert demo.calls[-2] == {"cmd": "pause", "peer": PHONE_FP} and phone["paused"]
+    card = page.cards[PHONE_FP]
+    assert card.b_pause.text() == "Resume" and not card.paused_badge.isHidden()
+    assert card.state.text().startswith("Paused") and not card.b_clip.isEnabled() and not card.b_ring.isEnabled()
+    assert card.b_files.isEnabled()       # what you send waits for the resume
+    assert "until you resume" in card.perms_line.text()
+    card.b_pause.click()
+    assert not phone["paused"] and page.cards[PHONE_FP].b_pause.text() == "Pause"
+
+
+def test_someone_elses_device_has_a_badge(win):
+    card = win.pages["devices"].cards[WIN_FP]
+    assert not card.other_badge.isHidden() and card.other_badge.text() == "Someone else's"
+    assert not card.b_clip.isEnabled()
+    assert card.perms_line.text().startswith("The clipboard, notifications, remote control")
+    assert win.pages["devices"].cards[PHONE_FP].other_badge.isHidden()
+    assert win.pages["devices"].cards[PHONE_FP].perms_line.isHidden()
+
+
+def test_the_permissions_dialog_saves_the_switches(win, demo):
+    from droplet_agent.app.perms import PermissionsDialog
+    page = win.pages["devices"]
+    phone = next(p for p in demo.peers if p["fp"] == PHONE_FP)
+    dlg = PermissionsDialog(page, phone, list(page.capabilities))
+    assert list(dlg.boxes) == ["files", "chat", "clipboard", "notify", "control", "ring", "access"]
+    assert all(cb.isChecked() for cb in dlg.boxes.values()) and dlg.own.isChecked()
+    assert any("both ways" in t for t in texts(dlg))
+    dlg._relation("other")       # the defaults of someone else's device
+    assert not dlg.boxes["clipboard"].isChecked() and dlg.boxes["files"].isChecked()
+    dlg.boxes["ring"].setChecked(False)
+    dlg.exec = lambda: True
+    page.permissions(phone, dialog=dlg)
+    req = next(c for c in reversed(demo.calls) if c["cmd"] == "perm-set")
+    assert req["relation"] == "other" and req["allow"]["ring"] is False and req["allow"]["files"] is True
+    assert phone["relation"] == "other" and phone["allow"]["ring"] is False
+    assert "Saved redmi-note-11e-pro's permissions." == win.statusBar().currentMessage()
+
+
+def test_pause_everything_from_settings(win, demo):
+    win.go("settings")
+    page = win.pages["settings"]
+    assert not page.pause_all.isChecked() and win.paused_banner.isHidden()
+    page.pause_all.setChecked(True)
+    assert demo.paused_all and not win.paused_banner.isHidden()
+    assert win.summary.text().startswith("Everything paused")
+    card = win.pages["devices"].cards[PHONE_FP]
+    assert not card.b_clip.isEnabled() and "Everything is paused" in card.perms_line.text()
+    win.pause_everything(False)
+    assert not demo.paused_all and win.paused_banner.isHidden() and not page.pause_all.isChecked()
 
 
 def test_the_agent_not_running_and_coming_back(win, demo):
@@ -149,7 +226,15 @@ def test_pairing_from_the_pair_page(win, demo):
     assert page.code.text() == "2 6 0 4" and page.headline.text() == "Pairing with pixel-tablet"
     assert not page.yes.isHidden() and page.done.isHidden()
     page.confirm(True)
+    # is it yours, or someone else's: two big choices, each with its defaults in a line
+    assert page.headline.text() == "Is pixel-tablet your device, or someone else's?"
+    assert not page.relation.isHidden() and page.yes.isHidden() and not page.timer.isActive()
+    assert "files, messages and ring only" in page.relation.buttons["other"].text.text()
+    assert "Everything on" in page.relation.buttons["own"].text.text()
+    page.relation.buttons["own"].click()
+    assert demo.calls[-1]["relation"] == "own"
     assert page.headline.text() == "Waiting for pixel-tablet to accept" and page.timer.isActive()
+    assert page.relation.isHidden()
     page._poll()
     page._poll()
     assert page.headline.text() == "Paired with pixel-tablet" and not page.done.isHidden()

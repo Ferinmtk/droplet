@@ -231,4 +231,12 @@ def style_sheet(dark: bool) -> str:
     QToolButton::menu-indicator {{ image: none; width: 0; }}
     QScrollArea > QWidget > QWidget#scrollbody {{ background: transparent; }}
     QLabel#code {{ color: {"#7DD3FC" if dark else "#0369A1"}; }}
+    QPushButton#choice {{ background: {card}; border: 1px solid {border}; border-radius: 10px; text-align: left; }}
+    QPushButton#choice:hover, QPushButton#choice:focus {{ border: 2px solid {ACCENT}; }}
+    QPushButton#segment:checked {{ background: {sel}; border: 2px solid {ACCENT}; border-radius: 6px;
+        padding: 4px 12px; font-weight: 600; }}
+    QLabel#badge {{ background: {"rgba(167,139,250,0.22)" if dark else "#EDE9FE"};
+        color: {"#C4B5FD" if dark else "#5B21B6"}; border-radius: 8px; padding: 1px 8px; font-weight: 600; }}
+    QLabel#badge[tone="paused"] {{ background: {"rgba(245,158,11,0.22)" if dark else "#FEF3C7"};
+        color: {"#FBBF24" if dark else "#92400E"}; }}
     """

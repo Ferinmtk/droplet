@@ -16,6 +16,12 @@ Kept in the config directory, owner-only, as JSON, keyed by fingerprint:
   connects when it's open.
 
 A certificate is stored in full: the server loads it as a trust anchor.
+
+Each entry also holds what the owner decided about it (perms.py, docs/mesh.md §9.9):
+`relation` ("own" or "other": your device, or someone else's), `allow` (a switch per
+capability) and `paused`. An entry from before these existed is your own device with
+everything on, as it was; so is every roster peer until the owner changes it. A roster
+fetch keeps them.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ import time
 from pathlib import Path
 
 from .identity import PEER_ID, fingerprint, key_fingerprint, normalize_fingerprint, p256_spki, pem_to_der
+from .perms import RELATIONS, clean_allow, clean_relation, defaults
 
 SOURCES = ("roster", "paired", "browser")
 MAX_LAN = 6
@@ -67,8 +74,16 @@ def clean_caps(v) -> list[str]:
                    and c.strip().replace("-", "").isalnum() and len(c.strip()) <= 20})
 
 
+def with_perms(entry: dict, relation=None, allow=None, paused=False) -> dict:
+    """Add the owner's choices to an entry: missing ones are "own", with everything on."""
+    entry["relation"] = clean_relation(relation)
+    entry["allow"] = clean_allow(allow, entry["relation"])
+    entry["paused"] = paused is True
+    return entry
+
+
 def make_entry(*, peer_id, name, cert_pem, source, lan=(), port=None, tailnet_ip=None, os_name="",
-               caps=(), fp=None, hub=None) -> dict:
+               caps=(), fp=None, hub=None, relation=None, allow=None, paused=False) -> dict:
     """A checked entry. Raises ValueError when the id, certificate or fingerprint is wrong."""
     if source not in SOURCES:
         raise ValueError(f"bad source {source!r}")
@@ -79,7 +94,7 @@ def make_entry(*, peer_id, name, cert_pem, source, lan=(), port=None, tailnet_ip
     if fp is not None and normalize_fingerprint(fp) != real:
         raise ValueError("the fingerprint doesn't match the certificate")
     tip = clean_addresses([tailnet_ip] if tailnet_ip else [], 1)
-    return {
+    return with_perms({
         "id": peer_id, "name": clean_name(name, peer_id), "fp": real,
         "cert_pem": pem_to_pem(der), "source": source,
         "lan": clean_addresses(lan), "port": clean_port(port),
@@ -88,10 +103,10 @@ def make_entry(*, peer_id, name, cert_pem, source, lan=(), port=None, tailnet_ip
         # the hub whose roster lists it: messages to it may go through that hub
         "hub": hub if isinstance(hub, str) and PEER_ID.match(hub) else "",
         "added": int(time.time()),
-    }
+    }, relation, allow, paused)
 
 
-def make_browser_entry(*, name, key, os_name="ios", fp=None) -> dict:
+def make_browser_entry(*, name, key, os_name="ios", fp=None, relation=None, allow=None, paused=False) -> dict:
     """A checked entry for a browser peer (the iPhone web app, docs/iphone.md): a bare P-256
     public key, no certificate, so never a TLS trust anchor. Its fingerprint is the SHA-256 of
     the key's SubjectPublicKeyInfo, and its id the first 16 hex of that. Raises ValueError."""
@@ -100,12 +115,12 @@ def make_browser_entry(*, name, key, os_name="ios", fp=None) -> dict:
     real = key_fingerprint(spki)
     if fp is not None and normalize_fingerprint(fp) != real:
         raise ValueError("the fingerprint doesn't match the key")
-    return {
+    return with_perms({
         "id": real[:16], "name": clean_name(name, "iPhone"), "fp": real,
         "key": base64.b64encode(spki).decode(), "cert_pem": None, "source": "browser",
         "lan": [], "port": None, "tailnet_ip": None,
         "os": clean_name(os_name)[:20], "caps": [], "hub": "", "added": int(time.time()),
-    }
+    }, relation, allow, paused)
 
 
 def pem_to_pem(der: bytes) -> str:
@@ -135,7 +150,8 @@ class TrustList:
             try:
                 if isinstance(e, dict) and e.get("source") == "browser":
                     entry = make_browser_entry(name=e.get("name"), key=e.get("key"), os_name=e.get("os") or "",
-                                               fp=fp)
+                                               fp=fp, relation=e.get("relation"), allow=e.get("allow"),
+                                               paused=e.get("paused"))
                     entry["added"] = e.get("added") or entry["added"]
                     if entry["fp"] != self.own_fp:
                         peers[entry["fp"]] = entry
@@ -143,7 +159,8 @@ class TrustList:
                 entry = make_entry(peer_id=e.get("id"), name=e.get("name"), cert_pem=e.get("cert_pem"),
                                    source=e.get("source"), lan=e.get("lan"), port=e.get("port"),
                                    tailnet_ip=e.get("tailnet_ip"), os_name=e.get("os"), caps=e.get("caps") or [],
-                                   fp=fp, hub=e.get("hub"))
+                                   fp=fp, hub=e.get("hub"), relation=e.get("relation"), allow=e.get("allow"),
+                                   paused=e.get("paused"))
             except (ValueError, AttributeError, TypeError):
                 continue  # a damaged entry is dropped, never trusted
             entry["added"] = e.get("added") or entry["added"]
@@ -178,11 +195,12 @@ class TrustList:
     def get(self, fp: str | None) -> dict | None:
         with self._lock:
             e = self._peers.get(fp or "")
-            return dict(e) if e else None
+            return dict(e, allow=dict(e["allow"])) if e else None
 
     def all(self) -> list[dict]:
         with self._lock:
-            return [dict(e) for e in sorted(self._peers.values(), key=lambda e: (e["name"].lower(), e["fp"]))]
+            return [dict(e, allow=dict(e["allow"]))
+                    for e in sorted(self._peers.values(), key=lambda e: (e["name"].lower(), e["fp"]))]
 
     def pems(self) -> list[str]:
         with self._lock:
@@ -230,6 +248,33 @@ class TrustList:
             self._peers[entry["fp"]] = entry
             self._save()
 
+    def set_perms(self, fp: str, *, relation=None, allow=None, paused=None) -> dict:
+        """Change what the owner decided about a peer. A new `relation` starts from its defaults;
+        `allow` then changes only the capabilities it names. Returns the entry."""
+        with self._lock:
+            e = self._peers.get(fp)
+            if e is None:
+                raise ValueError("that peer isn't trusted")
+            if relation is not None:
+                if relation not in RELATIONS:
+                    raise ValueError(f"relation must be one of {', '.join(RELATIONS)}")
+                e["relation"] = relation
+                e["allow"] = defaults(relation)
+            if allow is not None:
+                if not isinstance(allow, dict):
+                    raise ValueError("allow must be {capability: true|false}")
+                unknown = [c for c in allow if c not in e["allow"]]
+                if unknown:
+                    raise ValueError(f"no capability called {unknown[0]!r}; they are: {', '.join(e['allow'])}")
+                for c, on in allow.items():
+                    if not isinstance(on, bool):
+                        raise ValueError(f"{c} must be true or false")
+                    e["allow"][c] = on
+            if paused is not None:
+                e["paused"] = bool(paused)
+            self._save()
+            return dict(e, allow=dict(e["allow"]))
+
     def remove(self, fp: str) -> dict | None:
         with self._lock:
             e = self._peers.pop(fp, None)
@@ -269,6 +314,8 @@ class TrustList:
                 else:
                     e["added"] = old["added"]
                     e["lan"] = clean_addresses(e["lan"] + old["lan"])
+                    # the owner's switches and pause are theirs, not the hub's
+                    e.update(relation=old["relation"], allow=old["allow"], paused=old["paused"])
                     self._peers[fp] = e
             after = {fp: e["cert_pem"] for fp, e in self._peers.items()}
             self._changed(after != before)

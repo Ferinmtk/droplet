@@ -66,6 +66,10 @@ class Agent:
         self.peers_broadcast = None  # set by the mesh: send(dict) to every directly linked peer -> bool
         self.on_roster = None        # set by the mesh: the hub says its roster changed
         self.on_hub_up = None        # set by the mesh: connected to the hub (announce, fetch the roster)
+        # set by the mesh (per-device permissions, mesh/perms.py): hub_check(msg) says why a message
+        # through the hub is refused (None: it isn't); hub_share(msg) whether a broadcast may go to it
+        self.hub_check = None
+        self.hub_share = None
         self.hub_source = HubSource(self)
         self.hub_devices: set[str] = set()   # devices with a live connection to the hub
         self.last_state: dict[str, dict] = {}  # kind → the latest state published, for new links
@@ -183,16 +187,23 @@ class Agent:
             return False
         msg = {"t": "state", "kind": kind, "data": data}
         self.last_state[kind] = data
-        hub_ok = self.send(msg)
+        hub_ok = self._to_hub(msg)
         return self._to_peers(msg) or hub_ok
+
+    def _to_hub(self, msg: dict) -> bool:
+        """A broadcast to the hub, which hands it to every device it has: unless that's not allowed now."""
+        share = self.hub_share
+        if share is not None and not share(msg):
+            return False
+        return self.send(msg)
 
     def send_clip(self, text: str) -> bool:
         """A local clipboard change: to the hub (which passes it to your other devices)
-        and to every peer with an open direct link."""
+        and to every peer with an open direct link that may have it."""
         if "clipboard" not in self.advertised:
             return False
         msg = {"t": "clip", "text": text}
-        hub_ok = self.send(msg)
+        hub_ok = self._to_hub(msg)
         return self._to_peers(msg) or hub_ok
 
     def _battery_once(self):
@@ -220,6 +231,16 @@ class Agent:
         source = source or self.hub_source
         t = msg.get("t")
         try:
+            if source.kind == "hub" and t in ("input", "media", "cmd", "clip", "rpc") and self.hub_check:
+                # a direct link was checked by the mesh; through the hub, the same rules apply
+                why = self.hub_check(msg)
+                if why:
+                    log.info("refused %s from %s through the hub: %s", t, (msg.get("from") or {}).get("name") or "?",
+                             "paused" if why == "paused" else "switched off for that device")
+                    if t == "rpc":
+                        source.reply({"t": "rpc-result", "id": msg.get("id"),
+                                      "error": "Paused." if why == "paused" else "Not allowed for that device."})
+                    return
             if t == "input":
                 if "input" in self.advertised:
                     try:
