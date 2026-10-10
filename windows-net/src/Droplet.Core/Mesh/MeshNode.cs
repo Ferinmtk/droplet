@@ -230,6 +230,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         Trust.CertificatesChanged += OnTrustChanged;
         Incoming = new IncomingPairings(Identity);
         Incoming.Ready += OnPairRequest;
+        Knocks = new HotspotKnocks(Identity.Fingerprint);
         Completed = new CompletedFiles(Path.Combine(options.DataDir, "received.json"));
         Outbox = new Outbox(Path.Combine(options.DataDir, "outbox.json"));
         Chat = new ChatLog(Path.Combine(options.DataDir, "chat.jsonl"));
@@ -259,8 +260,62 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     /// <summary>TLS handshakes refused.</summary>
     public long Refused => server?.Refused ?? 0;
 
-    /// <summary>The peers announcing themselves on the LAN.</summary>
-    public IReadOnlyList<SeenPeer> Nearby => directory?.Peers() ?? [];
+    /// <summary>
+    /// The devices on this network: announcing themselves over mDNS, at the gateway, or that
+    /// asked this one who it is (a phone's hotspot, docs/mesh.md §9.10). One each, mDNS first.
+    /// </summary>
+    public IReadOnlyList<SeenPeer> Nearby
+    {
+        get
+        {
+            var output = (directory?.Peers() ?? []).ToList();
+            var fps = output.Select(s => s.Fp).ToHashSet();
+            output.AddRange(GatewayScan.Peers().Concat(Knocks.Peers()).Where(s => s.Fp != Identity.Fingerprint && fps.Add(s.Fp)));
+            return output;
+        }
+    }
+
+    /// <summary>The devices that asked this one who it is (a hotspot it serves, docs/mesh.md §9.10).</summary>
+    public HotspotKnocks Knocks { get; }
+
+    /// <summary>The gateways that said who they are, while a Pair screen asks (<see cref="ScanGatewaysAsync"/>).</summary>
+    public GatewayScan GatewayScan { get; } = new();
+
+    /// <summary>The port a gateway is asked at (tests move it).</summary>
+    public int GatewayPort { get; set; } = MeshProtocol.DefaultPort;
+
+    /// <summary>
+    /// Asks each gateway that's due who it is: a droplet device serving this network's hotspot
+    /// answers, and lists this one in turn (docs/mesh.md §9.10). The Pair screen calls it while
+    /// it's open; <paramref name="force"/> skips the back-off. Returns the gateways that answered.
+    /// </summary>
+    public async Task<IReadOnlyList<SeenPeer>> ScanGatewaysAsync(bool force = false, CancellationToken ct = default)
+    {
+        var mine = Hotspot.Me(PeerId, Identity.Fingerprint, Name, Port);
+        var before = GatewayScan.Peers().Select(s => s.Fp).ToHashSet();
+        foreach (var gw in GatewayScan.Due(options.Gateways(), force))
+        {
+            SeenPeer? seen = null;
+            try
+            {
+                seen = await Hotspot.AskAsync(gw, GatewayPort, mine, ct).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException)
+            {
+                log.LogDebug("mesh: no droplet device answers at the gateway {Gateway}: {Error}", gw, e.Message);
+            }
+            if (seen is not null && seen.Fp == Identity.Fingerprint)
+            {
+                seen = null;
+            }
+            if (seen is not null && !before.Contains(seen.Fp))
+            {
+                log.LogInformation("mesh: {Name} is at the gateway ({Gateway}): it can be paired with", seen.Name, gw);
+            }
+            GatewayScan.Result(gw, seen);
+        }
+        return GatewayScan.Peers();
+    }
 
     /// <summary>This device's peer id.</summary>
     public string PeerId => Identity.PeerId(host.HubDeviceId);
@@ -1726,13 +1781,15 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     // --- pairing ---------------------------------------------------------------------------------
 
     /// <inheritdoc/>
-    public (int Status, JsonObject Body) Pair(string method, string path, JsonObject? body)
+    public (int Status, JsonObject Body) Pair(string method, string path, JsonObject? body, string address)
     {
         var (action, rid) = MeshServer.PairRoute(path);
         return (action, method) switch
         {
             ("open", "POST") => Incoming.Open(body, PeerId, Name),
             ("open", _) => (405, new JsonObject { ["error"] = "POST" }),
+            ("hello", "POST") => Knocks.Answer(body, address, Hotspot.Me(PeerId, Identity.Fingerprint, Name, Port)),
+            ("hello", _) => (405, new JsonObject { ["error"] = "POST" }),
             ("status", "GET") => Incoming.Status(rid!),
             ("confirm", "POST") => Incoming.Confirm(rid!, body),
             ("cancel", "POST") => Incoming.Cancel(rid!),
@@ -1767,7 +1824,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     {
         var t = (target ?? "").Trim();
         var q = t.ToLowerInvariant();
-        var seen = directory?.Peers() ?? [];
+        var seen = Nearby;
         var matches = seen.Where(s => string.Equals(s.Name, t, StringComparison.OrdinalIgnoreCase) || s.Id == q ||
                                       (q.Length >= 8 && s.Fp.StartsWith(q, StringComparison.Ordinal))).ToList();
         var distinct = matches.Select(s => s.Fp).Distinct().Count();
@@ -2001,7 +2058,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     /// <summary>A summary for the UI (and the tests): who this is, the peers, who's nearby, what waits.</summary>
     public JsonObject Status()
     {
-        var seen = directory?.Peers() ?? [];
+        var seen = Nearby;
         var peers = new JsonArray();
         foreach (var e in Trust.All())
         {

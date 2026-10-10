@@ -26,6 +26,7 @@ import kotlin.concurrent.thread
  *     GET/HEAD /mesh/files/<id>                   a file offered to that peer (client certificate, trusted)
  *     POST /mesh/pair, GET /mesh/pair/<request>,  pairing                    (no client certificate)
  *     POST /mesh/pair/<request>/confirm|/cancel
+ *     POST /mesh/pair/hello                       who this is, on a hotspot  (no client certificate; Hotspot.kt)
  *
  * Who may do what is settled by the handshake: a certificate outside the
  * trust list fails it ([MeshTls.ServerTrust]); a client with no certificate
@@ -49,7 +50,7 @@ class MeshServer(
         /** Takes over the socket for a WebSocket link; [leftover] is what followed the request head. */
         fun onLink(socket: SSLSocket, head: Request, fp: String, address: String, leftover: ByteArray)
         fun serveFile(out: OutputStream, oid: String, fp: String, req: Request, sendHead: (Int, Map<String, String>) -> Unit)
-        fun pair(method: String, path: String, body: JSONObject?): Pair<Int, JSONObject>
+        fun pair(method: String, path: String, body: JSONObject?, address: String?): Pair<Int, JSONObject>
     }
 
     class Request(val method: String, val path: String, val headers: Map<String, String>) {
@@ -221,7 +222,7 @@ class MeshServer(
                     respond(out, 405, JSONObject().put("error", "method not allowed"), close = true)
                     return false
                 }
-                val (status, answer) = handler.pair(req.method, path, body)
+                val (status, answer) = handler.pair(req.method, path, body, address)
                 val close = req.header("connection")?.lowercase() == "close"
                 respond(out, status, answer, close)
                 if (close) return false

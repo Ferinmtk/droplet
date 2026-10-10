@@ -11,6 +11,7 @@ reference other platforms follow:
 - wslink.py     a WebSocket over an established TLS socket (websockets' Sans-I/O layer)
 - server.py     the mesh port: /mesh (WebSocket), /mesh/files/<id>, /mesh/pair
 - pairing.py    direct pairing: commitments, the 4-digit code, the signature
+- hotspot.py    finding a device to pair with on a phone's hotspot: asking the gateway who it is
 - files.py      file offers, serving with Range, downloading with resume
 - outbox.py     messages kept locally until a route appears
 - node.py       ties it together: links, dispatch, routing, the roster

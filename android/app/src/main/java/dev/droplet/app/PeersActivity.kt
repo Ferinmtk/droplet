@@ -74,6 +74,14 @@ class PeersActivity : AppCompatActivity() {
                 launch { Mesh.state.collect { render() } }
                 launch { Mesh.changes.collect { render() } }
                 launch { Mesh.pairRequests.collect { if (panel == Panel.LIST) answer(it.request) else render() } }
+                // on a phone's hotspot nothing announces itself: ask the gateway who it is, while this is open
+                launch {
+                    while (true) {
+                        withContext(Dispatchers.IO) { runCatching { Mesh.node?.scanGateways() } }
+                        render()
+                        delay(SCAN_EVERY_MS)
+                    }
+                }
             }
         }
         show(Panel.LIST)
@@ -367,6 +375,8 @@ class PeersActivity : AppCompatActivity() {
         const val MESH_PREFIX = "mesh:"
         private const val TAG = "peers"
         private const val EXTRA_ANSWER = "answer"
+        /** How often the Pair screen looks at the gateway (each gateway has its own back-off: Hotspot.GatewayScan). */
+        private const val SCAN_EVERY_MS = 5_000L
 
         fun answerIntent(context: Context, request: String): Intent =
             Intent(context, PeersActivity::class.java).putExtra(EXTRA_ANSWER, request)
