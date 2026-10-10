@@ -307,7 +307,7 @@ def test_the_menu_bar_shows_the_trays_menu(monkeypatch):
     bar = macmenu.MenuBar(call=call, notify=lambda t, b: notes.append((t, b)), sync=True)
     bar.kick()
     top = [a.text() for a in bar.menu.actions() if not a.isSeparator()]
-    assert top[0] == "Open Droplet"
+    assert top[:2] == ["Open Droplet", "Pair an iPhone…"]
     assert "friend wants to pair (code 1234)" in top
     assert "phone — connected" in top
     assert top[-1] == "Quit droplet's menu bar icon"

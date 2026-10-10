@@ -65,13 +65,15 @@ def publish(root: Path, where: str, wheel: bytes, sums: str | None = "good"):
         (d / "SHA256SUMS.txt").write_text(f"{'1' * 64}  droplet-android.apk\n{digest}  droplet-agent.whl\n")
 
 
-def run(home: Path, releases: str, *args, script: Path = INSTALL, env_extra: dict | None = None):
+def run(home: Path, releases: str, *args, script: Path = INSTALL, env_extra: dict | None = None,
+        deps: bool = False):
+    """`deps`: let pip install dependencies (from env_extra's PIP_FIND_LINKS, still offline)."""
     env = {
         "HOME": str(home),
         "PATH": os.environ["PATH"],
         "LANG": "C.UTF-8",
         "DROPLET_RELEASES_URL": releases,
-        "PIP_NO_DEPS": "1",
+        **({} if deps else {"PIP_NO_DEPS": "1"}),
         "PIP_NO_INDEX": "1",
         "PIP_NO_CACHE_DIR": "1",
         **(env_extra or {}),
@@ -95,6 +97,9 @@ def test_installs_from_the_latest_release_without_a_hub(tmp_path, server, wheel)
     assert "No hub: this computer pairs with your devices directly." in out
     assert "Pair with your phone" in out and "droplet-agent pair" in out
     assert "Service not installed" in out
+    # offline, aiortc can't come: not fatal, and said
+    assert "Adding the iPhone link" in out
+    assert "Couldn't add the iPhone link; everything else works without it" in out
 
     data = home / ".local/share/droplet-agent"
     agent = data / "bin/droplet-agent"
@@ -150,6 +155,75 @@ def test_the_wheel_offers_the_window_as_an_extra(wheel):
     assert "Provides-Extra: app" in meta
     assert 'Requires-Dist: PySide6-Essentials>=6.6; extra == "app"' in meta
     assert "droplet_agent/app/window.py" in z.namelist()
+
+
+def test_the_wheel_brings_the_iphone_links_light_parts_but_not_aiortc(wheel):
+    import io
+    import zipfile
+    z = zipfile.ZipFile(io.BytesIO(wheel))
+    meta = z.read(f"droplet_agent-{agent_dist.version()}.dist-info/METADATA").decode()
+    required = [line.split(": ", 1)[1] for line in meta.splitlines() if line.startswith("Requires-Dist: ")]
+    for dep in ("segno", "aioice", "pyee", "pylibsrtp", "pyopenssl", "google-crc32c"):
+        assert any(r.startswith(dep + ">=") and "extra ==" not in r for r in required), dep
+    # aiortc only as the optional, heavy way (it would bring PyAV); install.sh adds it with --no-deps
+    assert [r for r in required if r.startswith("aiortc")] == ['aiortc>=1.9; extra == "iphone"']
+
+
+def fake_wheel(where: Path, name: str, version: str, files: dict, requires=()) -> Path:
+    """A minimal wheel, for pip to install offline from --find-links."""
+    import zipfile
+    dist = f"{name.replace('-', '_')}-{version}"
+    meta = "\n".join(["Metadata-Version: 2.1", f"Name: {name}", f"Version: {version}",
+                      *(f"Requires-Dist: {r}" for r in requires)]) + "\n"
+    path = where / f"{dist}-py3-none-any.whl"
+    with zipfile.ZipFile(path, "w") as z:
+        for fname, text in files.items():
+            z.writestr(fname, text)
+        z.writestr(f"{dist}.dist-info/METADATA", meta)
+        z.writestr(f"{dist}.dist-info/WHEEL", "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\n"
+                                              "Tag: py3-none-any\n")
+        z.writestr(f"{dist}.dist-info/RECORD", "")
+    return path
+
+
+@linux_only
+def test_adds_aiortc_without_its_dependencies(tmp_path, server, wheel):
+    """install.sh installs aiortc with --no-deps: this fake aiortc requires PyAV, which isn't
+    to be had, so it installs only that way; and it imports `av` the way the real one does,
+    so the check after it passes only with the agent's stand-in."""
+    root, url = server
+    publish(root, "latest/download", wheel)
+    links = tmp_path / "links"
+    links.mkdir()
+    # the agent's dependencies, as empty packages (they're not used here)
+    for name, mod, version in (("websockets", "websockets", "99.0"), ("jeepney", "jeepney", "99.0"),
+                               ("zeroconf", "zeroconf", "99.0"), ("cryptography", "cryptography", "99.0"),
+                               ("segno", "segno", "99.0"), ("aioice", "aioice", "0.99"), ("pyee", "pyee", "99.0"),
+                               ("pylibsrtp", "pylibsrtp", "99.0"), ("pyopenssl", "OpenSSL", "99.0"),
+                               ("google-crc32c", "google_crc32c", "99.0")):
+        fake_wheel(links, name, version, {f"{mod}/__init__.py": ""})
+    classes = "import av  # as aiortc does\n" + "".join(
+        f"class {c}:\n    pass\n" for c in ("RTCCertificate", "RTCDtlsFingerprint", "RTCDtlsParameters",
+                                            "RTCDtlsTransport", "RTCDataChannel", "RTCDataChannelParameters",
+                                            "RTCSctpCapabilities", "RTCSctpTransport"))
+    fake_wheel(links, "aiortc", "99.0", {"aiortc/__init__.py": "", "aiortc/rtcdtlstransport.py": classes,
+                                         "aiortc/rtcdatachannel.py": classes, "aiortc/rtcsctptransport.py": classes},
+               requires=["av>=14"])
+    home = tmp_path / "home"
+    home.mkdir()
+    r = run(home, url, "--no-service", "--no-tray", deps=True, env_extra={"PIP_FIND_LINKS": str(links)})
+    out = r.stdout + r.stderr
+    assert r.returncode == 0, out
+    assert "Adding the iPhone link" in out
+    assert "iPhones can pair with this computer: Droplet → Pair an iPhone." in out
+    py = home / ".local/share/droplet-agent/bin/python"
+    listed = subprocess.run([str(py), "-m", "pip", "list", "--format=freeze"], capture_output=True, text=True)
+    names = {line.split("==")[0].lower() for line in listed.stdout.split()}
+    assert {"aiortc", "aioice", "pyopenssl", "google-crc32c", "segno"} <= names, listed.stdout
+    assert "av" not in names
+    # and again, as an upgrade: aiortc is there already, nothing to fetch
+    r = run(home, url, "--no-service", "--no-tray", deps=True, env_extra={"PIP_FIND_LINKS": str(links)})
+    assert r.returncode == 0 and "iPhones can pair with this computer" in r.stdout, r.stdout + r.stderr
 
 
 def test_refuses_a_wheel_that_doesnt_match_the_sums(tmp_path, server, wheel):
@@ -227,6 +301,7 @@ def test_installs_on_a_mac(tmp_path, server, wheel):
     # offline, PySide6 can't come: not fatal, and said
     assert "Installing Droplet's window and menu bar icon" in out
     assert "Couldn't install Droplet's window" in out
+    assert "Adding the iPhone link" in out and "Couldn't add the iPhone link" in out
     assert "Service not loaded" in out
     assert "this Mac, then accept here" in out and "Accessibility" in out
 

@@ -179,6 +179,10 @@ class Window(QMainWindow):
                 page.load()     # what it shows is fetched when it's opened
 
     def go(self, page: str, **kw):
+        if page == "iphone":    # the Pair page, showing the code an iPhone scans
+            self.go("pair")
+            self.pages["pair"].show_qr()
+            return
         keys = [k for k, _t, _i in PAGES]
         if page not in keys:
             return

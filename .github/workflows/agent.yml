@@ -61,8 +61,11 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Install the agent and pytest
-        run: python -m pip install --disable-pip-version-check -q pytest ./agent
+      - name: Install the agent and pytest, and aiortc without PyAV as install.sh does
+        run: |
+          python -m pip install --disable-pip-version-check -q pytest ./agent
+          python -m pip install --disable-pip-version-check -q --no-deps 'aiortc>=1.9'
+          if python -c 'import av' 2>/dev/null; then echo 'PyAV came along: it must not'; exit 1; fi
 
       - name: Tests
         # a failing test shows the agent's own log, not only the assertion
@@ -96,9 +99,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install the agent, Droplet's window and pytest
+      - name: Install the agent, Droplet's window and pytest, and aiortc without PyAV
         if: matrix.case == 'tests'
-        run: python -m pip install --disable-pip-version-check -q pytest './agent[app]'
+        run: |
+          python -m pip install --disable-pip-version-check -q pytest './agent[app]'
+          python -m pip install --disable-pip-version-check -q --no-deps 'aiortc>=1.9'
 
       - name: Tests
         if: matrix.case == 'tests'
@@ -161,10 +166,18 @@ jobs:
           done
           HOME="$home" "$agent" peers
           HOME="$home" "$agent" status
+          # the iPhone link came with the install, and runs (on the Mac's own Python 3.9)
+          for _ in $(seq 30); do
+            HOME="$home" "$agent" status | grep -qE '^iphone: +listening' && break
+            sleep 1
+          done
+          HOME="$home" "$agent" status | grep -E '^iphone: +listening on UDP port'
           kill "$pid"
           wait "$pid" || true
           cat "$home/agent.log"
           grep -q "stopped" "$home/agent.log"
+          grep -q "webrtc: listening on UDP port" "$home/agent.log"
+          if "$home/.local/share/droplet-agent/bin/python" -c 'import av' 2>/dev/null; then echo 'PyAV came along'; exit 1; fi
           echo "VENV=$home/.local/share/droplet-agent" >> "$GITHUB_ENV"
 
       - name: On the Mac's own Python (3.9, LibreSSL), two agents pair and talk, and the tests pass
@@ -191,6 +204,14 @@ jobs:
           "$agent" peers
           "$agent" status
           "$agent" status | grep -q '^service:  running'
+          # the iPhone link: installed by install.sh (aiortc without PyAV) and listening
+          for _ in $(seq 30); do
+            "$agent" status | grep -qE '^iphone: +listening' && break
+            sleep 1
+          done
+          "$agent" status | grep -E '^iphone: +listening on UDP port'
+          grep "webrtc: listening on UDP port" "$HOME/Library/Logs/droplet-agent.log"
+          if "$HOME/.local/share/droplet-agent/bin/python" -c 'import av' 2>/dev/null; then echo 'PyAV came along'; exit 1; fi
           test -x "$HOME/Applications/Droplet.app/Contents/MacOS/Droplet"
           test -f "$HOME/Library/LaunchAgents/io.github.ferinmtk.DropletAgent.Menu.plist"
           launchctl print "gui/$(id -u)/io.github.ferinmtk.DropletAgent.Menu" | grep -E 'state|pid|last exit' || true

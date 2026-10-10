@@ -65,9 +65,10 @@ DEFAULTS: dict = {
         "phone_notifications": True,
     },
     # the iPhone link: the droplet web app on an iPhone connects straight to this
-    # computer over WebRTC, with no server (docs/iphone.md). Needs aiortc.
+    # computer over WebRTC, with no server (docs/iphone.md). On unless this says false;
+    # without its parts (aiortc), the agent runs without it and `droplet-agent doctor` says so.
     "iphone": {
-        "enabled": False,
+        "enabled": True,
         # UDP. null: the mesh's port number (1739, or the one it found free)
         "port": None,
         # the web app the QR code opens

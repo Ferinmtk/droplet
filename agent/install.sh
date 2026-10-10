@@ -13,7 +13,8 @@
 #   curl -fsSL https://<hub's tailnet name>/agent/install.sh | sh -s -- --code 123456
 #
 # Either way only the agent's dependencies (websockets, jeepney, zeroconf,
-# cryptography, and for Droplet's window PySide6) come from PyPI. A release's wheel is checked
+# cryptography, the iPhone link's aiortc and the few small packages it needs, and
+# for Droplet's window PySide6) come from PyPI. A release's wheel is checked
 # against the release's SHA256SUMS.txt.
 #
 # On a Mac it's the same command, in Terminal. It uses the Mac's Python 3
@@ -54,6 +55,7 @@ DROPLET_RELEASE=''  # filled in by the GitHub release that ships this script
 # where releases are published; the variable is for testing
 RELEASES="${DROPLET_RELEASES_URL:-https://github.com/Ferinmtk/droplet/releases}"
 RELEASE_WHEEL='droplet-agent.whl'  # each release's wheel, under a name that doesn't change
+AIORTC='aiortc>=1.9'  # the iPhone link; installed with --no-deps (droplet_agent/webrtc/deps.py)
 
 say() { printf '%s\n' "$*"; }
 usage() {
@@ -334,10 +336,22 @@ sys.exit(1)
 
     say "Installing (its dependencies come from PyPI)"
     pip() { "$data/bin/python" -m pip --disable-pip-version-check --quiet "$@" </dev/null; }
-    pip install --upgrade "$tmpdir/$whl"
+    # --prefer-binary: an older release with a wheel over a newer one that would need a compiler
+    pip install --upgrade --prefer-binary "$tmpdir/$whl"
     # same version number, newer code: install it anyway
     pip install --force-reinstall --no-deps "$tmpdir/$whl"
     agent="$data/bin/droplet-agent"
+
+    # The iPhone link (docs/iphone.md). The wheel brought what it needs but aiortc itself, whose
+    # own requirements would add PyAV (FFmpeg, about 100 MB) for video it never uses: --no-deps.
+    # Not fatal: everything else works without it, and droplet-agent doctor offers it again.
+    say "Adding the iPhone link (aiortc, without the video codecs it would bring)"
+    if pip install --prefer-binary --no-deps "$AIORTC" &&
+        "$data/bin/python" -c 'from droplet_agent.webrtc import deps; deps.load()' 2>/dev/null </dev/null; then
+        say "iPhones can pair with this computer: Droplet → Pair an iPhone."
+    else
+        say "Couldn't add the iPhone link; everything else works without it. Later, droplet-agent doctor installs it."
+    fi
 
     # Droplet's window (Qt, through PySide6): only where there's a desktop to show it on.
     # Without it the agent, the tray and the commands work the same.

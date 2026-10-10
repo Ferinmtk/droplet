@@ -1,7 +1,7 @@
 # droplet on an iPhone: a web app, with no server in between
 
-**Status: first slice, experimental.** The Linux agent and the web app
-(`site/app/`) work end to end in WebKit and Chromium on Linux
+**Status: first slice, experimental; on by default in the Linux and Mac
+agent.** The agent and the web app (`site/app/`) work end to end in WebKit and Chromium on Linux
 (`agent/tests/e2e_iphone.mjs`). Not yet confirmed on a real iPhone (§7).
 The Windows and Android apps don't take part yet.
 
@@ -18,8 +18,9 @@ and it's what this uses.
   **Share → Add to Home Screen** keeps it as an app; a service worker keeps
   it working with no internet after the first visit. It talks only to your
   computers, over your Wi-Fi (or Tailscale).
-- **The computer** (the Linux agent, with the iPhone link on) listens on a
-  UDP port and answers the browser's WebRTC connection.
+- **The computer** (the Linux or Mac agent; the iPhone link is on by
+  default) listens on a UDP port and answers the browser's WebRTC
+  connection.
 - **Pairing** is a QR code on the computer, scanned in the web app, then the
   same 4-digit code check as everywhere else in droplet.
 
@@ -239,43 +240,60 @@ outbox and go when it connects, which is when the app is open.
 | `qr.py` | the QR payload, drawn in a terminal with `segno` |
 | `deps.py` | loads aiortc without PyAV |
 
-**Turning it on:** in `~/.config/droplet-agent/config.json`
+**It's on by default.** Installed the usual way (`install.sh`, on Linux or
+a Mac), the agent listens for iPhones from the start; nobody configures
+anything. To pair one: **Droplet → Pair an iPhone** (or **Pair an iPhone…**
+in the tray or menu bar, which opens the window there; without the window,
+`droplet-agent pair --qr` in a terminal).
 
-```json
-"iphone": {"enabled": true}
-```
-
-(`"port"`: the UDP port, default the mesh's port number; `"app_url"`: the
-web app the QR code opens). Restart the agent. Then
-`droplet-agent pair --qr`, or **Pair → Pair an iPhone** in Droplet's window.
-The firewall must let the UDP port in:
-`sudo firewall-cmd --permanent --add-port=1739-1749/udp && sudo firewall-cmd --reload`.
+- `droplet-agent status` says, on its `iphone:` line, whether it's
+  listening (and on which UDP port), and if not, why, with the command that
+  fixes it. `droplet-agent doctor` checks the same, offers to install what's
+  missing, and looks for a firewall in the way.
+- If its parts aren't installed (§ Dependencies), the agent runs without it:
+  one line in its log, nothing else, and **Pair an iPhone** says so.
+- **The firewall** must let the UDP port in. Fedora's Workstation zone
+  already allows 1025–65535/udp. Elsewhere `doctor` detects firewalld and
+  ufw and prints the command, such as
+  `sudo firewall-cmd --permanent --add-port=1739-1749/udp && sudo firewall-cmd --reload`
+  or `sudo ufw allow 1739:1749/udp`. A Mac asks whether Python may accept
+  incoming connections: Allow.
+- To turn it off, in `~/.config/droplet-agent/config.json`:
+  `"iphone": {"enabled": false}`, and restart the agent. (`"port"`: the UDP
+  port, default the mesh's port number; `"app_url"`: the web app the QR code
+  opens.)
 
 **Dependencies.** aiortc does the DTLS (through pyOpenSSL) and the SCTP and
 data channels in Python. It also does audio and video, for which it
 requires PyAV, the FFmpeg bindings: about 100 MB. A data channel never
 touches it, but aiortc imports it at the top of several modules, so when
 PyAV isn't installed `deps.py` puts a stand-in module in its place (every
-name in it an empty class). The light install:
+name in it an empty class). droplet always imports aiortc through
+`deps.load()`; imported directly with no PyAV, it fails with
+`No module named 'av'`, as expected.
+
+So the agent's wheel depends on the light parts (segno, aioice, pyee,
+pylibsrtp, pyOpenSSL, google-crc32c, each with wheels for Linux x86-64 and
+ARM64 and macOS Intel and Apple silicon, Python 3.9 to 3.14), and
+`install.sh` then adds aiortc on its own, without its dependencies:
 
 ```sh
-pip install segno
-pip install --no-deps aiortc
-pip install aioice pyee pylibsrtp pyopenssl google-crc32c
+~/.local/share/droplet-agent/bin/python -m pip install --no-deps 'aiortc>=1.9'
 ```
+
+(`droplet-agent doctor` runs that for you when it's missing.)
 
 | | installed size |
 |---|---|
-| aiortc 1.15 | 0.4 MB |
-| aioice (+ dnspython 1.5 MB, ifaddr) | 0.1 MB |
-| pylibsrtp (bundles libsrtp; imported, never used: no media) | 6.9 MB |
-| pyOpenSSL, pyee, google-crc32c | 0.4 MB |
-| segno | 0.3 MB |
-| **total, light** | **≈ 10 MB** |
+| aiortc | 1.0 MB |
+| aioice (+ dnspython 2.3 MB, ifaddr) | 0.3 MB |
+| pylibsrtp (bundles libsrtp; imported, never used: no media), + cffi, pycparser | 7.0 + 1.0 MB |
+| pyOpenSSL, pyee, google-crc32c, typing-extensions | 0.9 MB |
+| segno | 0.6 MB |
+| **total, light** | **≈ 13 MB** (about 3.5 MB to download) |
 | PyAV, if installed the plain way (`pip install 'droplet-agent[iphone]'`) | + ≈ 100 MB |
 
-cryptography is already a dependency of the agent. None of this is needed
-unless the iPhone link is on.
+cryptography is already a dependency of the agent.
 
 **Speed** (this laptop, to its own LAN address, WebKit): a 3 MB file
 from the app in about 0.6–1 s, a 2 MB file to the app in about 0.15 s. The

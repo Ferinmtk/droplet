@@ -47,7 +47,8 @@ def find(items, key):
 def test_view_lists_peers_with_their_state_and_actions():
     v = build_view(STATUS)
     assert v.running
-    assert labels(v.items) == ["Open Droplet", "slim", "friend wants to pair (code 1234)", "phone — connected",
+    assert labels(v.items) == ["Open Droplet", "Pair an iPhone…", "slim", "friend wants to pair (code 1234)",
+                               "phone — connected",
                                "office_pc — nearby", "laptop — not reachable", "Open received files"]
     assert find(v.items, "open-app").action == ("open-app",)
     header = find(v.items, "header")
@@ -95,8 +96,37 @@ def test_without_the_window_there_is_no_open_droplet():
     for status in (STATUS, None):
         v = build_view(status, app=False)
         assert find(v.items, "open-app") is None
-        assert labels(v.items)[0] in ("slim", "droplet agent isn't running")
+        assert labels(v.items)[0] in ("Pair an iPhone…", "droplet agent isn't running")
         assert not v.items[0].separator
+
+
+def test_pair_an_iphone_is_in_the_menu_unless_switched_off():
+    v = build_view(STATUS)
+    assert find(v.items, "pair-iphone").action == ("pair-iphone",)
+    # not installed yet: still there (the window says how to fix it)
+    missing = {**STATUS, "webrtc_off": {"why": "missing", "text": "..."}}
+    assert find(build_view(missing).items, "pair-iphone") is not None
+    off = {**STATUS, "webrtc_off": {"why": "off", "text": "switched off"}}
+    assert find(build_view(off).items, "pair-iphone") is None
+    assert labels(build_view(off).items)[:2] == ["Open Droplet", "slim"]
+    assert find(build_view(None).items, "pair-iphone") is None
+
+
+def test_pair_an_iphone_opens_the_window_on_the_iphone_code(monkeypatch):
+    from droplet_agent import app
+    started, notes = [], []
+    monkeypatch.setattr(tray.subprocess, "Popen", lambda argv, **kw: started.append(argv))
+    monkeypatch.setattr(app, "available", lambda: True)
+    Actions(lambda *a, **k: {}, lambda *a: notes.append(a)).pair_iphone()
+    assert started and started[0][1:] == ["-m", "droplet_agent", "app", "--page", "iphone"]
+    assert not notes
+    # without the window (no PySide6): a notification says how, in a terminal
+    started.clear()
+    monkeypatch.setattr(app, "available", lambda: False)
+    Actions(lambda *a, **k: {}, lambda *a: notes.append(a)).pair_iphone()
+    assert not started
+    assert notes and notes[0][0] == "Pair an iPhone" and "droplet-agent pair --qr" in notes[0][1]
+    assert "droplet.noxeratech.com/app" in notes[0][1]
 
 
 def test_open_droplet_starts_the_window(monkeypatch):
@@ -202,7 +232,7 @@ def test_menu_methods_serialise(objects):
     menu = objects.menu
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetLayout", "iias", (0, -1, []))
     rev, (root, _, kids) = reply.body
-    assert rev == menu.revision and root == 0 and len(kids) == 11   # Open Droplet and its separator first
+    assert rev == menu.revision and root == 0 and len(kids) == 12   # Open Droplet, Pair an iPhone, a separator
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetGroupProperties", "aias", ([1, 2, 3], ["label"]))
     assert [i for i, _ in reply.body[0]] == [1, 2, 3]
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetProperty", "is", (menu.id_of("header"), "label"))

@@ -152,8 +152,35 @@ def test_pairing_an_iphone_shows_a_qr_code(win, demo):
         assert "pip install segno" in page.qr_text.text()
     else:
         assert len(page.qr.matrix) >= 21 and "192.168.1.20" in page.qr_text.text()
+    assert "droplet.noxeratech.com/app in Safari, add it to the Home Screen" in page.qr_how.text()
+    assert page.qr.minimumWidth() >= 320 and not page.qr_error.isVisibleTo(page)
     page.reset()
     assert page.stack.currentIndex() == 0
+
+
+def test_the_trays_pair_an_iphone_opens_on_the_code(win, demo):
+    # what `droplet-agent app --page iphone` (the tray's "Pair an iPhone…") asks the window
+    win.go("devices")
+    win.bring_up("iphone")
+    page = win.pages["pair"]
+    assert win.current_page() == "pair" and page.stack.currentIndex() == 2
+    page.reset()
+
+
+def test_pair_an_iphone_says_plainly_when_it_cant(win, demo, monkeypatch):
+    real = demo.call
+
+    def call(req, timeout=30):
+        if req.get("cmd") == "qr":
+            return {"error": "This computer can't pair an iPhone yet: the iPhone link isn't installed."}
+        return real(req, timeout=timeout)
+    monkeypatch.setattr(win.agent, "call", call, raising=False)
+    win.go("iphone")
+    page = win.pages["pair"]
+    assert page.stack.currentIndex() == 2
+    assert page.qr_error.isVisibleTo(page) and "isn't installed" in page.qr_error.text()
+    assert not page.qr.isVisibleTo(page)
+    page.reset()
 
 
 def test_pairing_by_address_that_fails(win, demo):
