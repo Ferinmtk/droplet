@@ -1,4 +1,4 @@
-"""Progress and Cancel for files (docs/mesh.md §9.10): real byte counts both ways, a transfer
+"""Progress and Cancel for files (docs/mesh.md §9.11): real byte counts both ways, a transfer
 cancelled from either end (the partial file goes, the other side is told), and an older peer
 that doesn't know `cancel`."""
 

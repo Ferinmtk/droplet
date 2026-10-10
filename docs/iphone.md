@@ -206,7 +206,7 @@ mesh node (`droplet_agent/webrtc/bridge.py`): its route is `webrtc`.
   (Droplet's Messages page, `chat.jsonl`) and notifies.
 - `{"t":"ping"}` → `{"t":"pong"}`; `{"t":"ring"}` (the app shows it);
   `{"t":"unpair"}` both ways.
-- *Added* (docs/mesh.md §9.10): the app's `auth` and the computer's
+- *Added* (docs/mesh.md §9.11): the app's `auth` and the computer's
   `welcome` carry `"features":["cancel","link","rename"]`.
   `{"t":"link","id","url","ts"}` → `ack`/`nack` both ways: the computer
   opens it if the iPhone is your own device, else shows it with an Open

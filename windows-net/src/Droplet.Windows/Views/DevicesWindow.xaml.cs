@@ -15,6 +15,8 @@ public partial class DevicesWindow : Window
 {
     readonly App app;
     readonly DispatcherTimer pairPoll;
+    readonly DispatcherTimer gatewayScan;
+    bool scanning;
     string? selectedKey;
     string deviceKey = "", requestKey = "", nearbyKey = "";
     string? pairRequest;
@@ -32,11 +34,14 @@ public partial class DevicesWindow : Window
         Card.PermissionsButton.Click += Permissions_Click;
         Card.UnpairButton.Click += Unpair_Click;
         pairPoll = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Normal, (_, _) => PollPairing(), Dispatcher);
+        // while pairing is open: ask the gateway who it is, for a phone's hotspot (docs/mesh.md §9.10)
+        gatewayScan = new DispatcherTimer(TimeSpan.FromSeconds(5), DispatcherPriority.Background, (_, _) => _ = ScanGatewaysAsync(), Dispatcher);
         app.Host.Changed += Refresh;
         Closed += (_, _) =>
         {
             app.Host.Changed -= Refresh;
             pairPoll.Stop();
+            gatewayScan.Stop();
         };
         Refresh();
     }
@@ -260,7 +265,42 @@ public partial class DevicesWindow : Window
     {
         PairCard.Visibility = Visibility.Visible;
         EmptyText.Visibility = Visibility.Collapsed;
+        if (!gatewayScan.IsEnabled)
+        {
+            gatewayScan.Start();
+            _ = ScanGatewaysAsync();
+        }
         Address.Focus();
+    }
+
+    /// <summary>
+    /// On a phone's hotspot nothing announces itself: the device serving it is the gateway, so
+    /// it's asked who it is (each gateway has its own back-off), and devices that asked this PC
+    /// show up too. Then the list is shown again.
+    /// </summary>
+    async Task ScanGatewaysAsync()
+    {
+        if (scanning || Host.Engine?.Mesh is not { } m)
+        {
+            return;
+        }
+        scanning = true;
+        try
+        {
+            await m.ScanGatewaysAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            // the mesh stopped meanwhile
+        }
+        finally
+        {
+            scanning = false;
+        }
+        if (IsLoaded)
+        {
+            Refresh();
+        }
     }
 
     void PairNearby_Click(object sender, RoutedEventArgs e)

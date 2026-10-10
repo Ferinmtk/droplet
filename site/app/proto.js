@@ -11,7 +11,7 @@ export const MAX_FRAME = 256 * 1024;   // bytes in one message on the channel (i
 
 // per-device permissions (docs/mesh.md §9.9): the capability each message needs
 const CAPS = { text: "chat", link: "chat", file: "files", "file-end": "files", clip: "clipboard", ring: "ring", "ring-stop": "ring" };
-// what this app understands besides v1 (docs/mesh.md §9.10), told to the computer in its auth
+// what this app understands besides v1 (docs/mesh.md §9.11), told to the computer in its auth
 export const FEATURES = ["cancel", "link", "rename"];
 
 // a web link that may be sent and opened: http or https, with a host, no spaces or control

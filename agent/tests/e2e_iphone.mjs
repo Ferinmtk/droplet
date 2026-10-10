@@ -372,7 +372,7 @@ try {
   check("a browser that isn't paired is refused", refused === "refused, unpaired", refused);
   await other.close();
 
-  // --- progress and Cancel, both ways (docs/mesh.md §9.10) ---
+  // --- progress and Cancel, both ways (docs/mesh.md §9.11) ---
   await page.click(".device-card .device");
   await page.waitForSelector("#peer:not([hidden])");
   await waitUntil(async () => (await page.textContent("#peer-state")) === "Connected", 15000);

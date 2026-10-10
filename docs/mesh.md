@@ -13,7 +13,7 @@
   each device enforces its own, both ways. Linux and Mac agent and the
   iPhone web app; Windows and Android next.
 - **Progress and Cancel, links, rename and nicknames, several devices at
-  once** (§9.10): Linux and Mac agent and the iPhone web app; Windows and
+  once** (§9.11): Linux and Mac agent and the iPhone web app; Windows and
   Android next.
 - **The hub's roster** (`mesh.py`): §3.1 and §9.
 - **The Android app is a peer** (`android/app/src/main/java/dev/droplet/app/mesh/`
@@ -80,6 +80,9 @@ directly. The mesh brings that to droplet:
   last LAN addresses and tailnet address. The device caches it, so it can
   reach its peers later without the hub, even away from home over Tailscale.
 - **Add by address:** for networks that block mDNS.
+- **The gateway:** on a phone's hotspot, where nothing announces itself,
+  the device serving it is the gateway; a Pair screen asks it who it is,
+  and it lists the asker in turn (§9.10).
 
 An mDNS announcement proves nothing (anyone on the Wi-Fi can send one); it's
 only a hint where a peer is. Peers announce their LAN addresses only, not
@@ -142,7 +145,7 @@ once. A directly paired peer stays `paired` even if the roster also lists it.
   - added while building: `{"t":"ack","id"}` also answers a completed file,
     `{"t":"nack","id","error"}` refuses a text or file for good, and
     `{"t":"unpair"}` tells a peer it was unpaired (§9.4);
-  - added later (§9.10): `{"t":"cancel","id"}` stops a file either way,
+  - added later (§9.11): `{"t":"cancel","id"}` stops a file either way,
     `{"t":"link","id","url","ts"}` is a web link to open, and
     `{"t":"rename","name"}` says the sender has a new name.
 - **Pairing endpoint:** `POST https://<peer>:<port>/mesh/pair`, then
@@ -375,9 +378,9 @@ TLS. `from` in a message is ignored and replaced; `to` isn't needed.
 | `{"t":"ping"}` → `{"t":"pong"}` | app-level liveness, as with the hub |
 | `{"t":"perm","paused","allow","caps"}` | how the sender treats you now: a hint for your UI (§9.9) (*added*) |
 | `{"t":"refused","re","id"?,"cap","why","error"}` | the sender didn't take your `re` message: `why` is `"paused"` or `"denied"` (§9.9) (*added*) |
-| `{"t":"cancel","id"}` | stop the file `id` (an `offer`'s id), sent or received; partial data is deleted (§9.10) (*added*) |
-| `{"t":"link","id","url","ts"}` | a web link: opened on your own device, an Open button on someone else's. Answered with `ack`/`nack` (§9.10) (*added*) |
-| `{"t":"rename","name"}` | the sender is called `name` now (§9.10) (*added*) |
+| `{"t":"cancel","id"}` | stop the file `id` (an `offer`'s id), sent or received; partial data is deleted (§9.11) (*added*) |
+| `{"t":"link","id","url","ts"}` | a web link: opened on your own device, an Open button on someone else's. Answered with `ack`/`nack` (§9.11) (*added*) |
+| `{"t":"rename","name"}` | the sender is called `name` now (§9.11) (*added*) |
 
 A `cmd` `screenshot` over a link goes back to the requester as an `offer`
 over the mesh, not an upload to the hub.
@@ -466,7 +469,7 @@ and never trusts its own.
 `text`, `send-file`, `ring [--stop]`, `clip [--text]`, `send <peer> <json>`,
 `allow <peer> <capability> on|off` (or `allow <peer> own|other`),
 `pause`/`resume <peer> | --all` (§9.9), and `transfers`, `cancel <id>`,
-`open-link`, `rename <name>`, `nickname <peer> [<nickname>]` (§9.10); `text`,
+`open-link`, `rename <name>`, `nickname <peer> [<nickname>]` (§9.11); `text`,
 `send-file`, `clip` and `open-link` take several devices (`a,b`, `--to` again
 and again, or `--all`)
 talk to the running agent over `$XDG_RUNTIME_DIR/droplet-agent/control.sock`
@@ -663,7 +666,62 @@ and `resume` with `{peer}` or `{all: true}`; `pair-answer` and
 `capabilities`, and for each peer `relation`, `allow`, `paused`, `remote`
 (its last `perm`, while linked) and `refused` (its last refusal).
 
-### 9.10 Progress and Cancel, links, rename and nicknames, several devices (*added*)
+### 9.10 A phone's hotspot (*added*)
+
+When one device serves a Wi-Fi hotspot and the other joins it, mDNS often
+finds nothing: Android doesn't announce on a hotspot it serves (and may not
+hear the devices on it), and some laptops' hotspots don't pass mDNS on. But
+the device serving the hotspot is always the **default gateway** of the
+device that joined it. So the joined device asks its gateway who it is.
+
+**Already paired.** A device with no link to a paired peer dials it at the
+gateway too (Linux `probe_gateways`, Android `probeGateways`, Windows the
+same), every 30 s and when the network changes; only the device whose
+certificate is pinned gets a link, and that link is kept open, because it's
+how the device serving the hotspot knows the other is there.
+
+**Pairing (hello).** While a Pair screen is open (Android: the Pair screen;
+Linux: the window's Pair page, or `droplet-agent peers`/`pair <name>`;
+Windows: Pair a device), the joined device asks each gateway:
+
+```
+POST https://<gateway>:1739/mesh/pair/hello          no client certificate, like the rest of /mesh/pair*
+{"v":1, "id":"<peer id>", "name":"…", "os":"linux", "fp":"<its fingerprint>", "port":<its mesh port>}
+→ 200 {"v":1, "id", "name", "os", "fp", "port"}       the answerer, the same fields
+```
+
+- The asker checks `fp` equals the fingerprint of the certificate the
+  answerer presented in TLS, and lists it under "On this network" exactly
+  like a device found over mDNS (address: the gateway; port: the answer's).
+  Anything else (nothing listening, a router, `404` from an older peer, an
+  answer that doesn't match the certificate) lists nothing.
+- The answerer lists the asker too, at the **address the request came
+  from** and the `port` it gave, for **60 seconds** after its last hello, so
+  either owner can start. At most 8 at once (new ones are left out while
+  full), and at most 60 hellos a minute are answered (`429` after that). A
+  hello from itself, from a trusted peer, or a malformed one is still
+  answered but not listed.
+- How often: as soon as the Pair screen opens, then every 10 s while the
+  gateway answers. One that doesn't is asked again after 5 s, then twice as
+  long each time, up to a minute. Nothing is asked while no Pair screen is
+  open (the agent stops 20 s after the window's Pair page last asked), so
+  nothing spams the network. The gateway is only asked at port 1739.
+- **Older peers** answer `404` (they route only `/mesh/pair` and
+  `/mesh/pair/<request>`), so they aren't listed this way; pairing by
+  address still works with them, as before.
+
+**Why this is safe.** A hello is exactly as trustworthy as an mDNS
+announcement: a hint where a device is and what it calls itself, and
+nothing more. It says nothing an mDNS announcement or `POST /mesh/pair`
+doesn't already say to anyone on the network. It never trusts anything:
+pairing is unchanged (§9.3). When an owner taps a device listed this way,
+the pairing pins the fingerprint the hello gave, so a device claiming
+someone else's fingerprint fails in TLS before any code is shown, and a
+device lying about its name gets as far as a code that the real device
+never shows. The 4-digit code, compared by the owners, stays the trust
+anchor, and nothing is ever paired by itself.
+
+### 9.11 Progress and Cancel, links, rename and nicknames, several devices (*added*)
 
 GitHub issues #4 and #5. Nothing here changes `v` (still 1). A peer says
 which of these it understands in its `hello`/`welcome` (and the iPhone in
