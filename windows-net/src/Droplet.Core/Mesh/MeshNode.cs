@@ -311,7 +311,9 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
         Track(Task.Run(DeliverLoopAsync, CancellationToken.None));
         Track(Task.Run(HousekeepingAsync, CancellationToken.None));
-        Track(Task.Run(ProbeGatewaysQuietlyAsync, CancellationToken.None));
+        // the gateways as they are now: a probe the thread pool starts late mustn't look at a network joined since
+        var gateways = options.Gateways();
+        Track(Task.Run(() => ProbeGatewaysQuietlyAsync(gateways), CancellationToken.None));
         Kick();
     }
 
@@ -637,11 +639,11 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
     }
 
-    async Task ProbeGatewaysQuietlyAsync()
+    async Task ProbeGatewaysQuietlyAsync(IReadOnlyList<string>? gateways = null)
     {
         try
         {
-            await ProbeGatewaysAsync().ConfigureAwait(false);
+            await ProbeGatewaysAsync(gateways).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -660,9 +662,10 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     /// device whose certificate is pinned for that peer gets one. A gateway that turned out
     /// not to be a peer isn't tried for it again until the network changes. Returns the link, or null.
     /// </summary>
-    public async Task<MeshLink?> ProbeGatewaysAsync()
+    /// <param name="gateways">The gateways to look at; null for this machine's now.</param>
+    public async Task<MeshLink?> ProbeGatewaysAsync(IReadOnlyList<string>? gateways = null)
     {
-        var gateways = options.Gateways();
+        gateways ??= options.Gateways();
         lock (gate)
         {
             gatewayMisses.RemoveWhere(m => !gateways.Contains(m.Gateway));
