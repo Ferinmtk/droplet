@@ -87,8 +87,12 @@ class NotifyMirror(
     /** Anything to send? */
     fun hasWork(): Boolean = synchronized(lock) { pending.isNotEmpty() || gone.isNotEmpty() }
 
-    /** The computers that show this phone's notifications. */
-    fun targets(n: MeshNode): List<TrustList.Entry> = n.trust.all().filter(target)
+    /**
+     * The computers that show this phone's notifications, and may have them:
+     * not paused, Notifications on for that device, and (as it said) taking
+     * them from this phone (docs/mesh.md §9.9).
+     */
+    fun targets(n: MeshNode): List<TrustList.Entry> = n.trust.all().filter { target(it) && n.mayGo(it.fp, PROBE) }
 
     /**
      * Sends what's waiting: over open links at once, and to a computer with
@@ -142,6 +146,7 @@ class NotifyMirror(
                     log("mesh: ${e.name} isn't reachable; its notifications weren't mirrored")
                     return@background
                 }
+                if (!n.mayGo(e.fp, PROBE)) return@background   // its welcome said it doesn't take them now
                 for (m in msgs) if (l.send(m)) record(m, e.fp)
             }
         }
@@ -190,5 +195,8 @@ class NotifyMirror(
         private const val MAX_KEY = 200
 
         fun wants(e: TrustList.Entry): Boolean = e.os in COMPUTERS && CAP in e.caps
+
+        /** What every message here needs: the "notify" capability. */
+        private val PROBE: JSONObject get() = JSONObject().put("t", "notify")
     }
 }

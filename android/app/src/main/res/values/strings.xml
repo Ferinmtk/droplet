@@ -714,4 +714,55 @@
     </plurals>
     <string name="conn_direct_none">Ready to pair with your devices</string>
     <string name="share_no_devices">No devices paired yet. Pair one, then share again.</string>
+
+    <!-- per-device permissions and Pause (docs/mesh.md §9.9) -->
+    <string name="perm_ask_title">Is %1$s your device, or someone else\'s?</string>
+    <string name="perm_ask_body">Someone else\'s device (a deskmate\'s laptop, a friend\'s phone) can swap files and messages with this phone and ring it, but doesn\'t get your clipboard or notifications, and can\'t control this phone or read its SMS and files. You can change this later.</string>
+    <string name="perm_ask_own">My device</string>
+    <string name="perm_ask_other">Someone else\'s</string>
+    <string name="perm_done_other">Someone else\'s device: files, messages and ringing only. Change that under Permissions, in its ⋮ menu.</string>
+    <string name="perm_badge_other">Someone else\'s</string>
+    <string name="perm_title">Permissions</string>
+    <string name="perm_whose">Whose device is it?</string>
+    <string name="perm_own">My device</string>
+    <string name="perm_own_sub">Everything on</string>
+    <string name="perm_other">Someone else\'s</string>
+    <string name="perm_other_sub">Files, messages and ringing only</string>
+    <string name="perm_pause">Pause sharing with %1$s</string>
+    <string name="perm_pause_sub">Nothing goes to it and nothing is taken from it. Files and messages for it wait until you resume.</string>
+    <string name="perm_caps">What %1$s may do</string>
+    <string name="perm_paused_all_note">Everything is paused on this phone. Resume it on the home screen, in Settings, or from the Stay connected notification.</string>
+    <string name="perm_remote_paused">%1$s paused sharing with this phone: what you send it waits.</string>
+    <string name="perm_remote_denied">%1$s doesn\'t take %2$s from this phone.</string>
+    <string name="perm_cap_files">Files</string>
+    <string name="perm_cap_files_sub">Files, both ways.</string>
+    <string name="perm_cap_chat">Messages</string>
+    <string name="perm_cap_chat_sub">Messages, both ways.</string>
+    <string name="perm_cap_clipboard">Clipboard</string>
+    <string name="perm_cap_clipboard_sub">The clipboard both ways: synced, and sent on purpose.</string>
+    <string name="perm_cap_notify">Notifications</string>
+    <string name="perm_cap_notify_sub">This phone\'s notifications shown on it, and its notifications shown here.</string>
+    <string name="perm_cap_control">Remote control</string>
+    <string name="perm_cap_control_sub">It may control this phone\'s media: play, pause, skip and volume.</string>
+    <string name="perm_cap_ring">Ring</string>
+    <string name="perm_cap_ring_sub">It may ring this phone to find it.</string>
+    <string name="perm_cap_access">SMS, files and commands</string>
+    <string name="perm_cap_access_sub">It may read and send this phone\'s SMS, browse its files, and run commands on it.</string>
+    <string name="perm_act">Permissions</string>
+    <string name="perm_act_pause">Pause</string>
+    <string name="perm_act_resume">Resume</string>
+    <string name="perm_paused_route">Paused · %1$s</string>
+    <string name="perm_paused_all_route">Everything paused · %1$s</string>
+    <string name="perm_paused_there_route">Paused sharing with you · %1$s</string>
+    <string name="perm_paused_toast">Paused %1$s</string>
+    <string name="perm_resumed_toast">Resumed %1$s</string>
+    <string name="home_notice_paused">Everything is paused: nothing goes to your devices, and nothing is taken from them.</string>
+    <string name="home_notice_resume">Resume</string>
+    <string name="s_pause_all">Pause everything</string>
+    <string name="s_pause_all_desc">Stops sharing with every device at once (while presenting, say). Files and messages wait until you resume.</string>
+    <string name="conn_title_paused">droplet paused</string>
+    <string name="conn_paused_text">Sharing with every device is paused</string>
+    <string name="conn_pause_all">Pause all</string>
+    <string name="conn_resume_all">Resume</string>
+    <string name="clip_paused">Everything is paused: resume to send the clipboard</string>
 </resources>

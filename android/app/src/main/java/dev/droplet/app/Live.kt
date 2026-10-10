@@ -184,8 +184,11 @@ object Live {
         return ws.send(msg.toString())
     }
 
-    fun sendState(kind: String, data: JSONObject?) =
-        send(JSONObject().put("t", "state").put("kind", kind).put("data", data ?: JSONObject.NULL))
+    /** A state for every device the hub has: not while everything is paused (docs/mesh.md §9.9). */
+    fun sendState(kind: String, data: JSONObject?): Boolean {
+        val msg = JSONObject().put("t", "state").put("kind", kind).put("data", data ?: JSONObject.NULL)
+        return Mesh.hubMayShare(msg) && send(msg)
+    }
 
     // --- connecting -----------------------------------------------------------
 
@@ -306,7 +309,19 @@ object Live {
     // --- incoming -------------------------------------------------------------
 
     private fun handle(gen: Int, msg: JSONObject) {
-        when (msg.optString("t")) {
+        val t = msg.optString("t")
+        if (t in setOf("input", "media", "cmd", "clip", "rpc")) {
+            // a direct link was checked by the mesh; through the hub, the same rules apply (docs/mesh.md §9.9)
+            val why = runCatching { Mesh.checkHubMessage(msg) }.getOrNull()
+            if (why != null) {
+                Mesh.log("refused $t from ${msg.optJSONObject("from")?.optString("name")?.ifEmpty { null } ?: "?"} " +
+                    "through the hub: ${if (why == "paused") "paused" else "switched off for that device"}")
+                if (t == "rpc") send(JSONObject().put("t", "rpc-result").put("id", msg.opt("id") ?: JSONObject.NULL)
+                    .put("error", if (why == "paused") "Paused." else "Not allowed for that device."))
+                return
+            }
+        }
+        when (t) {
             "welcome" -> {
                 synchronized(this) {
                     if (gen != generation) return

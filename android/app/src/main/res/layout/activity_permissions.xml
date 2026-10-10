@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What one device may do (PermissionsActivity, docs/mesh.md §9.9): whose it
+     is, Pause, and a switch for each capability. Always droplet's dark teal,
+     like the home screen it's opened from. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/r_bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="28dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/back"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="-8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/setup_back"
+                android:src="@drawable/ic_back"
+                android:tint="@color/r_text"
+                tools:ignore="UseAppTint" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/title"
+                    style="@style/Droplet.Teal.Title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    tools:text="Brian's laptop" />
+
+                <TextView
+                    style="@style/Droplet.Teal.Eyebrow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/perm_title" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- everything is paused here; or what the device said about this phone -->
+        <TextView
+            android:id="@+id/note"
+            style="@style/Droplet.Teal.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/r_card"
+            android:padding="14dp"
+            android:textColor="@color/r_text"
+            android:visibility="gone"
+            tools:text="Brian's laptop paused sharing with this phone: what you send it waits."
+            tools:visibility="visible" />
+
+        <!-- whose device -->
+        <TextView
+            style="@style/Droplet.Teal.Eyebrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="22dp"
+            android:text="@string/perm_whose" />
+
+        <RadioGroup
+            android:id="@+id/relation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/r_card"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="6dp">
+
+            <RadioButton
+                android:id="@+id/own"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="56dp"
+                android:paddingStart="8dp"
+                android:textColor="@color/r_text"
+                android:textSize="16sp"
+                tools:text="My device" />
+
+            <RadioButton
+                android:id="@+id/other"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="56dp"
+                android:paddingStart="8dp"
+                android:textColor="@color/r_text"
+                android:textSize="16sp"
+                tools:text="Someone else's" />
+        </RadioGroup>
+
+        <!-- Pause -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/r_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/paused"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/r_text"
+                android:textSize="16sp"
+                tools:text="Pause sharing with Brian's laptop" />
+
+            <TextView
+                style="@style/Droplet.Teal.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/perm_pause_sub" />
+        </LinearLayout>
+
+        <!-- a switch for each capability, made in code -->
+        <TextView
+            android:id="@+id/caps_title"
+            style="@style/Droplet.Teal.Eyebrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="22dp"
+            tools:text="What Brian's laptop may do" />
+
+        <LinearLayout
+            android:id="@+id/caps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/r_card"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="6dp" />
+    </LinearLayout>
+</ScrollView>

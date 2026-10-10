@@ -57,8 +57,37 @@ jobs:
 
       # the runner has an Android SDK preinstalled ($ANDROID_HOME); the build fetches the
       # platform and build tools it needs
+      # DROPLET_SHOTS: ScreensTest renders the screens to PNGs there, for a person to look at
       - name: Unit tests and debug build
+        env:
+          DROPLET_SHOTS: ${{ runner.temp }}/screens
         run: ./gradlew --no-daemon --stacktrace -PtestHeap=1536m testDebugUnitTest assembleDebug
+
+      - name: Upload the rendered screens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-screens
+          path: ${{ runner.temp }}/screens/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summarise the tests
+        if: always()
+        working-directory: .
+        run: |
+          python3 - <<'EOF' | tee -a "$GITHUB_STEP_SUMMARY"
+          import glob, xml.etree.ElementTree as ET
+          rows, total = [], [0, 0, 0, 0]
+          for f in sorted(glob.glob("android/app/build/test-results/testDebugUnitTest/*.xml")):
+              s = ET.parse(f).getroot()
+              n = [int(s.get(k, 0)) for k in ("tests", "failures", "errors", "skipped")]
+              total = [a + b for a, b in zip(total, n)]
+              rows.append(f"| {s.get('name').rsplit('.', 1)[-1]} | {n[0]} | {n[1] + n[2]} | {n[3]} |")
+          print("| test class | tests | failed | skipped |\n|---|---|---|---|")
+          print("\n".join(rows))
+          print(f"| **all** | {total[0]} | {total[1] + total[2]} | {total[3]} |")
+          EOF
 
       - name: Upload test reports
         if: failure()

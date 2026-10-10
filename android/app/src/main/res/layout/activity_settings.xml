@@ -200,6 +200,17 @@
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginTop="12dp" android:text="@string/s_mesh_open"
                     app:cornerRadius="10dp" app:icon="@drawable/ic_device" />
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginVertical="14dp" android:background="@color/line" />
+
+                <!-- Pause everything (docs/mesh.md §9.9) -->
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/pause_all"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/s_pause_all" android:textColor="@color/text" android:textSize="16sp" />
+
+                <TextView style="@style/Droplet.Body" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/s_pause_all_desc" />
             </LinearLayout>
 
             <!-- remote control -->

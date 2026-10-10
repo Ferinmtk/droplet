@@ -40,16 +40,40 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/name"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/r_text"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                tools:text="slim" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/name"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/r_text"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    tools:text="slim" />
+
+                <!-- someone else's device (docs/mesh.md §9.9) -->
+                <TextView
+                    android:id="@+id/badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/r_pill"
+                    android:maxLines="1"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="1dp"
+                    android:text="@string/perm_badge_other"
+                    android:textColor="@color/r_accent"
+                    android:textSize="11.5sp"
+                    android:visibility="gone"
+                    tools:visibility="visible" />
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -77,6 +101,21 @@
                     tools:text="Connected on Wi-Fi" />
             </LinearLayout>
         </LinearLayout>
+
+        <!-- Pause / Resume sharing with this device -->
+        <TextView
+            android:id="@+id/pause"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/r_pill"
+            android:gravity="center"
+            android:minWidth="64dp"
+            android:paddingHorizontal="12dp"
+            android:textColor="@color/r_accent"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            tools:text="@string/perm_act_pause" />
 
         <ImageButton
             android:id="@+id/more"

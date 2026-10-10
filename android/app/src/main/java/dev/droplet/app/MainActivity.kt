@@ -28,6 +28,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import dev.droplet.app.databinding.ActivityHomeBinding
+import dev.droplet.app.mesh.Perms
 import dev.droplet.app.mesh.TrustList
 import dev.droplet.app.tv.Tv
 import dev.droplet.app.tv.TvActivity
@@ -243,6 +244,10 @@ class MainActivity : AppCompatActivity() {
             }
             s.status == Mesh.Status.FAILED -> Triple(getString(R.string.mesh_status_failed, s.error.orEmpty()),
                 getString(R.string.home_notice_retry)) { Mesh.enabledChanged() }
+            Mesh.pausedAll -> Triple(getString(R.string.home_notice_paused), getString(R.string.home_notice_resume)) {
+                Mesh.pauseEverything(false)
+                render()
+            }
             !Prefs.stayConnected -> Triple(getString(R.string.home_notice_stay), getString(R.string.home_notice_stay_on)) {
                 Prefs.stayConnected = true
                 runCatching { ConnectionService.start(this) }
@@ -265,16 +270,41 @@ class MainActivity : AppCompatActivity() {
         v.findViewById<ImageView>(R.id.icon).setImageResource(if (e.os == "android") R.drawable.ic_phone else R.drawable.ic_laptop)
         val waiting = Mesh.node?.outbox?.forPeer(e.fp)?.size ?: 0
         val looking = p.route in setOf("seen", "offline") && Mesh.isProbing(e.fp)
-        val route = if (looking) getString(R.string.home_route_looking) else routeText(p.route)
-        v.findViewById<TextView>(R.id.route).text = if (waiting > 0) {
+        val reached = if (looking) getString(R.string.home_route_looking) else routeText(p.route)
+        // paused here, everything paused, or it paused sharing with this phone (docs/mesh.md §9.9)
+        val route = when {
+            Mesh.pausedAll -> getString(R.string.perm_paused_all_route, reached)
+            e.paused -> getString(R.string.perm_paused_route, reached)
+            p.pausedThere -> getString(R.string.perm_paused_there_route, reached)
+            else -> reached
+        }
+        val lines = mutableListOf(if (waiting > 0) {
             route + " · " + resources.getQuantityString(R.plurals.home_waiting, waiting, waiting)
-        } else route
+        } else route)
+        // the last thing it turned down, for a while: "slim doesn't allow the clipboard from you"
+        p.refusal?.takeIf { it.why == Perms.DENIED && System.currentTimeMillis() - it.ts < REFUSAL_SHOWN_MS }
+            ?.let { lines += it.text }
+        v.findViewById<TextView>(R.id.route).apply {
+            text = lines.joinToString("\n")
+            maxLines = lines.size
+        }
+        v.findViewById<View>(R.id.badge).visibility = if (e.isOther) View.VISIBLE else View.GONE
+        v.findViewById<TextView>(R.id.pause).apply {
+            setText(if (e.paused) R.string.perm_act_resume else R.string.perm_act_pause)
+            setOnClickListener { togglePause(e) }
+        }
         v.findViewById<View>(R.id.dot).setBackgroundResource(when (p.route) {
             "lan", "tailnet", "seen" -> R.drawable.r_dot_on
             "hub", "hub-mailbox" -> R.drawable.r_dot_hub
             else -> R.drawable.r_dot
         })
-        v.findViewById<View>(R.id.act_files).setOnClickListener {
+        /** An action greyed out, saying why when tapped; or as usual. */
+        fun action(id: Int, t: String, go: () -> Unit) = v.findViewById<View>(id).apply {
+            val why = PermsUi.unavailable(p, t)
+            alpha = if (why == null) 1f else PermsUi.DIMMED
+            setOnClickListener { if (why != null) say(why) else go() }
+        }
+        action(R.id.act_files, "offer") {
             sendTo = e
             sendToFp = e.fp
             try {
@@ -284,18 +314,16 @@ class MainActivity : AppCompatActivity() {
                 say(getString(R.string.no_file_picker))
             }
         }
-        v.findViewById<View>(R.id.act_message).setOnClickListener { startActivity(ChatActivity.intent(this, e.fp)) }
-        v.findViewById<View>(R.id.act_ring).setOnClickListener { ring(e) }
-        v.findViewById<View>(R.id.act_clip).apply {
+        action(R.id.act_message, "text") { startActivity(ChatActivity.intent(this, e.fp)) }
+        action(R.id.act_ring, "ring") { ring(e) }
+        action(R.id.act_clip, "clip") { sendClipboard(e) }.apply {
             visibility = if ("clipboard" in e.caps || e.caps.isEmpty()) View.VISIBLE else View.GONE
-            setOnClickListener { sendClipboard(e) }
         }
-        v.findViewById<View>(R.id.act_remote).apply {
+        action(R.id.act_remote, "input") {
+            Prefs.remoteTarget = PeersActivity.MESH_PREFIX + e.fp
+            startActivity(Intent(this@MainActivity, RemoteActivity::class.java))
+        }.apply {
             visibility = if ("input" in e.caps) View.VISIBLE else View.GONE
-            setOnClickListener {
-                Prefs.remoteTarget = PeersActivity.MESH_PREFIX + e.fp
-                startActivity(Intent(this@MainActivity, RemoteActivity::class.java))
-            }
         }
         v.findViewById<View>(R.id.more).setOnClickListener { more(e) }
         return v
@@ -385,6 +413,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun more(e: TrustList.Entry) {
         val items = mutableListOf<Pair<String, () -> Unit>>(
+            getString(R.string.perm_act) to { startActivity(PermissionsActivity.intent(this, e.fp)) },
+            getString(if (e.paused) R.string.perm_act_resume else R.string.perm_act_pause) to { togglePause(e) },
             getString(R.string.mesh_act_ring_stop) to { background({ Mesh.node?.ring(e.fp, stop = true) }) { } },
         )
         if (e.source == TrustList.SOURCE_PAIRED) items += getString(R.string.mesh_act_unpair) to { askUnpair(e) }
@@ -393,6 +423,15 @@ class MainActivity : AppCompatActivity() {
             .setTitle(e.name)
             .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
             .show()
+    }
+
+    /** Pause sharing with one device, or resume it (docs/mesh.md §9.9). */
+    private fun togglePause(e: TrustList.Entry) {
+        val pause = !e.paused
+        runCatching { Mesh.setPerms(e.fp, paused = pause) }
+            .onSuccess { say(getString(if (pause) R.string.perm_paused_toast else R.string.perm_resumed_toast, e.name)) }
+            .onFailure { say(getString(R.string.mesh_failed, it.message ?: it.javaClass.simpleName)) }
+        render()
     }
 
     private fun about(e: TrustList.Entry) {
@@ -496,6 +535,8 @@ class MainActivity : AppCompatActivity() {
         private const val MESH_TAG = "home"
         private const val ROUTER_TAG = "home"
         private const val RECENT = 4
+        /** How long a device's last refusal stays under its name. */
+        private const val REFUSAL_SHOWN_MS = 120_000L
 
         fun intent(context: Context): Intent = Intent(context, MainActivity::class.java)
     }

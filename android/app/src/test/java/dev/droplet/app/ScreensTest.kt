@@ -436,6 +436,88 @@ class ScreensTest {
         }
     }
 
+    private fun shootDialog(name: String) {
+        shadowOf(Looper.getMainLooper()).idle()
+        val root = org.robolectric.shadows.ShadowDialog.getLatestDialog().window!!.decorView
+        val bmp = Bitmap.createBitmap(root.width.coerceAtLeast(1), root.height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        root.draw(android.graphics.Canvas(bmp))
+        File(out).mkdirs()
+        File(out, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /** Per-device permissions and Pause (docs/mesh.md §9.9): the home screen, the Permissions screen, the question. */
+    @Test
+    fun permissions() {
+        assumeTrue(out.isNotEmpty())
+        val tmp = java.nio.file.Files.createTempDirectory("perm-shots").toFile()
+        val others = mutableListOf<dev.droplet.app.mesh.MeshNode>()
+        try {
+            val phone = noHubPhone(tmp)
+            val slim = peer(tmp, "slim", "linux", listOf("clipboard", "input", "media")).also { others += it }
+            pairWith(phone, slim)
+            val brian = peer(tmp, "Brian's laptop", "linux", listOf("clipboard", "input", "media", "notify")).also { others += it }
+            pairWith(phone, brian)
+            // Brian's laptop is someone else's here, and it paused sharing with this phone
+            Mesh.setPerms(brian.identity.fp, relation = "other")
+            brian.setPerms(phone.identity.fp, relation = "other", paused = true)
+            val c = Robolectric.buildActivity(MainActivity::class.java).setup()
+            val devices = c.get().findViewById<android.widget.LinearLayout>(R.id.devices)
+            fun card(name: String) = (0 until devices.childCount).map { devices.getChildAt(it) }
+                .first { it.findViewById<android.widget.TextView>(R.id.name).text.toString() == name }
+            waitMain("both reached, and Brian's laptop's pause heard") {
+                devices.childCount == 2 && phone.openLink(slim.identity.fp) != null &&
+                    phone.remotePerm[brian.identity.fp]?.paused == true
+            }
+            // slim paused from its card
+            card("slim").findViewById<android.view.View>(R.id.pause).performClick()
+            idleFor(300)
+            shoot(c.get(), "perm-home")
+            Mesh.pauseEverything(true)
+            idleFor(300)
+            shoot(c.get(), "perm-home-paused-all")
+            Mesh.pauseEverything(false)
+            Mesh.setPerms(slim.identity.fp, paused = false)
+            idleFor(100)
+            c.pause().stop().destroy()
+
+            val p = Robolectric.buildActivity(PermissionsActivity::class.java,
+                PermissionsActivity.intent(ApplicationProvider.getApplicationContext(), brian.identity.fp)).setup()
+            idleFor(300)
+            shoot(p.get(), "perm-screen")
+            p.get().findViewById<android.widget.ScrollView>(R.id.root).scrollTo(0, 2000)
+            shoot(p.get(), "perm-screen-end")
+            p.pause().stop().destroy()
+
+            val st = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+            val scroll = st.findViewById<android.widget.ScrollView>(R.id.scroll)
+            var y = 0
+            var v: android.view.View? = st.findViewById(R.id.pause_all)
+            while (v != null && v !== scroll) { y += v.top; v = v.parent as? android.view.View }
+            scroll.scrollTo(0, y - 600)
+            shoot(st, "perm-settings")
+
+            // the question, once the codes match
+            val laptop = peer(tmp, "Wanjiru's laptop", "linux", listOf("input")).also { others += it }
+            Thread { runCatching { laptop.pairStart("127.0.0.1", phone.listeningPort, phone.identity.fp) } }.start()
+            val end = System.currentTimeMillis() + 20_000
+            while (phone.incoming.waiting().isEmpty() && System.currentTimeMillis() < end) Thread.sleep(50)
+            val pc = Robolectric.buildActivity(PeersActivity::class.java).setup()
+            idleFor(300)
+            pc.get().findViewById<android.widget.LinearLayout>(R.id.asking).getChildAt(0).performClick()
+            idleFor(200)
+            pc.get().findViewById<android.view.View>(R.id.code_yes).performClick()
+            idleFor(300)
+            shootDialog("perm-ask")
+            pc.pause().stop().destroy()
+        } finally {
+            others.forEach { it.close() }
+            releaseMesh()
+            Mesh.addresses = null
+            Prefs.noHub = false
+            tmp.deleteRecursively()
+        }
+    }
+
     @Test
     fun pairing() {
         assumeTrue(out.isNotEmpty())

@@ -39,6 +39,7 @@ class ClipSendActivity : AppCompatActivity() {
                 ClipBridge.Result.TOO_BIG -> R.string.clip_too_big
                 ClipBridge.Result.OFF -> R.string.clip_off
                 ClipBridge.Result.OFFLINE -> R.string.clip_offline
+                ClipBridge.Result.PAUSED -> R.string.clip_paused
             }
             Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
             finish()

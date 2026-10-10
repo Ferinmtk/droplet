@@ -128,6 +128,13 @@
             android:launchMode="singleTop"
             android:theme="@style/Theme.Droplet.Teal" />
 
+        <!-- what one device may do: own or someone else's, Pause, a switch each -->
+        <activity
+            android:name=".PermissionsActivity"
+            android:exported="false"
+            android:label="@string/perm_title"
+            android:theme="@style/Theme.Droplet.Teal" />
+
         <activity
             android:name=".ChatActivity"
             android:exported="false"
