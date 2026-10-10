@@ -172,6 +172,36 @@ class NotifyMirrorTest {
         assertTrue(shown.isEmpty())
     }
 
+    /** docs/mesh.md §9.9: notifications are the "notify" capability, both ways. */
+    @Test
+    fun someoneElsesOrAPausedComputerGetsNoneAndOneThatSaidNoIsntSentAny() {
+        // someone else's computer: notifications are off for it by default
+        val (phone, computer) = pair()
+        phone.setPerms(computer.identity.fp, relation = "other")
+        val m = mirror(phone)
+        m.posted(item("k1"))
+        assertEquals(0, m.flush())
+        assertTrue("not even dialled", dials.isEmpty())
+        // your own again, but paused
+        phone.setPerms(computer.identity.fp, relation = "own", paused = true)
+        m.posted(item("k2"))
+        m.flush()
+        assertTrue(dials.isEmpty())
+        // resumed: it goes
+        phone.setPerms(computer.identity.fp, paused = false)
+        m.posted(item("k3"))
+        m.flush()
+        runDials()
+        waitFor("shown") { shown.map { it.getString("key") } == listOf("k3") }
+        // the computer switches notifications from the phone off: its perm says so, and nothing more goes
+        computer.setPerms(phone.identity.fp, allow = mapOf("notify" to false))
+        waitFor("the phone hears it") { phone.remotePerm[computer.identity.fp]?.allow?.get("notify") == false }
+        m.posted(item("k4"))
+        assertEquals(0, m.flush())
+        Thread.sleep(300)
+        assertEquals(listOf("k3"), shown.map { it.getString("key") })
+    }
+
     @Test
     fun aComputerThatIsntThereIsDialledAtMostOnceAMinute() {
         val phone = node("phone", MeshUnitTest.QuietHost())

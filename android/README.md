@@ -412,6 +412,21 @@ they go directly or through the hub, or not at all.
 - **Presentation remote:** a computer that takes input is listed as
   "<name> (direct)"; key presses go straight to it.
 
+**Your devices, and someone else's.** When the codes match, the phone asks
+"Is <name> your device, or someone else's?". Your own gets everything, as
+before. Someone else's (a deskmate's laptop, a friend's phone) can swap
+files and messages with the phone and ring it, but doesn't get its
+clipboard or notifications, can't control its media, and can't read its SMS
+or browse its files. Each device's ⋮ → **Permissions** changes that, with
+a switch for each, and **Pause** (on its card) stops everything with it
+until **Resume**: files and messages for it wait, and go then. **Pause
+everything** (Settings → Direct connections, or **Pause all** on the Stay
+connected notification) does that for every device at once. The other
+device is told, so it greys out what you won't take ("Paused sharing with
+you"), and each side enforces its own settings whatever the other does
+([docs/mesh.md §9.9](../docs/mesh.md)). Devices on your hub are your own
+until you say otherwise.
+
 **When it listens.** Other devices can reach the phone while **Stay
 connected** runs (and while a droplet screen that sends is open), on port
 1739 (or the next free one up to 1749), announced on the Wi-Fi as
@@ -797,6 +812,17 @@ adb shell cmd notification post -t 'Title' tag 'Some text'
   refused, unpairing; then the roster through a hub, and direct delivery
   after the hub is stopped. The agent is driven by
   `src/test/python/mesh_agent.py`.
+- **`PermsTest`** (always runs): per-device permissions and Pause, ported
+  from the reference's `agent/tests/test_perms.py`: every capability both
+  ways in each state (allowed, switched off, paused, everything paused)
+  between two JVM peers, what a peer's `perm` stops this phone sending,
+  messages that wait for a resume, pairing as your own device or someone
+  else's, and the hub routes.
+
+CI (`.github/workflows/android.yml`) runs all of these on every change to
+`android/` or `agent/`, with the agent installed from the same commit (so
+`MeshInteropTest` and `NoHubTest`'s first half run too), builds a debug APK,
+and keeps the screens `ScreensTest` renders as an artifact.
 - **`TvProtocolTest`** (always runs): the TV protocol against
   androidtvremote2 itself. `src/test/resources/tv/vectors.json` was written
   by the library's own code (`src/test/python/tv_vectors.py`): pairing

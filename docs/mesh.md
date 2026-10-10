@@ -497,6 +497,28 @@ this is it.
   while the mesh runs (Stay connected), with Notification access, and
   unless **Show phone notifications on my computers** is off
   (`NotifyMirror.kt`).
+- **Permissions and Pause** (§9.9, `mesh/Perms.kt`): the same model, checks
+  and messages as the reference. On a phone, `access` is its SMS, browsing
+  its files and commands (the caps `sms` and `files`), `control` is remote
+  control of its media (the cap `media`), and `notify` is mirroring its
+  notifications to that computer (and showing that computer's here).
+  Pairing asks "Is <name> your device, or someone else's?" once the codes
+  match, on the phone's side only. Each device card on the home screen has
+  Pause/Resume, a "Someone else's" badge, says when it's paused (here, by
+  Pause everything, or by the device itself) and greys out what can't be
+  sent, saying why when tapped; its last refusal shows under it for two
+  minutes. Its ⋮ menu has Permissions: whose device, Pause, and a switch
+  for each capability. Settings → Direct connections has Pause everything
+  (kept in the app's preferences), and so does the Stay connected
+  notification (Pause all, then Resume). Through the hub: `media`, `clip`
+  and `rpc` from the hub's socket are checked against their sender (an
+  `rpc` refused answers `rpc-result` with an error); a ring from the hub
+  names its sender only by name, so a trusted device with that name (one
+  only) gets its own switches; the clipboard and states don't go to the hub
+  as §9.9 says, and neither do notifications for the hub's Phone card while
+  everything is paused. The TV remote and the Bluetooth mouse and keyboard
+  talk to the TV and the computer directly, not over the mesh, so they're
+  unaffected.
 - **Tests** (`android/app/src/test`): `MeshUnitTest` (the certificate
   profile, pairing vectors from the reference, Range, the server's access
   rules over real sockets, two JVM peers pairing and talking) and
@@ -505,7 +527,15 @@ this is it.
   from either side with matching codes, text, a 20 MB file each way
   interrupted and resumed, ring, clip, media and RPC answered by the
   phone's bridges, the roster through a hub, and direct delivery after the
-  hub is stopped.
+  hub is stopped. `PermsTest` ports the reference's permission matrix
+  (each capability both ways, allowed, switched off, paused and everything
+  paused, between two JVM peers), pairing as your own device or someone
+  else's, Pause and resume, and the hub routes; `NoHubTest` checks the same
+  against the real agent from the home screen (the agent's `perm` greying
+  out Clipboard, its refusal shown on the card, a pause the agent hears,
+  a ring refused, a message held until Resume). CI
+  (`.github/workflows/android.yml`) runs them all, with the agent
+  installed from the same commit.
 
 ### 9.9 Per-device permissions and Pause (*added*; GitHub issue #59)
 

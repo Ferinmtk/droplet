@@ -79,9 +79,13 @@ interface MeshHost {
     fun sourceSize(source: String): Long?
     /** Copies a content URI into [dest] (a job that has to wait keeps its own copy). */
     fun spool(source: String, dest: File)
+
+    /** Pause everything (docs/mesh.md §9.9): kept by the host, so it survives a restart. */
+    fun pausedEverything(): Boolean = false
+    fun setPausedEverything(on: Boolean) {}
 }
 
-class NoRoute(message: String) : Exception(message)
+open class NoRoute(message: String) : Exception(message)
 
 /**
  * This phone as a mesh peer (docs/mesh.md): links to other devices, what
@@ -135,6 +139,15 @@ class MeshNode(
     private val gatewayProbing = AtomicBoolean(false)
     /** The network moved: look at the gateway on the next housekeeping round, not 30 s later. */
     private val networkMoved = AtomicBoolean(true)
+    /** What each linked peer said about how it treats this phone (its `perm`): a hint only. */
+    val remotePerm = ConcurrentHashMap<String, Perms.Remote>()
+    /** fp → the last thing it refused, and why. */
+    val refusals = ConcurrentHashMap<String, Refusal>()
+    /** (fp, type) → when this phone last told it no. */
+    private val refusedAt = ConcurrentHashMap<Pair<String, String>, Long>()
+
+    /** Something a peer didn't take from this phone, and why ("paused" or "denied"). */
+    data class Refusal(val re: String, val cap: String?, val why: String, val text: String, val ts: Long)
 
     private class Waiter(val fp: String) {
         val done = CountDownLatch(1)
@@ -156,8 +169,174 @@ class MeshNode(
         "name" to TrustList.cleanName(host.deviceName()).take(63), "os" to "android",
         "caps" to TrustList.cleanCaps(host.caps()).joinToString(","), "hub" to (host.hubId() ?: ""), "v" to "1")
 
-    fun hello(t: String = "hello"): JSONObject = JSONObject().put("t", t).put("id", peerId).put("name", host.deviceName())
-        .put("caps", JSONArray(host.caps())).put("os", "android").put("v", 1).put("port", listeningPort)
+    /** Our hello (or welcome) to the peer [fp]: the caps it may use here, and how we treat it. */
+    fun hello(t: String = "hello", fp: String? = null): JSONObject {
+        val out = JSONObject().put("t", t).put("id", peerId).put("name", host.deviceName())
+            .put("caps", JSONArray(host.caps())).put("os", "android").put("v", 1).put("port", listeningPort)
+        if (fp != null) out.put("caps", JSONArray(capsFor(fp))).put("perm", permFor(fp))
+        return out
+    }
+
+    // --- permissions (Perms, docs/mesh.md §9.9) ------------------------------------
+
+    val pausedAll: Boolean get() = runCatching { host.pausedEverything() }.getOrDefault(false)
+
+    /** Tests: false makes this node send whatever it's asked, as an older peer would, ignoring what peers said. */
+    @Volatile internal var heedHints = true
+
+    /** The caps a peer is told about: only what it may use here (mDNS and the roster still say everything). */
+    fun capsFor(fp: String): List<String> {
+        val e = trust.get(fp)
+        if (e == null || e.paused || pausedAll) return emptyList()
+        return host.caps().filter { c -> CAP_NEEDS[c]?.let { Perms.allowed(e, it) } ?: true }
+    }
+
+    fun permFor(fp: String): JSONObject = Perms.remoteView(trust.get(fp), pausedAll)
+
+    /**
+     * Throws [Refused] unless [msg] may go to the peer: by this phone's own
+     * settings, then by what the peer said it would take (a hint, so nothing
+     * goes that it would only refuse).
+     */
+    fun maySend(fp: String, msg: JSONObject, entry: TrustList.Entry? = null) {
+        val e = entry ?: trust.get(fp)
+        val all = pausedAll
+        val name = e?.name ?: "that device"
+        Perms.check(e, msg, all, "out")?.let { throw Refused(Perms.localText(name, it.why, it.cap, all), it.why, it.cap, true) }
+        // only while a link is open: its hello brought the peer's latest word, and a peer that
+        // changed its mind while away says so in the hello of the next link
+        val remote = if (heedHints && openLink(fp) != null) remotePerm[fp] else null
+        val cap = Perms.capability(msg)
+        val why = Perms.remoteRefuses(remote, cap)
+        if (why != null && msg.optString("t") !in Perms.ALWAYS) throw Refused(Perms.refusalText(name, why, cap), why, cap, false)
+    }
+
+    /** Whether [msg] may go to the peer now ([maySend] without the reason). */
+    fun mayGo(fp: String, msg: JSONObject): Boolean = try {
+        maySend(fp, msg)
+        true
+    } catch (e: Refused) {
+        false
+    }
+
+    /** Chat and files: refused at once when a switch says no; a pause only makes them wait. */
+    private fun mayQueue(fp: String, msg: JSONObject, entry: TrustList.Entry) {
+        try {
+            maySend(fp, msg, entry)
+        } catch (e: Refused) {
+            if (e.why != Perms.PAUSED) throw e
+        }
+    }
+
+    /** The owner changed what a peer may do, or paused or resumed it. Returns the entry. */
+    fun setPerms(fp: String, relation: String? = null, allow: Map<String, Boolean>? = null, paused: Boolean? = null): TrustList.Entry {
+        val e = trust.setPerms(fp, relation, allow, paused)
+        host.log("mesh: ${e.name}: ${if (e.paused) "paused" else "sharing"}" +
+            if (relation != null || allow != null) "; " + e.allow.entries.joinToString(", ") { "${it.key} ${if (it.value) "on" else "off"}" } else "")
+        tellPerms(listOf(fp))
+        host.onChanged()
+        return e
+    }
+
+    /** Pause everything, or resume it. */
+    fun pauseEverything(on: Boolean) {
+        host.setPausedEverything(on)
+        host.log(if (on) "mesh: everything paused" else "mesh: everything resumed")
+        tellPerms(links.keys.toList())
+        host.onChanged()
+    }
+
+    /** Tell linked peers how they're treated now (perm), and send what waited for a resume. */
+    private fun tellPerms(fps: List<String>) {
+        for (fp in fps) {
+            val link = openLink(fp) ?: continue
+            val p = permFor(fp)
+            link.send(JSONObject().put("t", "perm").put("paused", p.getBoolean("paused")).put("allow", p.getJSONObject("allow"))
+                .put("caps", JSONArray(capsFor(fp))))
+        }
+        kick()
+    }
+
+    /**
+     * Say no to the sender, so it can show why. Acknowledged messages get an
+     * answer for that id: a nack for good when the capability is off, `refused`
+     * when paused (it waits, and goes on resume). The rest get one `refused`
+     * every few seconds at most.
+     */
+    private fun refuse(link: Link, entry: TrustList.Entry, msg: JSONObject, no: Perms.No) {
+        val t = msg.optString("t")
+        val text = Perms.refusalText(host.deviceName(), no.why, no.cap)
+        host.log("mesh: refused $t from ${entry.name}: ${if (no.why == Perms.PAUSED) "paused" else "${no.cap} is off"}")
+        val mid = (msg.opt("id") as? String)?.takeIf { it.length <= 64 }
+        if (mid != null && t in setOf("text", "offer", "clip", "file")) {
+            link.send(if (no.why == Perms.DENIED) JSONObject().put("t", "nack").put("id", mid).put("error", text)
+                .put("cap", no.cap).put("why", no.why)
+            else JSONObject().put("t", "refused").put("re", t).put("id", mid).put("cap", no.cap).put("why", no.why)
+                .put("error", text))
+            return
+        }
+        val key = link.fp to t
+        val now = System.nanoTime() / 1_000_000
+        synchronized(refusedAt) {
+            val last = refusedAt[key]
+            if (last != null && now - last < REFUSE_EVERY_MS) return
+            refusedAt[key] = now
+        }
+        link.send(JSONObject().put("t", "refused").put("re", t).put("cap", no.cap).put("why", no.why).put("error", text))
+    }
+
+    private fun gotRemotePerm(fp: String, v: Any?) {
+        val got = Perms.parseRemote(v)
+        if (got == null) {
+            remotePerm.remove(fp)      // an older peer: it takes everything, as before
+            return
+        }
+        remotePerm[fp] = got
+        if (!got.paused) refusals[fp]?.takeIf { it.why == Perms.PAUSED }?.let { refusals.remove(fp, it) }
+    }
+
+    private fun gotRefused(link: Link, entry: TrustList.Entry, msg: JSONObject) {
+        val why = (msg.opt("why") as? String)?.takeIf { it == Perms.PAUSED || it == Perms.DENIED } ?: Perms.DENIED
+        val cap = (msg.opt("cap") as? String)?.takeIf { it in Perms.CAPABILITIES }
+        val text = ((msg.opt("error") as? String)?.ifEmpty { null } ?: Perms.refusalText(entry.name, why, cap)).take(200)
+        refusals[link.fp] = Refusal(msg.optString("re").take(20), cap, why, text, System.currentTimeMillis())
+        host.log("mesh: ${entry.name} refused: $text")
+        (msg.opt("id") as? String)?.let { oid ->
+            acks[oid]?.takeIf { it.fp == link.fp }?.let { w ->
+                w.ok = false
+                w.error = "$why: $text"
+                w.done.countDown()
+            }
+            offers.resolve(link.fp, oid, false, "$why: $text")
+        }
+        host.onChanged()
+    }
+
+    /**
+     * A message that came through the hub: why it's refused ("paused" or
+     * "denied"), or null. The sender is the hub's device `from.id`; one this
+     * phone trusts gets its own switches, any other device of the hub's is your
+     * own (the same user's hub), except that Pause everything stops it all.
+     */
+    fun checkHubMessage(msg: JSONObject): String? {
+        val sender = msg.optJSONObject("from")?.opt("id") as? String
+        val entry = sender?.let { id -> trust.all().firstOrNull { it.id == id } }
+        if (entry == null) return if (pausedAll && msg.optString("t") !in Perms.ALWAYS) Perms.PAUSED else null
+        return Perms.check(entry, msg, pausedAll, "in")?.why
+    }
+
+    /**
+     * Whether a broadcast (clip, state) may go to the hub, which hands it to
+     * every device it has. Not while everything is paused, and a clipboard not
+     * while any device the hub lists is paused or has the clipboard off here.
+     */
+    fun hubMayShare(msg: JSONObject): Boolean {
+        if (pausedAll) return false
+        val cap = Perms.capability(msg)
+        if (cap != Perms.CLIPBOARD) return true
+        val hubId = host.hubId() ?: return true
+        return trust.all().none { it.hub == hubId && (it.paused || !Perms.allowed(it, cap)) }
+    }
 
     /** What the hub's roster needs from this phone (POST /api/mesh/announce). */
     fun announceBody(): JSONObject = JSONObject().put("fp", identity.fp).put("cert_pem", identity.pem).put("port", listeningPort)
@@ -497,7 +676,7 @@ class MeshNode(
             return null
         }
         addLink(link)
-        link.send(hello())
+        link.send(hello(fp = entry.fp))
         if (!link.ready.await(HELLO_TIMEOUT_MS, TimeUnit.MILLISECONDS) || link.closed) {
             link.close(1008, "no welcome")
             return null
@@ -542,10 +721,13 @@ class MeshNode(
         return null
     }
 
-    /** Sends to every peer with an open link (state, for instance). */
+    /** Sends to every peer with an open link (state, for instance) that may have it. */
     fun broadcast(msg: JSONObject): Boolean {
         var sent = false
-        for (fp in links.keys) openLink(fp)?.let { sent = it.send(msg) || sent }
+        for (fp in links.keys) {
+            val link = openLink(fp) ?: continue
+            if (mayGo(fp, msg)) sent = link.send(msg) || sent
+        }
         return sent
     }
 
@@ -568,13 +750,16 @@ class MeshNode(
                 trust.learn(link.fp, address = if (link.outbound) null else link.address, port = port,
                     name = msg.opt("name") as? String, peerId = msg.opt("id") as? String, os = msg.opt("os") as? String,
                     caps = msg.optJSONArray("caps")?.let { strings(it) }, tailnet = link.kind == "tailnet")
+                gotRemotePerm(link.fp, msg.opt("perm"))
                 if (t == "hello") {
-                    link.send(hello("welcome"))
+                    link.send(hello("welcome", link.fp))
                     host.log("mesh: ${entry.name} connected from ${link.address}")
                 }
                 link.ready.countDown()
+                val now = trust.get(link.fp) ?: entry
                 for ((kind, data) in host.lastStates()) {
-                    link.send(JSONObject().put("t", "state").put("kind", kind).put("data", data ?: JSONObject.NULL))
+                    val st = JSONObject().put("t", "state").put("kind", kind).put("data", data ?: JSONObject.NULL)
+                    if (Perms.check(now, st, pausedAll, "out") == null) link.send(st)
                 }
                 kick()
                 host.onChanged()
@@ -582,6 +767,21 @@ class MeshNode(
             return
         }
         val current = trust.get(link.fp) ?: return
+        if (t == "perm") {
+            gotRemotePerm(link.fp, msg)
+            msg.optJSONArray("caps")?.let { trust.learn(link.fp, caps = strings(it)) }
+            kick()     // a resume: what waited for it goes now
+            host.onChanged()
+            return
+        }
+        if (t == "refused") {
+            gotRefused(link, current, msg)
+            return
+        }
+        Perms.check(current, msg, pausedAll, "in")?.let {
+            refuse(link, current, msg, it)
+            return
+        }
         when (t) {
             "ping" -> link.send(JSONObject().put("t", "pong"))
             "text" -> recvText(link, current, msg)
@@ -704,6 +904,7 @@ class MeshNode(
     /** input, media, cmd: direct, else through the hub. Returns the route. Blocks. */
     fun sendLive(fp: String, msg: JSONObject): String {
         val e = entry(fp)
+        maySend(fp, msg, e)
         direct(fp)?.let { if (it.send(msg)) return it.kind }
         if (hubHasItLive(e) && host.hubSend(JSONObject(msg.toString()).put("to", e.id))) return "hub"
         throw NoRoute("${e.name} isn't reachable directly, and not through the hub either")
@@ -711,7 +912,9 @@ class MeshNode(
 
     fun ring(fp: String, stop: Boolean = false): String {
         val e = entry(fp)
-        direct(fp)?.let { if (it.send(JSONObject().put("t", if (stop) "ring-stop" else "ring"))) return it.kind }
+        val msg = JSONObject().put("t", if (stop) "ring-stop" else "ring")
+        maySend(fp, msg, e)
+        direct(fp)?.let { if (it.send(msg)) return it.kind }
         if (hubKnows(e)) {
             host.hubRing(e.id, stop)
             return "hub"
@@ -722,9 +925,12 @@ class MeshNode(
     fun clip(fp: String, text: String): String {
         val e = entry(fp)
         require(text.isNotEmpty() && text.toByteArray().size <= 256 * 1024) { "clipboard text must be 1 byte to 256 KB" }
-        direct(fp)?.let { if (it.send(JSONObject().put("t", "clip").put("text", text))) return it.kind }
-        // the hub has no addressed clipboard message: it goes to all your devices' clipboards
-        if (hubHasItLive(e) && host.hubSend(JSONObject().put("t", "clip").put("text", text))) return "hub"
+        val msg = JSONObject().put("t", "clip").put("text", text)
+        maySend(fp, msg, e)
+        direct(fp)?.let { if (it.send(msg)) return it.kind }
+        // the hub has no addressed clipboard message: it goes to all your devices' clipboards,
+        // so not while any of them shouldn't have it
+        if (hubHasItLive(e) && hubMayShare(msg) && host.hubSend(msg)) return "hub"
         throw NoRoute("${e.name} isn't reachable directly, and not through the hub either")
     }
 
@@ -733,6 +939,7 @@ class MeshNode(
     fun sendText(fp: String, body: String): JSONObject {
         val e = entry(fp)
         require(body.isNotBlank() && body.toByteArray().size <= MAX_TEXT) { "a message must be 1 byte to 64 KB of text" }
+        mayQueue(fp, JSONObject().put("t", "text"), e)
         val job = outbox.addText(fp, e.name, body)
         kick()
         return job
@@ -741,6 +948,7 @@ class MeshNode(
     /** A file from a content URI or a path; [size] as the source reports it. */
     fun sendFile(fp: String, source: String, name: String, mime: String, size: Long, spooled: Boolean = false): JSONObject {
         val e = entry(fp)
+        mayQueue(fp, JSONObject().put("t", "offer"), e)
         val job = outbox.addFile(fp, e.name, source, MeshFiles.safeName(name), mime.ifEmpty { "application/octet-stream" },
             size, spooled)
         kick()
@@ -808,8 +1016,10 @@ class MeshNode(
     }
 
     /** The job waits: a file keeps its own copy from here, since a URI grant dies with the process. */
-    private fun keepWaiting(job: JSONObject, error: String, retry: Boolean) {
+    private fun keepWaiting(job: JSONObject, error: String, retry: Boolean, attempts: Int? = null) {
         var fields = arrayOf<Pair<String, Any?>>("state" to Outbox.QUEUED, "error" to error, "retry" to retry)
+        // in the same update: someone waiting for the job sees the reason with the attempt
+        if (attempts != null) fields += arrayOf<Pair<String, Any?>>("attempts" to attempts)
         if (job.getString("kind") == "file" && !job.optBoolean("spooled")) {
             val dest = File(sendingDir, "${job.getString("id")}-${MeshFiles.safeName(job.optString("name"))}")
             try {
@@ -837,6 +1047,17 @@ class MeshNode(
             finish(job, Outbox.FAILED, error = it)
             return "done"
         }
+        try {
+            maySend(e.fp, JSONObject().put("t", if (job.getString("kind") == "text") "text" else "offer"), e)
+        } catch (r: Refused) {
+            if (r.why != Perms.PAUSED) {
+                finish(job, Outbox.FAILED, error = r.message)
+                return "done"
+            }
+            // paused, here or there: it waits, and goes on resume (a perm, or Resume here)
+            keepWaiting(job, "waiting: ${r.message}", retry = false, attempts = job.optInt("attempts") + 1)
+            return "wait"
+        }
         outbox.update(id, "state" to Outbox.SENDING, "attempts" to job.optInt("attempts") + 1)
         val link = direct(e.fp)
         if (link == null && justAccepted(e.fp)) {
@@ -848,6 +1069,12 @@ class MeshNode(
             if (got == "ok") {
                 finish(job, Outbox.DONE, route = link.kind)
                 return "done"
+            }
+            if (got.startsWith("paused:")) {
+                // the peer paused sharing with us: wait for its perm saying it resumed
+                keepWaiting(job, "waiting: " + got.removePrefix("paused:").trim(), retry = false)
+                remotePerm.compute(e.fp) { _, old -> (old ?: Perms.Remote(true, emptyMap())).copy(paused = true) }
+                return "wait"
             }
             if (got.startsWith("refused:")) {
                 finish(job, Outbox.FAILED, error = got.removePrefix("refused:").trim().ifEmpty { "the peer refused it" })
@@ -881,6 +1108,7 @@ class MeshNode(
             val msg = JSONObject().put("t", "text").put("id", id).put("body", job.getString("body")).put("ts", job.optDouble("created"))
             if (!link.send(msg)) return "the link dropped"
             if (!w.done.await(ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) return "no answer"
+            if (!w.ok && w.error.startsWith("paused:")) return w.error
             return if (w.ok) "ok" else "refused: ${w.error}"
         } finally {
             acks.remove(id)
@@ -902,6 +1130,7 @@ class MeshNode(
                 if (!trust.isTrusted(link.fp)) return "refused: not trusted any more"
             }
             val (ok, error) = offer.result ?: (false to "")
+            if (!ok && error.startsWith("paused:")) return error
             return if (ok) "ok" else "refused: $error"
         } finally {
             offers.remove(job.getString("id"))
@@ -909,8 +1138,17 @@ class MeshNode(
     }
 
     override fun serveFile(out: OutputStream, oid: String, fp: String, req: MeshServer.Request,
-                           sendHead: (Int, Map<String, String>) -> Unit) =
+                           sendHead: (Int, Map<String, String>) -> Unit) {
+        try {
+            maySend(fp, JSONObject().put("t", "offer"))
+        } catch (e: Refused) {
+            if (e.local) {
+                sendHead(403, mapOf("Content-Length" to "0"))   // paused (or switched off) since it was offered
+                return
+            }
+        }
         offers.serve(out, oid, fp, req.header("range"), req.method, sendHead)
+    }
 
     // --- pairing --------------------------------------------------------------------
 
@@ -946,8 +1184,12 @@ class MeshNode(
         return og
     }
 
-    /** The owner compared the codes: [yes] they match. Waits for the other side in the background. */
-    fun pairConfirm(rid: String, yes: Boolean, onDone: (String) -> Unit = {}) {
+    /**
+     * The owner compared the codes: [yes] they match. Waits for the other side
+     * in the background. [relation]: whether the other device is the owner's
+     * ("own") or someone else's ("other"), which sets what it may do (Perms).
+     */
+    fun pairConfirm(rid: String, yes: Boolean, relation: String = Perms.OWN_DEVICE, onDone: (String) -> Unit = {}) {
         val og = outgoing[rid] ?: throw IllegalArgumentException("no such pairing request")
         if (!yes) {
             thread(isDaemon = true) { og.cancel() }
@@ -955,6 +1197,7 @@ class MeshNode(
             onDone(og.state)
             return
         }
+        require(relation in Perms.RELATIONS) { "relation must be \"own\" or \"other\"" }
         og.localOk = true
         thread(name = "mesh-pair", isDaemon = true) {
             val end = System.currentTimeMillis() + MeshPairing.REQUEST_TTL_MS
@@ -967,9 +1210,9 @@ class MeshNode(
                         val entry = TrustList.makeEntry(peerId = og.peerId, name = og.peerName,
                             certPem = MeshIdentity.toPem(og.der!!), source = TrustList.SOURCE_PAIRED, os = og.peerOs,
                             port = og.port, lan = if (isTailnet(og.host)) emptyList() else listOf(og.host),
-                            tailnetIp = og.host.takeIf { isTailnet(it) })
+                            tailnetIp = og.host.takeIf { isTailnet(it) }, relation = relation)
                         trust.addPaired(entry)
-                        host.log("mesh: paired with ${entry.name} (${entry.fp})")
+                        host.log("mesh: paired with ${entry.name} (${entry.fp}), ${describeRelation(relation)}")
                         MeshPairing.ACCEPTED
                     } catch (e: IllegalArgumentException) {
                         host.log("mesh: pairing failed: ${e.message}")
@@ -997,13 +1240,18 @@ class MeshNode(
         return false
     }
 
-    fun pairAnswer(rid: String, accept: Boolean): MeshPairing.Request {
+    /**
+     * The owner's answer to a device asking to pair; and, accepting, whether
+     * it's theirs ("own") or someone else's ("other").
+     */
+    fun pairAnswer(rid: String, accept: Boolean, relation: String = Perms.OWN_DEVICE): MeshPairing.Request {
+        if (accept) require(relation in Perms.RELATIONS) { "relation must be \"own\" or \"other\"" }
         val r = incoming.answer(rid, accept) ?: throw IllegalArgumentException("no such pairing request waiting (it may have expired)")
         if (accept) {
             trust.addPaired(TrustList.makeEntry(peerId = r.id, name = r.name, certPem = MeshIdentity.toPem(r.der!!),
-                source = TrustList.SOURCE_PAIRED, os = r.os))
+                source = TrustList.SOURCE_PAIRED, os = r.os, relation = relation))
             accepted[r.fp] = System.nanoTime()
-            host.log("mesh: paired with ${r.name} (${r.fp})")
+            host.log("mesh: paired with ${r.name} (${r.fp}), ${describeRelation(relation)}")
         }
         host.onPairGone(rid)
         host.onChanged()
@@ -1060,6 +1308,19 @@ class MeshNode(
          */
         const val PAIR_GRACE_MS = 120_000L
         const val PAIR_RETRY_MS = 2_000L
+        /** A stream of refused messages (input, say) gets one `refused` this often, per type. */
+        const val REFUSE_EVERY_MS = 5_000L
+
+        /**
+         * This phone's caps, and the capability a peer needs to be told of each
+         * (docs/mesh.md §9.9): media is remote control of the phone; SMS and
+         * browsing its files are "access".
+         */
+        val CAP_NEEDS = mapOf("input" to Perms.CONTROL, "media" to Perms.CONTROL, "lock" to Perms.CONTROL,
+            "screenshot" to Perms.CONTROL, "clipboard" to Perms.CLIPBOARD, "notify" to Perms.NOTIFY,
+            "sms" to Perms.ACCESS, "files" to Perms.ACCESS)
+
+        fun describeRelation(relation: String) = if (relation == Perms.OTHER_DEVICE) "someone else's" else "your own device"
 
         fun strings(a: JSONArray?): List<String> = (0 until (a?.length() ?: 0)).mapNotNull { a!!.opt(it) as? String }
 

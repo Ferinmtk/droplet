@@ -291,6 +291,7 @@
                 tools:text="Paired with slim" />
 
             <TextView
+                android:id="@+id/done_body"
                 style="@style/Droplet.Teal.Body"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
