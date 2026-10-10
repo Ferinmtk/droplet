@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Droplet.Core.Common;
 
@@ -54,12 +55,27 @@ public sealed record TrustEntry
     [JsonPropertyName("added")] public long Added { get; init; }
 
     /// <summary>
+    /// The owner's answer to "Is it your device, or someone else's?" (docs/mesh.md §9.9):
+    /// <see cref="Perms.Own"/> or <see cref="Perms.Other"/>. Never sent to the peer.
+    /// </summary>
+    [JsonPropertyName("relation")] public string Relation { get; init; } = Perms.Own;
+
+    /// <summary>A switch per capability (<see cref="Perms.Capabilities"/>); null only in an entry from before them (everything on).</summary>
+    [JsonPropertyName("allow")] public IReadOnlyDictionary<string, bool>? Allow { get; init; }
+
+    /// <summary>Paused: nothing is shared with it, either way, until it's resumed.</summary>
+    [JsonPropertyName("paused")] public bool Paused { get; init; }
+
+    /// <summary>Someone else's device.</summary>
+    [JsonIgnore] public bool IsOther => Relation == Perms.Other;
+
+    /// <summary>
     /// A checked entry. Throws <see cref="FormatException"/> when the id, certificate or
     /// fingerprint is wrong (a damaged or forged entry is never trusted).
     /// </summary>
     public static TrustEntry Make(string? peerId, string? name, string? certPem, string source, IEnumerable<string?>? lan = null,
         long? port = null, string? tailnetIp = null, string? os = null, IEnumerable<string>? caps = null, string? fp = null,
-        string? hub = null)
+        string? hub = null, string? relation = null, IEnumerable<KeyValuePair<string, bool>>? allow = null, bool paused = false)
     {
         if (source is not (TrustSource.Roster or TrustSource.Paired))
         {
@@ -90,6 +106,10 @@ public sealed record TrustEntry
             Caps = Clean.Caps(caps),
             Hub = hub is not null && MeshIdentity.PeerIdPattern().IsMatch(hub) ? hub : "",
             Added = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            // missing: your own device with everything on, as every peer was before (§9.9)
+            Relation = Perms.CleanRelation(relation),
+            Allow = Perms.CleanAllow(allow, Perms.CleanRelation(relation)),
+            Paused = paused,
         };
     }
 
@@ -150,14 +170,23 @@ public sealed class TrustList
         {
             try
             {
-                var stored = e.Deserialize<TrustEntry>();
+                // the owner's choices are read leniently: one that makes no sense is the default, not a lost peer
+                if (JsonNode.Parse(e.GetRawText()) is not JsonObject obj)
+                {
+                    continue;
+                }
+                var (relation, allow, paused) = (obj.Str("relation"), Perms.BoolsOf(obj["allow"]), obj.Bool("paused") == true);
+                obj.Remove("relation");
+                obj.Remove("allow");
+                obj.Remove("paused");
+                var stored = obj.Deserialize<TrustEntry>();
                 if (stored is null)
                 {
                     continue;
                 }
                 // re-checked, so a damaged entry is dropped, never trusted
                 var entry = TrustEntry.Make(stored.Id, stored.Name, stored.CertPem, stored.Source, stored.Lan, stored.Port,
-                    stored.TailnetIp, stored.Os, stored.Caps, fp, stored.Hub) with
+                    stored.TailnetIp, stored.Os, stored.Caps, fp, stored.Hub, relation, allow, paused) with
                 { Added = stored.Added > 0 ? stored.Added : DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
                 if (entry.Fp != ownFp)
                 {
@@ -333,7 +362,11 @@ public sealed class TrustList
                 }
                 else
                 {
-                    peers[fp] = e with { Added = old.Added, Lan = Addresses.Clean(e.Lan.Concat(old.Lan)) };
+                    // the owner's switches and pause are theirs, not the hub's
+                    peers[fp] = e with
+                    {
+                        Added = old.Added, Lan = Addresses.Clean(e.Lan.Concat(old.Lan)), Relation = old.Relation, Allow = old.Allow, Paused = old.Paused,
+                    };
                 }
             }
             var after = peers.ToDictionary(p => p.Key, p => p.Value.CertPem);
@@ -345,6 +378,49 @@ public sealed class TrustList
             CertificatesChanged?.Invoke();
         }
         return (added, removed);
+    }
+
+    /// <summary>
+    /// Changes what the owner decided about a peer (docs/mesh.md §9.9). A new
+    /// <paramref name="relation"/> starts from its defaults; <paramref name="allow"/> then
+    /// changes only the capabilities it names. Returns the entry. Throws
+    /// <see cref="ArgumentException"/> for an unknown peer, relation or capability.
+    /// </summary>
+    public TrustEntry SetPerms(string fp, string? relation = null, IReadOnlyDictionary<string, bool>? allow = null, bool? paused = null)
+    {
+        lock (gate)
+        {
+            if (fp is null || !peers.TryGetValue(fp, out var e))
+            {
+                throw new ArgumentException("that peer isn't trusted", nameof(fp));
+            }
+            var rel = e.Relation;
+            var now = Perms.CleanAllow(e.Allow, rel);
+            if (relation is not null)
+            {
+                if (!Perms.Relations.Contains(relation))
+                {
+                    throw new ArgumentException("relation must be \"own\" or \"other\"", nameof(relation));
+                }
+                rel = relation;
+                now = Perms.Defaults(relation);
+            }
+            if (allow is not null)
+            {
+                if (allow.Keys.FirstOrDefault(c => !now.ContainsKey(c)) is { } unknown)
+                {
+                    throw new ArgumentException($"no capability called \"{unknown}\"; they are: {string.Join(", ", Perms.Capabilities)}", nameof(allow));
+                }
+                foreach (var (c, on) in allow)
+                {
+                    now[c] = on;
+                }
+            }
+            e = e with { Relation = rel, Allow = now, Paused = paused ?? e.Paused };
+            peers[fp] = e;
+            Save();
+            return e;
+        }
     }
 
     /// <summary>Records what an authenticated peer said about itself, or where it answered.</summary>
