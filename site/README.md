@@ -68,6 +68,15 @@ the last block of the script in `index.html`; the items are the `ITEMS` list and
 `it-*` symbols. With reduced motion it doesn't play by itself, and a tap just swaps the
 picture without the flight.
 
+## The remote section
+
+"A remote for everything in the room" gives each of the phone's remotes its own row: music,
+touchpad and keyboard, slides, find your phone, and the TV. The pictures are hand-drawn inline
+SVG (no images to load), decorative and hidden from screen readers; the words are in the HTML.
+Their small loops (notes floating, the pointer gliding, the phone wiggling, the slide changing)
+are CSS animations that only run when the visitor hasn't asked for reduced motion. Each row's
+chips say which devices it works with; keep them true to `android/README.md`.
+
 ## Editing it
 
 Keep it honest: it promises no account, no cloud and nothing in the middle, and it tells

@@ -173,10 +173,51 @@ section{padding:64px 0;scroll-margin-top:60px}
 @media (min-width:960px){.more{grid-template-columns:auto 1fr 1fr 1fr;align-items:center;gap:28px;padding:22px 28px;margin-top:20px}}
 .more>b{font-size:15px;color:var(--muted)}
 .mini{display:flex;gap:12px;align-items:center}
-.mini .ic{width:40px;height:40px;border-radius:12px}
+.mini .ic{width:40px;height:40px;border-radius:12px;flex:none}
 .mini .ic svg{width:20px;height:20px}
 .mini h3{font-size:15.5px}
 .mini p{color:var(--muted);font-size:14px;line-height:1.45}
+
+/* the phone as a remote */
+.tour{display:grid;gap:48px}
+@media (min-width:860px){.tour{gap:80px}}
+.scene{display:grid;gap:26px;align-items:center}
+@media (min-width:860px){.scene{grid-template-columns:1.08fr 1fr;gap:56px}.scene:nth-child(even){grid-template-columns:1fr 1.08fr}.scene:nth-child(even) .pic{order:2}}
+@media (min-width:1080px){.scene{gap:80px}}
+.pic{border-radius:32px;overflow:hidden}
+.pic svg{width:100%;height:auto}
+.pic text{font-family:var(--font)}
+.pic .sB{opacity:0}
+.scene .txt{max-width:31em}
+.scene h3{font-size:clamp(26px,3.1vw,34px);letter-spacing:-.03em;font-weight:800;line-height:1.12;margin:18px 0 12px}
+.scene p{color:var(--muted);font-size:clamp(16px,1.7vw,17.5px);line-height:1.62}
+.fits{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0;padding:0;list-style:none}
+.fits li{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px 11px;font-size:13.5px;font-weight:650;color:#3a4254;line-height:1.35}
+.fits .i{width:15px;height:15px;color:#7f889b}
+.fits .i+.i{margin-left:-2px}
+@media (prefers-reduced-motion:no-preference){
+  .pic .nt,.pic .ck,.pic .nx,.pic .wig{transform-box:fill-box;transform-origin:center}
+  .pic .nt{animation:nt 5s ease-in-out infinite}
+  .pic .n2{animation-delay:-1.25s}.pic .n3{animation-delay:-2.5s}.pic .n4{animation-delay:-3.75s}
+  .pic .bob{animation:bob 2.4s ease-in-out infinite alternate}.pic .b2{animation-delay:-1.2s}
+  .pic .cur{animation:cur 4.4s cubic-bezier(.5,0,.3,1) infinite}
+  .pic .ck{animation:ck 4.4s ease-out infinite}
+  .pic .wig{transform-origin:50% 100%;animation:wig 2.2s linear infinite}
+  .pic .w1{animation:wv 1.6s ease-out infinite}.pic .w2{animation:wv 1.6s ease-out -.8s infinite}
+  .pic .sA{animation:sa 7s infinite}.pic .sB{animation:sb 7s infinite}
+  .pic .nx{animation:nx 7s infinite}
+  .pic .foc{animation:foc 6s cubic-bezier(.5,0,.3,1) infinite}
+}
+@keyframes nt{0%{opacity:0;transform:translateY(12px)}25%,65%{opacity:1}100%{opacity:0;transform:translate(10px,-34px) rotate(12deg)}}
+@keyframes bob{to{transform:translateY(-8px)}}
+@keyframes cur{0%,10%{transform:translate(-76px,32px)}50%,100%{transform:none}}
+@keyframes ck{0%,50%{opacity:0;transform:scale(.4)}55%{opacity:1}85%,100%{opacity:0;transform:scale(1.6)}}
+@keyframes wig{0%,45%,100%{transform:none}5%,15%,25%,35%{transform:rotate(-5deg)}10%,20%,30%,40%{transform:rotate(5deg)}}
+@keyframes wv{0%{opacity:0}30%{opacity:1}100%{opacity:0}}
+@keyframes sa{0%,44%,100%{opacity:1}50%,94%{opacity:0}}
+@keyframes sb{0%,44%,100%{opacity:0}50%,94%{opacity:1}}
+@keyframes nx{0%,40%,50%,90%,100%{transform:none}45%,95%{transform:scale(.93)}}
+@keyframes foc{0%,26%{transform:none}33%,59%{transform:translateX(70px)}66%,92%{transform:translateX(140px)}100%{transform:none}}
 
 /* how */
 .steps{list-style:none;margin:0;padding:0;display:grid;gap:14px;counter-reset:s}
@@ -349,10 +390,17 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
     <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15ZM10 21h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-ring" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="18" rx="2.2"/><path d="M4.5 8.5v7M19.5 8.5v7M2 10.5v3M22 10.5v3"/></g></symbol>
-    <symbol id="i-remote" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M12 5v6M8 21h8"/></g></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.5a6.5 6.5 0 0 1 3 5.5"/></g></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.1A9.9 9.9 0 0 1 12 5c5 0 9 4.5 10 7-.4 1-1.3 2.5-2.7 3.8M6.6 6.6C4.5 8 3 10 2 12c1 2.5 5 7 10 7 1.9 0 3.6-.6 5-1.5M9.9 9.9a3 3 0 0 0 4.2 4.2"/></g></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 5v14M15 5v14"/></g></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l11-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></g></symbol>
+    <symbol id="i-pad" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 15h18M12 15v5"/></g></symbol>
+    <symbol id="i-bt" viewBox="0 0 24 24"><path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-slides" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20.5h8M10.5 8l3.5 2-3.5 2Z"/></g></symbol>
+    <symbol id="i-tv" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M8 21h8M9 2.5 12 5.5l3-3"/></g></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.2 10.8l7.6-4.1M8.2 13.2l7.6 4.1"/></g></symbol>
+    <symbol id="s-note" viewBox="0 0 24 32"><g fill="currentColor"><ellipse cx="8" cy="25" rx="6.5" ry="5" transform="rotate(-20 8 25)"/><rect x="12" y="2" width="2.8" height="23.5" rx="1.4"/><path d="M12.6 2c1 4 3.6 6 6.6 7.6 2.4 1.3 3 3.8 1.8 6.6-.4-2.4-2.4-4.4-8.4-5.4Z"/></g></symbol>
+    <symbol id="s-notes" viewBox="0 0 34 32"><g fill="currentColor"><ellipse cx="7" cy="26" rx="6" ry="4.6" transform="rotate(-20 7 26)"/><ellipse cx="26" cy="22" rx="6" ry="4.6" transform="rotate(-20 26 22)"/><rect x="10.6" y="7" width="2.6" height="19" rx="1.3"/><rect x="29.6" y="3" width="2.6" height="19" rx="1.3"/><path d="M10.6 6 32.2 1.5v5.2L10.6 11.2Z"/></g></symbol>
   </defs>
 </svg>
 <a class="skip" href="#main">Skip to content</a>
@@ -364,6 +412,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
     </a>
     <nav class="nav" aria-label="Main">
       <a href="#features">Features</a>
+      <a href="#remote">Remote</a>
       <a href="#how">How it works</a>
       <a href="#people">Sharing</a>
       <a href="#faq">FAQ</a>
@@ -508,9 +557,336 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
     </div>
     <div class="more rv">
       <b>And a few more</b>
-      <div class="mini"><div class="ic b3"><svg aria-hidden="true"><use href="#i-bell"/></svg></div><div><h3>Phone notifications</h3><p>See them on your computer.</p></div></div>
-      <div class="mini"><div class="ic b4"><svg aria-hidden="true"><use href="#i-ring"/></svg></div><div><h3>Ring a lost phone</h3><p>Loud, even on silent.</p></div></div>
-      <div class="mini"><div class="ic b1"><svg aria-hidden="true"><use href="#i-remote"/></svg></div><div><h3>Phone as a remote</h3><p>Touchpad, keyboard, slides and TV.</p></div></div>
+      <div class="mini"><div class="ic b3"><svg aria-hidden="true"><use href="#i-bell"/></svg></div><div><h3>Phone notifications</h3><p>See them on your Windows or Linux computer.</p></div></div>
+      <div class="mini"><div class="ic b4"><svg aria-hidden="true"><use href="#i-share"/></svg></div><div><h3>Share from any app</h3><p>Share → Droplet, on Android.</p></div></div>
+      <div class="mini"><div class="ic b1"><svg aria-hidden="true"><use href="#i-clip"/></svg></div><div><h3>Clipboard in one tap</h3><p>A quick-settings tile on Android.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ REMOTE ============ -->
+<section id="remote" style="padding-top:0">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="eyebrow l">Your phone, the remote</span>
+      <h2>A remote for everything in the room</h2>
+      <p>Droplet for Android also turns your phone into the controls for your computer and your TV.</p>
+    </div>
+    <div class="tour">
+
+      <article class="scene rv">
+        <div class="pic" style="background:#f6f2ff">
+          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
+            <defs><linearGradient id="g-al" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffc48f"/><stop offset=".5" stop-color="#f58fae"/><stop offset="1" stop-color="#8b6be0"/></linearGradient></defs>
+            <circle cx="300" cy="190" r="160" fill="#ebe3ff"/>
+            <circle cx="478" cy="44" r="22" fill="#ffe6d6"/>
+            <circle cx="250" cy="34" r="6" fill="#9fc5f5"/>
+            <path d="M232 112l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#ffb27a"/>
+            <ellipse cx="262" cy="350" rx="240" ry="9" fill="#e2d8fb"/>
+            <!-- table and laptop -->
+            <rect x="266" y="248" width="226" height="12" rx="6" fill="#c8bdf2"/>
+            <rect x="286" y="260" width="9" height="86" rx="4" fill="#b6a6ec"/><rect x="462" y="260" width="9" height="86" rx="4" fill="#b6a6ec"/>
+            <g filter="url(#f-sm)"><rect x="296" y="124" width="168" height="114" rx="11" fill="#2a3245"/><path d="M276 238h208l-9 10H285Z" fill="#dfe3ea"/></g>
+            <rect x="303" y="131" width="154" height="100" rx="5" fill="#fff"/>
+            <rect x="313" y="142" width="52" height="52" rx="8" fill="url(#g-al)"/>
+            <circle cx="339" cy="168" r="14" fill="#fff" opacity=".3"/><circle cx="339" cy="168" r="4.5" fill="#fff"/>
+            <rect x="375" y="149" width="66" height="7" rx="3.5" fill="#1d2433" opacity=".8"/>
+            <rect x="375" y="162" width="44" height="6" rx="3" fill="#a7afc0"/>
+            <rect x="376" y="179" width="2.6" height="10" rx="1.3" fill="#a7afc0"/><path d="M388 179l-8 5 8 5Z" fill="#a7afc0"/><rect x="394" y="178" width="3.4" height="12" rx="1.7" fill="#7c5cd6"/><rect x="401" y="178" width="3.4" height="12" rx="1.7" fill="#7c5cd6"/><path d="M411 179l8 5-8 5Z" fill="#a7afc0"/><rect x="419.4" y="179" width="2.6" height="10" rx="1.3" fill="#a7afc0"/>
+            <rect x="313" y="210" width="134" height="5" rx="2.5" fill="#ebe7df"/><rect x="313" y="210" width="80" height="5" rx="2.5" fill="#7c5cd6"/><circle cx="393" cy="212.5" r="5" fill="#7c5cd6"/>
+            <!-- notes -->
+            <g class="nt"><use href="#s-note" x="420" y="78" width="22" height="30" color="#7c5cd6"/></g>
+            <g class="nt n2"><use href="#s-notes" x="456" y="96" width="30" height="28" color="#d9773c"/></g>
+            <g class="nt n3"><use href="#s-note" x="384" y="70" width="18" height="24" color="#2f6fdb"/></g>
+            <g class="nt n4"><use href="#s-note" x="476" y="140" width="18" height="24" color="#1f9e6a"/></g>
+            <!-- armchair -->
+            <rect x="44" y="192" width="150" height="118" rx="44" fill="#ffd4b8"/>
+            <rect x="46" y="318" width="10" height="28" rx="4" fill="#d9a07c"/><rect x="182" y="318" width="10" height="28" rx="4" fill="#d9a07c"/>
+            <rect x="30" y="266" width="178" height="56" rx="24" fill="#ffbf99"/>
+            <rect x="20" y="248" width="40" height="74" rx="20" fill="#ffc9a6"/><rect x="178" y="248" width="40" height="74" rx="20" fill="#ffc9a6"/>
+            <!-- person -->
+            <circle cx="121" cy="160" r="29" fill="#2a1d18"/><circle cx="98" cy="170" r="14" fill="#2a1d18"/><circle cx="144" cy="170" r="14" fill="#2a1d18"/>
+            <rect x="113" y="192" width="16" height="16" rx="4" fill="#8a5a3c"/>
+            <circle cx="121" cy="178" r="25" fill="#8a5a3c"/>
+            <circle cx="113" cy="181" r="2.6" fill="#1d2433"/><circle cx="130" cy="181" r="2.6" fill="#1d2433"/>
+            <path d="M114 190q7 6 14 0" stroke="#1d2433" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <rect x="86" y="204" width="70" height="84" rx="30" fill="#2f6fdb"/>
+            <rect x="92" y="278" width="26" height="62" rx="13" fill="#2a3245"/><rect x="124" y="278" width="26" height="62" rx="13" fill="#2a3245"/>
+            <ellipse cx="103" cy="342" rx="17" ry="7" fill="#1d2433"/><ellipse cx="139" cy="342" rx="17" ry="7" fill="#1d2433"/>
+            <path d="M95 222q-14 36 14 46M147 222q14 36-14 46" stroke="#2f6fdb" stroke-width="16" fill="none" stroke-linecap="round"/>
+            <rect x="108" y="238" width="26" height="40" rx="5" fill="#2a3245"/><rect x="111" y="241" width="20" height="33" rx="3" fill="#cbb9ff"/>
+            <circle cx="109" cy="268" r="8" fill="#8a5a3c"/><circle cx="133" cy="268" r="8" fill="#8a5a3c"/>
+            <!-- what the phone shows -->
+            <path d="M138 240C176 222 204 176 196 122" stroke="#b9a6f0" stroke-width="3" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/>
+            <g filter="url(#f-sm)"><rect x="24" y="20" width="200" height="98" rx="20" fill="#fff"/></g>
+            <rect x="38" y="34" width="38" height="38" rx="8" fill="url(#g-al)"/><circle cx="57" cy="53" r="3.5" fill="#fff"/>
+            <rect x="86" y="39" width="92" height="7" rx="3.5" fill="#1d2433" opacity=".8"/><rect x="86" y="52" width="58" height="6" rx="3" fill="#a7afc0"/>
+            <rect x="86" y="64" width="124" height="4" rx="2" fill="#ebe7df"/><rect x="86" y="64" width="74" height="4" rx="2" fill="#7c5cd6"/>
+            <path d="M72 84v18M86 84l-12 9 12 9Z" fill="#5a6273" stroke="#5a6273" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+            <circle cx="124" cy="93" r="15" fill="#7c5cd6"/><rect x="118" y="86" width="4" height="14" rx="2" fill="#fff"/><rect x="126" y="86" width="4" height="14" rx="2" fill="#fff"/>
+            <path d="M176 84v18M162 84l12 9-12 9Z" fill="#5a6273" stroke="#5a6273" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+            <path d="M196 88h4l5-4v18l-5-4h-4Z" fill="#a7afc0"/>
+          </svg>
+        </div>
+        <div class="txt">
+          <div class="ic b3"><svg aria-hidden="true"><use href="#i-music"/></svg></div>
+          <h3>Your music, from across the room</h3>
+          <p>Music playing on your computer? Pause it, skip the song or turn it down from your phone, without getting up.</p>
+          <ul class="fits">
+            <li><svg class="i" aria-hidden="true"><use href="#i-android"/></svg>Android 9 or newer</li>
+            <li><svg class="i" aria-hidden="true"><use href="#i-windows"/></svg><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg><svg class="i" aria-hidden="true"><use href="#i-linux"/></svg>Windows, Mac or Linux</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="scene rv">
+        <div class="pic" style="background:var(--sky-2)">
+          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
+            <circle cx="262" cy="190" r="160" fill="#d9ecff"/>
+            <circle cx="40" cy="330" r="12" fill="#d5f5e6"/>
+            <circle cx="492" cy="320" r="7" fill="#ffd4b8"/>
+            <ellipse cx="262" cy="350" rx="240" ry="9" fill="#cfe3fb"/>
+            <!-- desk and monitor -->
+            <rect x="314" y="236" width="170" height="84" rx="14" fill="#fff"/>
+            <rect x="326" y="250" width="70" height="56" rx="8" fill="#eef5ff"/><rect x="402" y="250" width="70" height="56" rx="8" fill="#eef5ff"/>
+            <rect x="354" y="276" width="14" height="4" rx="2" fill="#9fc5f5"/><rect x="430" y="276" width="14" height="4" rx="2" fill="#9fc5f5"/>
+            <rect x="328" y="320" width="9" height="26" rx="4" fill="#c9d6ea"/><rect x="462" y="320" width="9" height="26" rx="4" fill="#c9d6ea"/>
+            <rect x="390" y="200" width="18" height="30" fill="#c7ccd6"/><rect x="364" y="226" width="70" height="10" rx="5" fill="#dfe3ea"/>
+            <g filter="url(#f-sm)"><rect x="300" y="64" width="198" height="138" rx="12" fill="#2a3245"/></g>
+            <rect x="308" y="72" width="182" height="122" rx="5" fill="#fff"/>
+            <path d="M308 77a5 5 0 0 1 5-5h172a5 5 0 0 1 5 5v9H308Z" fill="#f3f5f9"/>
+            <circle cx="318" cy="79" r="2.6" fill="#ffb4a8"/><circle cx="327" cy="79" r="2.6" fill="#ffd98a"/><circle cx="336" cy="79" r="2.6" fill="#9ce0bb"/>
+            <rect x="320" y="98" width="48" height="36" rx="6" fill="#d9ecff"/><rect x="376" y="98" width="48" height="36" rx="6" fill="#d5f5e6"/><rect x="432" y="98" width="48" height="36" rx="6" fill="#ffe6d6"/>
+            <rect x="320" y="142" width="40" height="5" rx="2.5" fill="#c9d6ea"/><rect x="376" y="142" width="34" height="5" rx="2.5" fill="#c9d6ea"/><rect x="432" y="142" width="38" height="5" rx="2.5" fill="#c9d6ea"/>
+            <rect x="320" y="160" width="160" height="22" rx="6" fill="#f4f6fa"/>
+            <path d="M372 150C392 124 420 118 446 120" stroke="#9fc5f5" stroke-width="3" fill="none" stroke-dasharray="2 7" stroke-linecap="round"/>
+            <g class="ck"><circle cx="451" cy="124" r="12" fill="none" stroke="#2f6fdb" stroke-width="2.4"/></g>
+            <g class="cur"><path d="M448 118v22l6-6 4 9 4-2-4-9h8Z" fill="#1d2433" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></g>
+            <!-- keys -->
+            <g class="bob"><g filter="url(#f-sm)"><rect x="244" y="44" width="34" height="34" rx="9" fill="#fff"/></g><text x="261" y="67" text-anchor="middle" font-size="16" font-weight="800" fill="#2f6fdb">A</text></g>
+            <g class="bob b2"><g filter="url(#f-sm)"><rect x="262" y="100" width="30" height="30" rx="8" fill="#fff"/></g><path d="M283 109v7h-12m4-4-4 4 4 4" stroke="#1f9e6a" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+            <!-- couch -->
+            <rect x="22" y="196" width="246" height="96" rx="32" fill="#a8e6c9"/>
+            <rect x="34" y="320" width="10" height="26" rx="4" fill="#5fbf92"/><rect x="246" y="320" width="10" height="26" rx="4" fill="#5fbf92"/>
+            <rect x="14" y="262" width="262" height="62" rx="24" fill="#8fdcb8"/>
+            <rect x="196" y="214" width="56" height="54" rx="18" fill="#c4f0dc" transform="rotate(8 224 241)"/>
+            <!-- person -->
+            <path d="M88 190c-4-34 16-50 38-50s42 16 38 50c-2 14-10 20-10 20H98s-8-6-10-20Z" fill="#3a2418"/>
+            <rect x="118" y="198" width="16" height="16" rx="4" fill="#c98e62"/>
+            <circle cx="126" cy="180" r="24" fill="#c98e62"/>
+            <path d="M101 176c2-20 18-28 30-26 12 2 20 12 19 24-10-2-22-8-28-16-4 8-12 14-21 18Z" fill="#3a2418"/>
+            <circle cx="118" cy="184" r="2.6" fill="#1d2433"/><circle cx="134" cy="184" r="2.6" fill="#1d2433"/>
+            <path d="M119 193q7 5 14 0" stroke="#1d2433" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <rect x="92" y="208" width="68" height="84" rx="30" fill="#f2a25c"/>
+            <path d="M112 284v52" stroke="#2865c7" stroke-width="24" stroke-linecap="round"/>
+            <ellipse cx="116" cy="341" rx="17" ry="7" fill="#1d2433"/>
+            <path d="M136 282l42 6 4 46" stroke="#2f6fdb" stroke-width="24" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <ellipse cx="188" cy="341" rx="17" ry="7" fill="#1d2433"/>
+            <path d="M100 226q-12 34 16 44M152 226q12 34-14 44" stroke="#f2a25c" stroke-width="16" fill="none" stroke-linecap="round"/>
+            <rect x="112" y="242" width="28" height="40" rx="5" fill="#2a3245"/><rect x="115" y="245" width="22" height="33" rx="3" fill="#bfe0ff"/>
+            <circle cx="115" cy="270" r="8" fill="#c98e62"/><circle cx="138" cy="270" r="8" fill="#c98e62"/>
+            <!-- what the phone shows -->
+            <path d="M142 244C184 230 214 186 206 138" stroke="#9fc5f5" stroke-width="3" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/>
+            <g filter="url(#f-sm)"><rect x="24" y="20" width="196" height="118" rx="20" fill="#fff"/></g>
+            <rect x="36" y="32" width="172" height="66" rx="12" fill="#eef5ff"/>
+            <path d="M66 84C84 80 98 66 120 60" stroke="#9fc5f5" stroke-width="3" fill="none" stroke-dasharray="2 7" stroke-linecap="round"/>
+            <circle cx="126" cy="58" r="12" fill="#2f6fdb" opacity=".18"/><circle cx="126" cy="58" r="6" fill="#2f6fdb"/>
+            <rect x="36" y="106" width="84" height="20" rx="8" fill="#eef0f4"/><rect x="124" y="106" width="84" height="20" rx="8" fill="#eef0f4"/>
+            <circle cx="214" cy="26" r="15" fill="#2f6fdb" stroke="#fff" stroke-width="3"/>
+            <path d="M209 21l10 9-5 4V18l5 4-10 9" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="txt">
+          <div class="ic b1"><svg aria-hidden="true"><use href="#i-pad"/></svg></div>
+          <h3>Your phone is the touchpad and keyboard</h3>
+          <p>Steer your computer from the couch: slide to move the pointer, tap to click, two fingers to scroll, and type with your phone’s own keyboard. It pairs as an ordinary Bluetooth mouse and keyboard, so there’s nothing to install on the other side.</p>
+          <ul class="fits">
+            <li><svg class="i" aria-hidden="true"><use href="#i-android"/></svg>Android 9 or newer</li>
+            <li><svg class="i" aria-hidden="true"><use href="#i-bt"/></svg>Any computer or TV with Bluetooth</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="scene rv">
+        <div class="pic" style="background:#fff4ec">
+          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
+            <circle cx="290" cy="186" r="160" fill="#ffe6d6"/>
+            <circle cx="40" cy="44" r="18" fill="#d9ecff"/>
+            <circle cx="500" cy="340" r="8" fill="#c8bdf2"/>
+            <ellipse cx="262" cy="350" rx="240" ry="9" fill="#fbdcc7"/>
+            <!-- the big screen -->
+            <rect x="222" y="32" width="282" height="12" rx="6" fill="#2a3245"/>
+            <g filter="url(#f-sh)"><rect x="232" y="44" width="262" height="168" rx="10" fill="#fff"/></g>
+            <g class="sA">
+              <rect x="254" y="66" width="122" height="12" rx="6" fill="#1d2433" opacity=".85"/>
+              <rect x="254" y="86" width="80" height="7" rx="3.5" fill="#a7afc0"/>
+              <rect x="268" y="150" width="26" height="42" rx="5" fill="#9fc5f5"/><rect x="304" y="132" width="26" height="60" rx="5" fill="#7fd6ad"/><rect x="340" y="140" width="26" height="52" rx="5" fill="#c8bdf2"/><rect x="376" y="112" width="26" height="80" rx="5" fill="#ffb27a"/>
+              <rect x="258" y="192" width="154" height="3" rx="1.5" fill="#ddd8ce"/>
+              <circle cx="448" cy="138" r="26" fill="#ffe6d6"/><path d="M448 112a26 26 0 0 1 26 26h-26Z" fill="#d9773c"/>
+            </g>
+            <g class="sB">
+              <rect x="254" y="66" width="104" height="12" rx="6" fill="#1d2433" opacity=".85"/>
+              <rect x="254" y="86" width="132" height="7" rx="3.5" fill="#a7afc0"/>
+              <rect x="254" y="112" width="104" height="72" rx="10" fill="#d9ecff"/><circle cx="290" cy="138" r="10" fill="#ffd27a"/><path d="M254 172l30-24 22 18 20-14 32 24v4a10 10 0 0 1-10 10h-84a10 10 0 0 1-10-10Z" fill="#7fd6ad"/>
+              <rect x="372" y="116" width="98" height="7" rx="3.5" fill="#c9d6ea"/><rect x="372" y="132" width="84" height="7" rx="3.5" fill="#c9d6ea"/><rect x="372" y="148" width="92" height="7" rx="3.5" fill="#c9d6ea"/><rect x="372" y="164" width="60" height="7" rx="3.5" fill="#c9d6ea"/>
+            </g>
+            <text x="480" y="203" text-anchor="end" font-size="10" font-weight="700" fill="#8a93a6">3 / 12</text>
+            <!-- presenter -->
+            <circle cx="120" cy="96" r="14" fill="#2a1d18"/>
+            <rect x="113" y="138" width="16" height="16" rx="4" fill="#5e3b2a"/>
+            <circle cx="121" cy="124" r="24" fill="#5e3b2a"/>
+            <path d="M97 122c0-18 12-26 24-26s25 8 24 26c-8-8-20-12-32-10-6 1-11 5-16 10Z" fill="#2a1d18"/>
+            <circle cx="122" cy="127" r="2.6" fill="#1d2433"/><circle cx="137" cy="127" r="2.6" fill="#1d2433"/>
+            <path d="M123 136q7 5 13 0" stroke="#1d2433" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <rect x="96" y="232" width="20" height="104" rx="10" fill="#2a3245"/><rect x="124" y="232" width="20" height="104" rx="10" fill="#2a3245"/>
+            <ellipse cx="102" cy="340" rx="16" ry="7" fill="#1d2433"/><ellipse cx="140" cy="340" rx="16" ry="7" fill="#1d2433"/>
+            <path d="M88 168a20 20 0 0 1 20-20h26a20 20 0 0 1 20 20v76H88Z" fill="#7c5cd6"/>
+            <path d="M94 168q-10 42 2 70" stroke="#7c5cd6" stroke-width="15" fill="none" stroke-linecap="round"/>
+            <circle cx="97" cy="242" r="7.5" fill="#5e3b2a"/>
+            <path d="M146 166q30 16 50 0" stroke="#7c5cd6" stroke-width="15" fill="none" stroke-linecap="round"/>
+            <g transform="rotate(-14 200 156)"><rect x="188" y="136" width="24" height="38" rx="5" fill="#2a3245"/><rect x="191" y="139" width="18" height="31" rx="3" fill="#ffd4b8"/></g>
+            <circle cx="196" cy="166" r="8" fill="#5e3b2a"/>
+            <!-- what the phone shows -->
+            <path d="M206 182C214 230 230 250 254 258" stroke="#ffb27a" stroke-width="3" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/>
+            <g filter="url(#f-sm)"><rect x="252" y="232" width="232" height="94" rx="20" fill="#fff"/></g>
+            <rect x="266" y="246" width="64" height="66" rx="14" fill="#f4f6fa"/>
+            <path d="M302 266l-10 13 10 13" stroke="#5a6273" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <g class="nx"><rect x="338" y="246" width="132" height="66" rx="14" fill="#d9773c"/>
+            <text x="392" y="285" text-anchor="middle" font-size="17" font-weight="800" fill="#fff">Next</text>
+            <path d="M432 268l9 11-9 11" stroke="#fff" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+            <g filter="url(#f-sm)"><rect x="410" y="214" width="66" height="26" rx="13" fill="#1d2433"/></g>
+            <circle cx="425" cy="227" r="4" fill="#ffb27a"/>
+            <text x="452" y="231.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">04:12</text>
+          </svg>
+        </div>
+        <div class="txt">
+          <div class="ic b4"><svg aria-hidden="true"><use href="#i-slides"/></svg></div>
+          <h3>A clicker for your slides</h3>
+          <p>Presenting? Your phone shows big Next and Back buttons, and its volume keys change slides too. There’s a timer, and it works in PowerPoint, Google Slides, LibreOffice and most PDF viewers.</p>
+          <ul class="fits">
+            <li><svg class="i" aria-hidden="true"><use href="#i-android"/></svg>Android</li>
+            <li><svg class="i" aria-hidden="true"><use href="#i-windows"/></svg><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg><svg class="i" aria-hidden="true"><use href="#i-linux"/></svg>Windows, Mac or Linux</li>
+            <li><svg class="i" aria-hidden="true"><use href="#i-bt"/></svg>Or any computer, over Bluetooth</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="scene rv">
+        <div class="pic" style="background:#effbf5">
+          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
+            <circle cx="262" cy="190" r="160" fill="#d5f5e6"/>
+            <circle cx="484" cy="50" r="20" fill="#ebe3ff"/>
+            <circle cx="36" cy="60" r="7" fill="#ffd4b8"/>
+            <path d="M232 70l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#9fc5f5"/>
+            <ellipse cx="262" cy="350" rx="240" ry="9" fill="#c6eedb"/>
+            <!-- side table and laptop -->
+            <rect x="28" y="232" width="190" height="12" rx="6" fill="#a8e6c9"/>
+            <rect x="48" y="244" width="9" height="102" rx="4" fill="#7fd6ad"/><rect x="190" y="244" width="9" height="102" rx="4" fill="#7fd6ad"/>
+            <g filter="url(#f-sm)"><rect x="50" y="110" width="150" height="112" rx="11" fill="#2a3245"/><path d="M32 222h186l-9 10H41Z" fill="#dfe3ea"/></g>
+            <rect x="57" y="117" width="136" height="98" rx="5" fill="#fff"/>
+            <rect x="66" y="128" width="118" height="44" rx="10" fill="#f4f6fa"/>
+            <rect x="76" y="137" width="15" height="26" rx="4" fill="#2a3245"/><rect x="78.5" y="140" width="10" height="19" rx="2" fill="#d5f5e6"/>
+            <rect x="98" y="140" width="56" height="6" rx="3" fill="#1d2433" opacity=".8"/><rect x="98" y="152" width="36" height="5" rx="2.5" fill="#a7afc0"/>
+            <rect x="66" y="180" width="118" height="26" rx="13" fill="#d9773c"/>
+            <path d="M100 198v-6a7 7 0 0 1 14 0v6l2 2.5h-18ZM105 203h4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <text x="134" y="197.5" text-anchor="middle" font-size="11" font-weight="800" fill="#fff">Ring</text>
+            <g class="ck"><circle cx="170" cy="193" r="12" fill="none" stroke="#1d2433" stroke-width="2.2"/></g>
+            <path d="M168 188v20l5.5-5.5 3.6 8 3.6-1.8-3.6-8h7.4Z" fill="#1d2433" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+            <!-- sofa -->
+            <rect x="262" y="148" width="238" height="108" rx="32" fill="#ffd4b8"/>
+            <rect x="282" y="168" width="96" height="74" rx="22" fill="#ffe2cf"/>
+            <rect x="272" y="320" width="10" height="26" rx="4" fill="#d9a07c"/><rect x="480" y="320" width="10" height="26" rx="4" fill="#d9a07c"/>
+            <!-- the phone, ringing -->
+            <g class="wv" fill="none" stroke="#1f9e6a" stroke-width="3.2" stroke-linecap="round">
+              <path class="w1" d="M386 150a40 40 0 0 1 0 50" transform="rotate(-14 410 196)"/>
+              <path class="w2" d="M398 134a62 62 0 0 1 0 82" transform="rotate(-14 410 196)"/>
+              <path class="w1" d="M484 150a40 40 0 0 0 0 50" transform="rotate(-14 410 196) translate(-12 0)"/>
+              <path class="w2" d="M472 134a62 62 0 0 0 0 82" transform="rotate(-14 410 196) translate(-12 0)"/>
+            </g>
+            <g transform="rotate(-14 424 230)"><g class="wig">
+              <rect x="400" y="168" width="52" height="96" rx="11" fill="#2a3245"/>
+              <rect x="404.5" y="172.5" width="43" height="87" rx="7" fill="#fff"/>
+              <circle cx="426" cy="196" r="11" fill="#ffe6d6"/>
+              <path d="M421 200v-4a5 5 0 0 1 10 0v4l1.5 2h-13ZM424.5 205h3" stroke="#d9773c" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect x="412" y="214" width="28" height="12" rx="6" fill="#e0483e"/>
+            </g></g>
+            <rect x="252" y="236" width="258" height="88" rx="28" fill="#ffbf99"/>
+            <rect x="244" y="214" width="44" height="110" rx="22" fill="#ffc9a6"/><rect x="474" y="214" width="44" height="110" rx="22" fill="#ffc9a6"/>
+            <path d="M300 262h150" stroke="#f4a97a" stroke-width="3" stroke-linecap="round"/>
+            <g fill="#1f9e6a"><circle cx="370" cy="118" r="4"/><circle cx="346" cy="132" r="3"/></g>
+            <g class="nt n3"><use href="#s-note" x="352" y="92" width="16" height="22" color="#d9773c"/></g>
+            <g class="nt"><use href="#s-note" x="470" y="102" width="18" height="24" color="#7c5cd6"/></g>
+          </svg>
+        </div>
+        <div class="txt">
+          <div class="ic b2"><svg aria-hidden="true"><use href="#i-ring"/></svg></div>
+          <h3>Find your phone, even on silent</h3>
+          <p>Lost it down the side of the sofa again? Ring it from your computer. It rings loud, at full volume even on silent, until you tap Stop, and then your volume goes back to how it was.</p>
+          <ul class="fits">
+            <li><svg class="i" aria-hidden="true"><use href="#i-android"/></svg>Android phones</li>
+            <li><svg class="i" aria-hidden="true"><use href="#i-windows"/></svg><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg><svg class="i" aria-hidden="true"><use href="#i-linux"/></svg>Ring it from Windows, Mac or Linux</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="scene rv">
+        <div class="pic" style="background:#f6f2ff">
+          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
+            <defs><linearGradient id="g-tv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cbb9ff"/><stop offset="1" stop-color="#9fd0ff"/></linearGradient></defs>
+            <circle cx="300" cy="180" r="160" fill="#ebe3ff"/>
+            <circle cx="40" cy="40" r="16" fill="#d5f5e6"/>
+            <circle cx="500" cy="300" r="9" fill="#ffd4b8"/>
+            <ellipse cx="300" cy="350" rx="210" ry="9" fill="#e2d8fb"/>
+            <!-- cabinet, plant -->
+            <rect x="196" y="262" width="276" height="62" rx="14" fill="#fff"/>
+            <rect x="210" y="276" width="120" height="34" rx="8" fill="#f6f2ff"/><rect x="338" y="276" width="120" height="34" rx="8" fill="#f6f2ff"/>
+            <rect x="214" y="324" width="10" height="22" rx="4" fill="#c8bdf2"/><rect x="444" y="324" width="10" height="22" rx="4" fill="#c8bdf2"/>
+            <!-- TV -->
+            <rect x="320" y="238" width="28" height="24" fill="#c7ccd6"/><rect x="290" y="256" width="88" height="8" rx="4" fill="#dfe3ea"/>
+            <g filter="url(#f-sh)"><rect x="170" y="40" width="328" height="202" rx="14" fill="#2a3245"/></g>
+            <rect x="179" y="49" width="310" height="184" rx="6" fill="#1f2738"/>
+            <rect x="193" y="62" width="282" height="88" rx="10" fill="url(#g-tv)"/>
+            <circle cx="438" cy="88" r="12" fill="#fff4c7"/>
+            <path d="M193 140l50-40 34 26 30-22 58 44v2a10 10 0 0 1-10 10H203a10 10 0 0 1-10-10Z" fill="#7c5cd6" opacity=".55"/>
+            <rect x="207" y="80" width="88" height="10" rx="5" fill="#fff"/><rect x="207" y="96" width="56" height="7" rx="3.5" fill="#fff" opacity=".75"/>
+            <rect x="196" y="164" width="60" height="44" rx="9" fill="#ff8a7a"/><rect x="266" y="164" width="60" height="44" rx="9" fill="#7fd6ad"/><rect x="336" y="164" width="60" height="44" rx="9" fill="#9fc5f5"/><rect x="406" y="164" width="60" height="44" rx="9" fill="#ffd27a"/>
+            <path d="M220 178l14 8-14 8Z" fill="#fff"/><circle cx="296" cy="186" r="8" fill="#fff" opacity=".9"/><rect x="356" y="179" width="20" height="14" rx="3" fill="#fff" opacity=".9"/><path d="M426 192l10-14 10 14Z" fill="#fff" opacity=".9"/>
+            <g class="foc"><rect x="262" y="160" width="68" height="52" rx="12" fill="none" stroke="#fff" stroke-width="3"/></g>
+            <!-- Wi-Fi -->
+            <g class="wf" fill="none" stroke="#7c5cd6" stroke-width="3.2" stroke-linecap="round">
+              <path class="w1" d="M150 158a24 24 0 0 1 22 -22"/>
+              <path class="w2" d="M140 150a40 40 0 0 1 36 -38"/>
+            </g>
+            <!-- hand and phone -->
+            <rect x="34" y="350" width="112" height="40" rx="10" fill="#2f6fdb"/>
+            <path d="M36 380c-8-46-4-90 14-110l92-8c18 0 24 14 16 22 10 2 12 16 2 22 10 4 10 18-2 22 4 12-6 22-18 22v30Z" fill="#8a5a3c"/>
+            <g transform="rotate(8 96 260)">
+              <g filter="url(#f-sh)"><rect x="46" y="150" width="104" height="196" rx="22" fill="#2a3245"/></g>
+              <rect x="53" y="157" width="90" height="182" rx="16" fill="#fff"/>
+              <rect x="84" y="163" width="28" height="7" rx="3.5" fill="#2a3245"/>
+              <circle cx="72" cy="188" r="9" fill="#ffe6d6"/><path d="M72 183v5M68 185a6 6 0 1 0 8 0" stroke="#d9773c" stroke-width="2" fill="none" stroke-linecap="round"/>
+              <circle cx="124" cy="188" r="9" fill="#f4f6fa"/><path d="M119 189l5-5 5 5v5h-10Z" fill="#5a6273"/>
+              <circle cx="98" cy="240" r="36" fill="#f6f2ff"/>
+              <circle cx="98" cy="240" r="15" fill="#7c5cd6"/>
+              <path d="M98 211l-5 5h10ZM98 269l-5-5h10ZM69 240l5-5v10ZM127 240l-5-5v10Z" fill="#a08ae6"/>
+              <rect x="64" y="290" width="68" height="18" rx="9" fill="#f4f6fa"/>
+              <path d="M76 299h8M114 299h8M118 295v8" stroke="#5a6273" stroke-width="2.2" stroke-linecap="round"/>
+              <rect x="64" y="314" width="68" height="14" rx="7" fill="#f4f6fa"/>
+            </g>
+            <path d="M30 336c-8-22-4-48 12-62 8-6 18-2 18 8-2 14-8 34-14 54Z" fill="#9a6646"/>
+          </svg>
+        </div>
+        <div class="txt">
+          <div class="ic b3"><svg aria-hidden="true"><use href="#i-tv"/></svg></div>
+          <h3>And it’s the TV remote, too</h3>
+          <p>Remote gone missing? Your phone pairs with an Android TV or Google TV over the Wi-Fi and becomes its remote: arrows or a touchpad, volume, your apps, typing and power. Nothing to install on the TV.</p>
+          <ul class="fits">
+            <li><svg class="i" aria-hidden="true"><use href="#i-android"/></svg>Android</li>
+            <li><svg class="i" aria-hidden="true"><use href="#i-tv"/></svg>Android TV &amp; Google TV</li>
+          </ul>
+        </div>
+      </article>
+
     </div>
   </div>
 </section>

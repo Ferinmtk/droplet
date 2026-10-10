@@ -1,5 +1,5 @@
 """Links that open on your other device, renaming this one and nicknames for the others, and
-sending to several devices at once (docs/mesh.md §9.10)."""
+sending to several devices at once (docs/mesh.md §9.11)."""
 
 import json
 import time

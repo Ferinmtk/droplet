@@ -1,4 +1,4 @@
-"""Links sent to another device (docs/mesh.md §9.10).
+"""Links sent to another device (docs/mesh.md §9.11).
 
 Only web addresses travel as links, and only those are ever opened: `http` and `https`,
 with a host, no spaces or control characters, and at most MAX_URL characters. Anything

@@ -4,6 +4,7 @@
     GET  https://<peer>:<port>/mesh/files/<id> a file offered to that peer    (client certificate, trusted)
     POST https://<peer>:<port>/mesh/pair       pairing                        (no client certificate)
     GET  /mesh/pair/<request>, POST /mesh/pair/<request>/confirm, POST /mesh/pair/<request>/cancel
+    POST /mesh/pair/hello                      who this is, on a hotspot      (no client certificate; hotspot.py)
 
 Who may do what is decided once, right after the TLS handshake (tlsctx.py):
 a client with a trusted certificate may use everything; a client with no
@@ -92,7 +93,7 @@ class Server:
     - trusted(fp) -> entry | None
     - on_link(sock, request, entry, address, leftover): take over the socket for a WebSocket
     - serve_file(sock, oid, fp, request, send_head)
-    - pair(method, path, body_or_None) -> (status, dict)
+    - pair(method, path, body_or_None, client_address) -> (status, dict)
     """
 
     def __init__(self, contexts: ServerContexts, handler, port: int | None = None):
@@ -211,7 +212,7 @@ class Server:
                 elif req.method != "GET":
                     self._respond(tls, 405, {"error": "method not allowed"}, close=True)
                     return False
-                status, out = self.handler.pair(req.method, path, body)
+                status, out = self.handler.pair(req.method, path, body, address)
                 close = req.headers.get("connection", "").lower() == "close"
                 self._respond(tls, status, out, close=close)
                 if close:
