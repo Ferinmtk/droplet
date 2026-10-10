@@ -120,6 +120,24 @@ def test_ring_and_clipboard_report_back(win, demo, qapp):
     qapp.clipboard().setText("hello from the test")
     page.send_clipboard(phone)
     assert demo.calls[-1] == {"cmd": "clip", "peer": PHONE_FP, "text": "hello from the test"}
+    assert win.statusBar().currentMessage() == ("Sent the clipboard to redmi-note-11e-pro, "
+                                                "directly, over the network.")
+
+
+def test_a_clipboard_a_password_manager_marked_secret_isnt_sent(win, demo, qapp):
+    from PySide6.QtCore import QMimeData
+    from droplet_agent.clip import PASSWORD_HINT
+    page = win.pages["devices"]
+    phone = next(p for p in demo.peers if p["fp"] == PHONE_FP)
+    md = QMimeData()
+    md.setText("hunter2")
+    md.setData(PASSWORD_HINT, b"secret")
+    qapp.clipboard().setMimeData(md)
+    n = len(demo.calls)
+    page.send_clipboard(phone)
+    assert len(demo.calls) == n
+    assert "secret" in win.statusBar().currentMessage()
+    qapp.clipboard().clear()   # the clipboard owns md; let it go before the app does
 
 
 def test_pairing_from_the_pair_page(win, demo):

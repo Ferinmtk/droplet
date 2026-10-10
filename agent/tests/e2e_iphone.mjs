@@ -10,7 +10,8 @@
 // camera isn't used: the pairing link from the agent's QR code is pasted instead.
 //
 // It pairs (the code on both sides must match), sends a message each way, a file each way
-// (checked by SHA-256), reconnects after a reload (the key survives in IndexedDB), and
+// (checked by SHA-256), the clipboard each way with the computer's automatic sync off (the
+// context is granted clipboard-read, and clipboard-write where the engine knows it), reconnects after a reload (the key survives in IndexedDB), and
 // unpairs from the computer. Screenshots go to $SHOTS if it's set.
 
 import { createRequire } from "node:module";
@@ -87,6 +88,8 @@ const siteUrl = `http://localhost:${server.address().port}/app/`;
 
 fs.writeFileSync(path.join(home, ".config/droplet-agent/config.json"), JSON.stringify({
   device: { id: "", name: "t15-e2e" },
+  // automatic clipboard sync off: the iPhone's "Send clipboard" must still work
+  caps: { input: true, media: true, lock: true, screenshot: true, clipboard: false },
   mesh: { announce: false, port: 1771, downloads },
   iphone: { enabled: true, app_url: siteUrl },
 }));
@@ -96,7 +99,14 @@ const agentLog = () => fs.readFileSync(path.join(ROOT, "agent.log"), "utf8");
 
 let browser;
 const consoleErrors = [];
-const shot = async (page, name) => { if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, `${browserName}-${name}.png`) }); } };
+const shot = async (page, name) => {
+  if (!SHOTS) return;
+  fs.mkdirSync(SHOTS, { recursive: true });
+  const file = name.startsWith("clipboard-") ? name.replace("clipboard-", `clipboard-${browserName}-`) : `${browserName}-${name}`;
+  await page.screenshot({ path: path.join(SHOTS, `${file}.png`) });
+};
+// the dry-run agent logs what it would put on the clipboard: `would set N characters: 'text…'`
+const appliedClip = (n, start) => agentLog().includes(`would set ${n} characters: ${JSON.stringify(start).replace(/^"|"$/g, "'")}`);
 
 try {
   const st = await waitUntil(async () => { const s = await control({ cmd: "status" }); return s.webrtc ? s : null; }, 30000);
@@ -105,6 +115,12 @@ try {
 
   browser = await playwright[browserName].launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: browserName === "chromium" });
+  // the clipboard without a person to tap iOS's Paste button: Chromium needs both permissions;
+  // WebKit takes clipboard-read (and allows writes from a click anyway)
+  // (WebKit only fails on an unknown permission later, at newPage: so it's asked for just the one)
+  const granted = browserName === "webkit" ? ["clipboard-read"] : ["clipboard-read", "clipboard-write"];
+  await context.grantPermissions(granted, { origin: new URL(siteUrl).origin });
+  console.log(`  clipboard permissions granted: ${granted.join(", ")}`);
   const page = await context.newPage();
   page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
   page.on("pageerror", (e) => consoleErrors.push(String(e)));
@@ -178,6 +194,75 @@ try {
   });
   check("…and the app has it, intact", hash === crypto.createHash("sha256").update(down).digest("hex"), hash);
   await shot(page, "4-peer");
+
+  // --- the clipboard (automatic sync is off on the computer) ---
+  const toastHas = (t) => waitUntil(async () => (await page.textContent("#toast")).includes(t), 10000);
+  const readClipboard = () => page.evaluate(() => navigator.clipboard.readText());
+  // computer → iPhone: droplet-agent clip <iphone> (the tray's and window's Send clipboard)
+  const down1 = "from linux: ssh t15.local 📋";
+  const cl = await control({ cmd: "clip", peer: me.name, text: down1 });
+  check("the computer sends its clipboard to the app directly, with sync off", cl.route === "webrtc", JSON.stringify(cl));
+  const card = await waitUntil(async () => (await page.textContent("#peer-clip")).includes(down1), 10000);
+  check("…and the app shows it on a card above the message box", card, await page.textContent("#peer-clip"));
+  check("…from the computer, by name", (await page.textContent("#peer-clip .clip-head b")) === "From t15-e2e");
+  check("…kept in memory, not in IndexedDB", await page.evaluate(async (t) => {
+    const msgs = await window.droplet.db.messages.forPeer([...window.droplet.sessions.keys()][0]);
+    return window.droplet.clips.length === 1 && !msgs.some((m) => m.body === t);
+  }, down1));
+  await sleep(400);
+  await shot(page, "clipboard-1-card");
+  await page.click("#peer-clip .copy");
+  await toastHas("Copied");
+  const copied = await readClipboard().catch((e) => `error: ${e.message}`);
+  check("tapping Copy puts it on the iPhone's clipboard", copied === down1, copied);
+  await shot(page, "clipboard-2-copied");
+
+  // iPhone → computer: Send clipboard
+  const up1 = "from the iPhone: wifi password is on the fridge";
+  const wrote = await page.evaluate((t) => navigator.clipboard.writeText(t).then(() => "ok", (e) => e.message), up1);
+  check("(the test puts text on the browser's clipboard)", wrote === "ok", wrote);
+  await page.click("#send-clip");
+  const sentClip = await toastHas("Sent to t15-e2e");
+  check("Send clipboard in the app says it's on the computer", sentClip, await page.textContent("#toast"));
+  check("…and the computer put it on its clipboard (sync off: an explicit send still works)",
+    await waitUntil(() => appliedClip(up1.length, up1.slice(0, 60)), 5000), agentLog().split("\n").filter((l) => l.includes("clipboard")).join(" | "));
+  await sleep(500);
+  check("…and nothing came back to the app (no echo)", await page.evaluate(() => window.droplet.clips.length) === 1);
+
+  // large texts both ways, as one frame each
+  const big = "0123456789abcdef".repeat(12 * 1024);   // 192 KB
+  await page.evaluate((t) => navigator.clipboard.writeText(t), big);
+  await page.click("#send-clip");
+  check("192 KB of clipboard text from the app reaches the computer",
+    await waitUntil(() => appliedClip(big.length, big.slice(0, 60)), 10000), await page.textContent("#toast"));
+  const bigDown = await control({ cmd: "clip", peer: me.name, text: big.toUpperCase() });
+  const gotBig = await waitUntil(() => page.evaluate((n) => window.droplet.clips[0] && window.droplet.clips[0].text.length === n, big.length), 10000);
+  check("…and 192 KB from the computer reaches the app", bigDown.route === "webrtc" && gotBig, JSON.stringify(bigDown));
+  const tooBig = await control({ cmd: "clip", peer: me.name, text: "\n".repeat(200 * 1024) });
+  check("text too large for one frame is refused with a reason, not lost", tooBig.error && tooBig.error.includes("too much text"), JSON.stringify(tooBig));
+
+  // the home screen: every card, and Send clipboard on the computer's row
+  await page.click("#peer .back");
+  await page.waitForSelector("#home:not([hidden])");
+  check("the home screen lists the clipboard cards, newest first",
+    (await page.$$eval("#home-clips .clip", (cs) => cs.length)) === 2 && (await page.textContent("#home-clips .clip")).includes("0123456789ABCDEF"));
+  check("…and the computer's row has Send clipboard", await page.isVisible(".device-card .chip"));
+  await page.evaluate((t) => navigator.clipboard.writeText(t), "sent from home");
+  await page.click(".device-card .chip");
+  check("Send clipboard from the home screen works too", await toastHas("Sent to t15-e2e") && await waitUntil(() => appliedClip(14, "sent from home"), 5000));
+  await control({ cmd: "clip", peer: me.name, text: "a new one while on home" });
+  await waitUntil(async () => (await page.textContent("#devices")).includes("New clipboard"), 5000);
+  check("a new clipboard shows a badge on the computer's row", (await page.textContent("#devices")).includes("New clipboard"));
+  await sleep(400);
+  await page.evaluate(() => { document.getElementById("toast").hidden = true; });
+  await shot(page, "clipboard-3-home");
+  await page.click("#home-clips .clip .x");
+  check("a card can be dismissed", (await page.$$eval("#home-clips .clip", (cs) => cs.length)) === 2);
+  await page.click(".device-card .device");
+  await page.waitForSelector("#peer:not([hidden])");
+  await sleep(300);
+  await page.evaluate(() => { document.getElementById("toast").hidden = true; });
+  await shot(page, "clipboard-4-peer");
 
   // --- the key survives, and it reconnects ---
   await page.reload();

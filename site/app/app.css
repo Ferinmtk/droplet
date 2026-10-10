@@ -102,4 +102,39 @@ progress::-moz-progress-bar { background: var(--aqua); }
 
 .sheet { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: flex-end; z-index: 10; }
 .sheet-body { width: 100%; max-width: 640px; margin: 0 auto; background: var(--panel); border-radius: 18px 18px 0 0; padding: 12px 16px calc(var(--safe-bottom) + 16px); }
-.toast { position: fixed; left: 16px; right: 16px; bottom: calc(var(--safe-bottom) + 84px); max-width: 600px; margin: 0 auto; background: #12343b; border: 1px solid #1c5559; border-radius: 14px; padding: 12px 16px; z-index: 20; text-align: center; }
+.toast { position: fixed; left: 16px; right: 16px; top: calc(var(--safe-top) + 64px); max-width: 600px; margin: 0 auto; background: #12343b; border: 1px solid #1c5559; border-radius: 14px; padding: 12px 16px; z-index: 20; text-align: center; }
+
+/* the clipboard */
+.device-card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; margin: 10px 0; overflow: hidden; }
+.device-card .device { margin: 0; border: 0; border-radius: 0; background: none; }
+.device > div { flex: 1; min-width: 0; }
+.device-tools { display: flex; padding: 0 16px 12px 40px; margin-top: -4px; }
+.badge { font-style: normal; font-size: 12px; font-weight: 700; color: #04232a; background: var(--aqua); border-radius: 999px; padding: 2px 8px; white-space: nowrap; flex: none; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 12px;
+  background: #0a1b21; color: var(--aqua); border: 1px solid var(--line); border-radius: 999px;
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.chip svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.chip:disabled { opacity: 0.6; }
+.foot { border-top: 1px solid var(--line); background: var(--bg); padding-bottom: var(--safe-bottom); }
+.foot .composer { border-top: 0; padding-bottom: 8px; }
+.tools { display: flex; gap: 8px; padding: 8px 12px 0; }
+#peer-clip:not(:empty) { padding: 8px 12px 0; }
+#peer-clip .clip { margin: 0; }
+
+.clip { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin: 8px 0; }
+.clip.fresh { border-color: var(--aqua); box-shadow: 0 0 0 1px rgba(77,232,212,0.25), 0 0 18px rgba(77,232,212,0.12); animation: clip-in 0.25s ease-out; }
+@keyframes clip-in { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+.clip-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.clip-head b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.clip-head small { color: var(--dim); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.clip-head .x { background: none; border: 0; color: var(--dim); font-size: 22px; line-height: 1; min-width: 36px; min-height: 36px; margin: -8px -8px -8px 0; cursor: pointer; }
+.clip-body { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.clip-text {
+  flex: 1; min-width: 0; margin: 0; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+.clip.compact .clip-text { -webkit-line-clamp: 2; line-clamp: 2; }
+.clip .copy { min-height: 40px; padding: 8px 16px; flex: none; }
+.clip .copy.done { background: var(--panel); color: var(--aqua); border-color: var(--line); }

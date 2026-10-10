@@ -36,7 +36,16 @@ match *and* the computer said accepted. Then it sends `auth` on the same
 channel.
 
 **Once authenticated**, as on a mesh link (docs/mesh.md §9.4):
-`text` → `ack`/`nack`, `ping` → `pong`, `ring`, `unpair`. Files go over the
+`text` → `ack`/`nack`, `ping` → `pong`, `ring`, `unpair`, and the clipboard:
+
+    C → {"t":"clip","id":<8–64 of [0-9A-Za-z_-]>,"text"}   → {"t":"ack","id"} or {"t":"nack","id","error"}
+    S → {"t":"clip","text"}
+
+A browser can't watch the clipboard, so a `clip` from it is always a tap on
+"Send clipboard": the computer applies it even with automatic clipboard sync
+off, and answers. The computer sends its clipboard when it changes (with
+sync on, as to any linked peer) or when its owner sends it to the iPhone.
+Every frame, either way, is at most MAX_FRAME bytes of UTF-8. Files go over the
 channel itself (a browser can't serve HTTPS):
 
     {"t":"file","id":<32 hex>,"name","size","mime"}
@@ -69,12 +78,27 @@ log = logging.getLogger("droplet_agent.webrtc")
 
 CHUNK = 16 * 1024            # data per binary frame (plus the 8-byte id)
 HIGH_WATER = 1024 * 1024     # stop sending while this much is buffered
-MAX_FRAME = 256 * 1024
+MAX_FRAME = 256 * 1024      # bytes of UTF-8 in one frame (the channel's max-message-size)
 MAX_TEXT = 64 * 1024
 MAX_FILE = 64 * 1024 ** 3
 FILE_ID = re.compile(r"[0-9a-f]{32}")
 AUTH_TIMEOUT = 30            # an unauthenticated channel that isn't pairing closes after this
 ACK_TIMEOUT = 60
+
+
+def encode(msg: dict) -> str:
+    """One frame: UTF-8 as is (compact for a clipboard in any language), escaped only if it must be."""
+    frame = json.dumps(msg, separators=(",", ":"), ensure_ascii=False)
+    try:
+        frame.encode("utf-8")
+    except UnicodeEncodeError:      # a lone surrogate
+        frame = json.dumps(msg, separators=(",", ":"))
+    return frame
+
+
+def fits(msg: dict) -> bool:
+    """Whether msg fits in one frame."""
+    return len(encode(msg).encode("utf-8")) <= MAX_FRAME
 
 
 def auth_transcript(fp_key: str, fp_server: str, fp_dtls: str, nonce: str) -> bytes:
@@ -122,8 +146,12 @@ class Conn:
     def send(self, msg: dict) -> bool:
         if self.closed:
             return False
+        frame = encode(msg)
+        if len(frame.encode("utf-8")) > MAX_FRAME:
+            log.info("webrtc: not sending a %s too large for the channel", msg.get("t"))
+            return False
         try:
-            self.channel.send(json.dumps(msg, separators=(",", ":")))
+            self.channel.send(frame)
             return True
         except Exception:
             return False
@@ -169,7 +197,7 @@ class Conn:
             if self.fp is not None:
                 self._chunk(bytes(data))
             return
-        if not isinstance(data, str) or len(data) > MAX_FRAME:
+        if not isinstance(data, str) or len(data) > MAX_FRAME:   # characters ≤ bytes
             return
         try:
             msg = json.loads(data)
@@ -202,6 +230,11 @@ class Conn:
             self.host.deliver(self, msg)
         elif t in ("text", "unpair", "ring", "ring-stop"):
             self.host.deliver(self, msg)
+        elif t == "clip":
+            if isinstance(msg.get("text"), str):
+                self.host.deliver(self, msg)
+            elif isinstance(msg.get("id"), str):
+                self.send({"t": "nack", "id": msg["id"][:64], "error": "no text"})
 
     # --- who it is -------------------------------------------------------------------
     def _auth(self, msg: dict):

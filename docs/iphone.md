@@ -228,6 +228,55 @@ mesh node (`droplet_agent/webrtc/bridge.py`): its route is `webrtc`.
 Messages and files for an app that isn't connected wait in the computer's
 outbox and go when it connects, which is when the app is open.
 
+### 3.4 The clipboard
+
+iOS lets a web app read or write the clipboard only in answer to a tap, so
+the app never syncs it by itself: everything is one tap.
+
+- **iPhone → computer.** **Send clipboard** (on the computer's screen, just
+  above the message box, and on its row on the home screen) reads the
+  clipboard (`navigator.clipboard.readText()`: iOS first shows its **Paste**
+  button, which must be tapped) and sends
+
+  ```
+  {"t":"clip","id":<8–64 of [0-9A-Za-z_-]>,"text"}  →  {"t":"ack","id"}  or  {"t":"nack","id","error"}
+  ```
+
+  The computer puts it on its clipboard as it would a native peer's `clip`
+  (the same `clipboard_max_bytes` limit), and answers; the app says "Sent to
+  *computer*: it's on its clipboard", or why not. Because only a tap sends
+  one, a clip from the app is applied **even when the computer's automatic
+  clipboard sync (`caps.clipboard`) is off**. Only the computer's mesh node
+  marks a clip as one (`"explicit"`, for a `webrtc` link): a native peer or
+  the hub can't. If the computer has no clipboard tool (wl-clipboard,
+  xclip/xsel, pbcopy) the answer says so.
+- **Computer → iPhone.** `{"t":"clip","text"}`, sent when the computer's
+  clipboard changes, *if automatic clipboard sync is on* (the same broadcast
+  to every linked peer as for native ones, and the same rules: text a
+  password manager marks secret is never read, let alone sent), and always
+  when its owner sends it on purpose: **Send clipboard** on the iPhone's card
+  in Droplet's window, the iPhone's **Send clipboard** in the tray menu, or
+  `droplet-agent clip <iphone>` (route `webrtc`; if the app isn't open, it
+  says so). The window's Send clipboard skips a clipboard a password manager
+  marked secret, as the tray and the command already did. The app shows a
+  card, "From *computer*", with a preview, **Copy** (one tap:
+  `navigator.clipboard.writeText()`) and ×; the newest five from each
+  computer, newest first, on the home screen, and the newest above the
+  message box. A new one is highlighted and badged ("New clipboard" on the
+  computer's row) until it's copied, dismissed, or its computer's screen is
+  opened.
+- **Never stored.** Clipboard text often holds passwords: the app keeps the
+  cards in memory only (never IndexedDB), so they survive reconnects while
+  it's open and are gone when iOS ends it.
+- **No echo.** The app never sends on its own. Text the computer puts on its
+  clipboard from the iPhone is remembered (`ClipboardSync.last_applied`), so
+  the change it causes isn't broadcast back to the iPhone or anyone else.
+- **Size.** A clip is one frame on the channel, at most 256 KB of UTF-8
+  (the max-message-size both ends announce). Frames go out as UTF-8, not
+  `\u` escapes, so nearly the whole 256 KB is text. The app refuses longer
+  text before sending; the computer refuses to send it ("too much text"),
+  and its broadcast skips the iPhone for it.
+
 ## 4. The computer's side
 
 `agent/droplet_agent/webrtc/`:
@@ -338,6 +387,14 @@ PLAYWRIGHT_DIR=$PWD/node_modules PYTHON=<a python with aiortc> node agent/tests/
 
 `SHOTS=<dir>` saves screenshots of the app's screens.
 
+The end-to-end run turns the computer's automatic clipboard sync off and
+checks the clipboard both ways anyway (explicit sends), with 192 KB texts,
+and the refusal of text too large for a frame. With no one to tap iOS's
+Paste button, the browser context is granted `clipboard-read` (and, in
+Chromium, `clipboard-write`; WebKit refuses that name and allows writes
+from a click anyway). The dry-run agent logs the text it would set, which
+the test reads.
+
 ## 7. What still needs a real iPhone
 
 - **iOS Safari itself.** Playwright's WebKit is WebKit with libwebrtc, but
@@ -356,6 +413,10 @@ PLAYWRIGHT_DIR=$PWD/node_modules PYTHON=<a python with aiortc> node agent/tests/
   an image; a camera adds glare and blur).
 - **Saving** through the share sheet, and how large a file IndexedDB lets
   a Home Screen app keep.
+- **The clipboard on iOS**: the Paste button iOS shows for **Send
+  clipboard** (and what tapping elsewhere does: the app says it wasn't
+  allowed), **Copy** from a Home Screen app, and a clip as large as 256 KB
+  over Safari's data channel.
 - **Suspension.** What happens to a transfer when the screen locks or the
   app goes to the background (the link closes; the computer's outbox
   retries a file from the start when the app comes back).
@@ -369,5 +430,5 @@ PLAYWRIGHT_DIR=$PWD/node_modules PYTHON=<a python with aiortc> node agent/tests/
   **Android** app (Android phones don't need it, but an Android tablet
   could serve an iPhone).
 - Resuming a broken transfer; notifications (web push needs a server, so
-  probably not); the clipboard (the app can read it only on a tap).
+  probably not).
 - An "iPhone" button on the landing page once a real iPhone has confirmed §7.
