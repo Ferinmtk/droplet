@@ -198,6 +198,14 @@ public sealed class SharingScreenshotTests
         var shots = await Sta.Run(() =>
         {
             var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            try
+            {
+                // "/Assets/droplet.ico" in the windows means droplet's own assembly, not this test's
+                Application.ResourceAssembly = typeof(App).Assembly;
+            }
+            catch (InvalidOperationException)
+            {
+            }
 #pragma warning disable WPF0001 // the Fluent theme, as the app sets it
             app.ThemeMode = ThemeMode.Light;
 #pragma warning restore WPF0001
