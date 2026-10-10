@@ -13,7 +13,6 @@ from droplet_agent.mesh.outbox import CANCELLED, DONE
 from droplet_agent.mesh.transfers import Transfers, eta_text, progress_text
 
 from test_mesh import nodes, trust_each_other, wait_for  # noqa: F401  (nodes is a fixture)
-from test_perms import FakeDesktop
 
 
 class Clock:
@@ -187,7 +186,7 @@ def test_cancel_is_taken_even_while_paused_and_only_for_its_own_peer(nodes, tmp_
 
 
 def test_download_deletes_the_partial_file_when_cancelled(tmp_path, nodes):
-    a, b = nodes("a"), nodes("b")
+    a = nodes("a")
     part, meta = files.part_paths(tmp_path, "f" * 64, "1" * 32)
     part.write_bytes(b"x" * 10)
     meta.write_text(json.dumps({"size": 100, "name": "n", "fp": "f" * 64}))

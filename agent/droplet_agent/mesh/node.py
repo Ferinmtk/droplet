@@ -40,7 +40,7 @@ from . import transfers as tx
 from .files import Cancelled, Completed, DownloadError, Offer, Offers, check_offer, download, safe_name
 from .identity import PEER_ID, der_to_pem, load_or_create
 from .links import check_url
-from .outbox import CANCELLED, DONE, FAILED, FINISHED, QUEUED, SENDING, Outbox
+from .outbox import CANCELLED as JOB_CANCELLED, DONE, FAILED, FINISHED, QUEUED, SENDING, Outbox
 from .pairing import ACCEPTED, CANCELLED, DENIED, EXPIRED, Incoming, Outgoing, PairError
 from .server import Server
 from .tlsctx import ServerContexts, client_context
@@ -1006,7 +1006,7 @@ class MeshNode:
         if not active:
             # not on its way right now: it just leaves the outbox (the delivery thread, if it's
             # about to send it, sees it was cancelled)
-            self._finish(job, CANCELLED, error=why)
+            self._finish(job, JOB_CANCELLED, error=why)
         log.info("mesh: %s to %s cancelled (%s)", job.get("name") or "a message", job["peer"], why)
 
     # --- sending: live messages (routes 1–3) --------------------------------------
@@ -1213,11 +1213,11 @@ class MeshNode:
     def _finish(self, job: dict, state: str, **fields):
         self.outbox.update(job["id"], state=state, **fields)
         if job["kind"] == "file":
-            if self.transfers.get(job["id"]) is not None or state == CANCELLED:
+            if self.transfers.get(job["id"]) is not None or state == JOB_CANCELLED:
                 if self.transfers.get(job["id"]) is None:
                     self.transfers.start(job["id"], direction="out", fp=job["fp"], peer=job["peer"],
                                          name=job.get("name") or "", size=job.get("size") or 0)
-                self.transfers.finish(job["id"], {DONE: tx.DONE, FAILED: tx.FAILED, CANCELLED: tx.CANCELLED}
+                self.transfers.finish(job["id"], {DONE: tx.DONE, FAILED: tx.FAILED, JOB_CANCELLED: tx.CANCELLED}
                                       .get(state, tx.WAITING), fields.get("error"))
         if state in FINISHED:
             with self._lock:
@@ -1271,7 +1271,7 @@ class MeshNode:
             self._finish(job, FAILED, error=str(e))
             return "done"
         if job["id"] in self._cancel_jobs:
-            self._finish(job, CANCELLED, error=job.get("error") or "cancelled")
+            self._finish(job, JOB_CANCELLED, error=job.get("error") or "cancelled")
             return "done"
         self.outbox.update(job["id"], state=SENDING, attempts=job["attempts"] + 1)
         link = self.direct(job["fp"])
@@ -1292,7 +1292,7 @@ class MeshNode:
                 got = self._direct_file(link, job)
             if got.startswith("cancelled") or job["id"] in self._cancel_jobs:
                 why = got.split(": ", 1)[1] if got.startswith("cancelled: ") else "cancelled"
-                self._finish(job, CANCELLED, error=why)
+                self._finish(job, JOB_CANCELLED, error=why)
                 return "done"
             if got == "ok":
                 self._finish(job, DONE, route=link.kind, error=None)
