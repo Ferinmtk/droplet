@@ -116,7 +116,14 @@ class MenuBar(QObject):
 
     @Slot(object)
     def show(self, status):
-        view = tray.build_view(status, app=True)
+        from .mesh.links import only_url
+        try:
+            clip_url = only_url(QApplication.clipboard().text()) if QApplication.instance() else None
+        except Exception:
+            clip_url = None
+        view = tray.build_view(status, app=True, clip_url=clip_url)
+        busy = bool(status and any(t.get("state") == "active" for t in status.get("transfers") or []))
+        self.timer.setInterval(int((tray.POLL_BUSY if busy else tray.POLL) * 1000))
         self.view = view
         shape = tray._shape(view.items)
         if not view.running:
@@ -155,6 +162,11 @@ class MenuBar(QObject):
             paths = self.pick_files(name)
             if paths:
                 self.actions.run(("send-files", peer, name, paths))
+            return
+        if action[0] == "send-files-all":
+            paths = self.pick_files("all my devices")
+            if paths:
+                self.actions.run(("send-files-all", paths))
             return
         self.actions.run(action)
 

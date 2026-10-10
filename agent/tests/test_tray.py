@@ -47,8 +47,8 @@ def find(items, key):
 def test_view_lists_peers_with_their_state_and_actions():
     v = build_view(STATUS)
     assert v.running
-    assert labels(v.items) == ["Open Droplet", "Pair an iPhone…", "slim", "Pause everything",
-                               "friend wants to pair (code 1234)", "phone — connected",
+    assert labels(v.items) == ["Open Droplet", "Pair an iPhone…", "slim", "Rename this computer…", "Pause everything",
+                               "friend wants to pair (code 1234)", "Send files to all my devices…", "phone — connected",
                                "office_pc — nearby", "laptop — not reachable", "Open received files"]
     assert find(v.items, "open-app").action == ("open-app",)
     header = find(v.items, "header")
@@ -278,7 +278,7 @@ def test_menu_methods_serialise(objects):
     menu = objects.menu
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetLayout", "iias", (0, -1, []))
     rev, (root, _, kids) = reply.body
-    assert rev == menu.revision and root == 0 and len(kids) == 13   # Open Droplet, Pair an iPhone, a separator
+    assert rev == menu.revision and root == 0 and len(kids) == 15   # Open Droplet, Pair an iPhone, a separator
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetGroupProperties", "aias", ([1, 2, 3], ["label"]))
     assert [i for i, _ in reply.body[0]] == [1, 2, 3]
     reply, _ = call(objects, MENU_PATH, MENU_IFACE, "GetProperty", "is", (menu.id_of("header"), "label"))
@@ -474,3 +474,90 @@ def test_no_command_from_the_desktop_opens_droplet_and_from_a_terminal_shows_hel
     assert cli.main([]) == 0 and opened == [1]
     monkeypatch.setattr(cli.sys, "stdin", Stream(True))
     assert cli.main([]) == 2 and opened == [1]
+
+
+# --- transfers, links, rename, several devices -----------------------------------------------
+
+def _status(**kw):
+    from droplet_agent.mesh import perms
+    st = {"id": "me", "name": "slim", "fp": "", "port": 1739, "incoming": [], "nearby": [], "outbox": [],
+          "peers": [{"id": "p1", "name": "phone", "fp": "a" * 64, "link": "lan x", "os": "android", "relation": "own",
+                     "allow": dict(perms.OWN), "nickname": "Ferrin's phone"},
+                    {"id": "p2", "name": "maryanne", "fp": "b" * 64, "link": "lan y", "os": "windows",
+                     "relation": "other", "allow": dict(perms.OTHER)},
+                    {"id": "p3", "name": "t15", "fp": "c" * 64, "link": None, "os": "linux", "relation": "own",
+                     "allow": dict(perms.OWN)}],
+          "transfers": [{"id": "1" * 32, "dir": "out", "fp": "a" * 64, "peer": "phone", "name": "video.mp4",
+                         "size": 100, "done": 45, "state": "active", "percent": 45, "eta": 12, "rate": 3_355_443},
+                        {"id": "2" * 32, "dir": "in", "fp": "b" * 64, "peer": "maryanne", "name": "x.pdf",
+                         "size": 10, "done": 10, "state": "done", "percent": 100}]}
+    st.update(kw)
+    return st
+
+
+def test_transfers_have_a_submenu_with_progress_and_cancel():
+    v = build_view(_status())
+    tr = find(v.items, "transfers")
+    assert tr.label == "Transfers (1)"
+    assert labels(tr.children) == ["video.mp4 → Ferrin's phone: 45% · 12 s left · 3.2 MB/s"]
+    assert find(v.items, f"tr:{'1' * 32}:cancel").action == ("cancel", "1" * 32, "video.mp4")
+    assert find(build_view(_status(transfers=[])).items, "transfers") is None
+
+
+def test_nicknames_all_my_devices_rename_and_send_link_in_the_menu():
+    v = build_view(_status(), clip_url="https://example.com/slides")
+    assert find(v.items, "peer:p1").label == "Ferrin's phone — connected"
+    assert find(v.items, "send-all").action == ("send-files-all",)
+    assert find(v.items, "rename").action == ("rename",)
+    link = find(v.items, "peer:p1:link")
+    assert link.label == "Send link from clipboard (example.com/slides)"
+    assert link.action == ("send-link", "p1", "Ferrin's phone", "https://example.com/slides")
+    assert find(build_view(_status()).items, "peer:p1:link") is None     # no link on the clipboard
+    one = _status()
+    one["peers"] = one["peers"][:2]
+    assert find(build_view(one).items, "send-all") is None              # one device of yours: no "all"
+
+
+def test_the_menus_actions_ask_the_agent():
+    asked, said = [], []
+
+    def call(req, timeout=30):
+        asked.append(req)
+        if req["cmd"] == "status":
+            return _status()
+        if req["cmd"] == "send-file":
+            return {"id": req["peer"] + "-job"}
+        if req["cmd"] == "job":
+            return {"state": "done", "route": "lan"}
+        if req["cmd"] == "link":
+            return {"how": "link", "route": "lan"}
+        if req["cmd"] == "cancel":
+            return {"id": req["id"], "name": "video.mp4", "peer": "phone", "dir": "out"}
+        return {}
+    a = Actions(call, lambda t, b: said.append((t, b)))
+    a.send_files_all([tray.Path("/tmp/a.txt")])
+    assert sorted(r["peer"] for r in asked if r["cmd"] == "send-file") == ["p1", "p3"]   # yours, not maryanne's
+    a.send_link("p1", "phone", "https://example.com")
+    assert asked[-1] == {"cmd": "link", "peer": "p1", "url": "https://example.com", "wait": 5}
+    assert said[-1][0] == "Sent the link to phone"
+    a.cancel("1" * 32, "video.mp4")
+    assert said[-1] == ("Cancelled video.mp4", "phone was told.")
+
+
+def test_rename_opens_the_window_or_asks_on_the_desktop(monkeypatch):
+    from droplet_agent import app
+    opened, said = [], []
+    a = Actions(lambda req, timeout=30: {"name": "slim"} if req["cmd"] == "status" else {"name": req["name"]},
+                lambda t, b: said.append((t, b)))
+    monkeypatch.setattr(a, "open_app", lambda page=None: opened.append(page))
+    monkeypatch.setattr(app, "available", lambda: True)
+    a.rename()
+    assert opened == ["rename"]
+    monkeypatch.setattr(app, "available", lambda: False)
+    monkeypatch.setattr(tray.shutil, "which", lambda name: "/usr/bin/kdialog" if name == "kdialog" else None)
+    monkeypatch.setattr(tray, "ask_text", lambda *a: "new name")
+    a.rename()
+    assert said[-1][0] == "This computer is called new name now"
+    monkeypatch.setattr(tray.shutil, "which", lambda name: None)
+    a.rename()
+    assert "droplet-agent rename" in said[-1][1]
