@@ -125,7 +125,7 @@ public sealed class PermsInteropTests : IAsyncLifetime
         await Wait.For(async () => (await PeerAsync(a, nFp))?["remote"]?.AsObject().Bool("paused") == true, 10, "the agent to hear .NET paused it");
         var queued = await a.CallAsync(new JsonObject { ["cmd"] = "text", ["peer"] = nId, ["body"] = "after the meeting", ["wait"] = 5 });
         Assert.Equal("queued", queued.Str("state"));
-        Assert.Equal("waiting: dotnet paused sharing with you", queued.Str("error"));
+        Assert.Equal("waiting: dotnet paused sharing with you", queued.Str("why"));
         Assert.DoesNotContain(n.Node.Chat.Recent(), m => m.Body == "after the meeting");
         n.Node.SetPerms(aFp, paused: false);
         await Wait.For(() => n.Node.Chat.Recent().Any(m => m.Dir == "in" && m.Body == "after the meeting"), 20, ".NET to get the message after the resume");
@@ -152,7 +152,7 @@ public sealed class PermsInteropTests : IAsyncLifetime
         // .NET's own broadcasts stop too
         Assert.False(await n.Node.BroadcastAsync(new JsonObject { ["t"] = "clip", ["text"] = "from .NET" }));
         var queued = await a.CallAsync(new JsonObject { ["cmd"] = "text", ["peer"] = n.Node.PeerId, ["body"] = "later", ["wait"] = 5 });
-        Assert.Equal("waiting: dotnet paused sharing with you", queued.Str("error"));
+        Assert.Equal("waiting: dotnet paused sharing with you", queued.Str("why"));
 
         n.Node.PauseEverything(false);
         await Wait.For(() => n.Node.Chat.Recent().Any(m => m.Dir == "in" && m.Body == "later"), 20, ".NET to get the message after the resume");

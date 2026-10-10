@@ -147,7 +147,7 @@ public sealed class SharingScreenshotTests
 
     static void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
 
-    static Brush Background(Application app)
+    static SolidColorBrush Background(Application app)
     {
         foreach (var key in new List<string> { "ApplicationBackgroundBrush", "SolidBackgroundFillColorBaseBrush" })
         {
