@@ -90,9 +90,26 @@ clipboard and ring never queue.
 | `Shell/` | single instance, the command line, `droplet:` links, registration, Start with Windows, Send To, packaging detection, the log |
 
 **Tray menu:** Pause (Resume) everything · Pause a device ▸ · Open droplet ·
-Send files to ▸ · Send clipboard to ▸ · Ring ▸ · Devices… · Open downloads
-folder · Pause notifications · Pause remote control · Settings… · Quit
-droplet. A send a device won't take is greyed, with why. The tooltip says how the hub is reached
+Send files to ▸ · Send clipboard to ▸ · Send a link to ▸ · Ring ▸ · Files on
+their way ▸ (each with Cancel, shown while there are any) · Devices… · Open
+downloads folder · Pause notifications · Pause remote control · Settings… ·
+Quit droplet. A send a device won't take is greyed, with why.
+
+**Progress, links, names, several devices** ([`docs/mesh.md` §9.10](../docs/mesh.md)):
+each device's card lists the files on their way to or from it, with a thin
+progress bar, "45% · 12 s left · 3.2 MB/s" (at most 4 updates a second) and
+Cancel, which stops it at both ends and deletes the partial file. Send a
+link… (on the card, in the chat window and in the tray) is filled in from
+the clipboard when it holds a link; it opens in the browser on your own
+devices (5 a minute from one device at most) and waits with an Open button
+on someone else's, and a message that's nothing but a link gets an Open
+button too. Settings renames this PC (through the hub first, when it has
+one) and tells the linked devices at once. Nickname… on a card names a
+device here only, shown everywhere with its own name small beside it, and
+never sent. Select, above the list, ticks several devices (All my devices
+ticks your own) to send them files, a message, a link or the clipboard:
+each gets its own send, and the card lists each one's result (sent,
+waiting, or refused, with why). The tooltip says how the hub is reached
 ("droplet — t15 on Wi-Fi", "via Tailscale"), or how many devices are linked
 without a hub, and "being controlled by Home" for two minutes after remote
 control. The drop is aqua, grey when nothing is reachable, amber for a few
@@ -180,7 +197,9 @@ input, media, lock and screenshots reaching the fake platform services; the
 roster through a hub, the hub's mailbox, remote control through the hub's
 `/ws`, the poll loop, and direct delivery with the hub stopped; the hub
 found over mDNS, its LAN certificate pinned, and joining over the LAN until
-approved or declined. Set `DROPLET_TEST_LOG` to a file to get the engine's log there.
+approved or declined; and (§9.10) each side's features, links opened on your
+own device and held on someone else's, renames heard at once, and a file
+cancelled from either end, either way, with the partial file gone. Set `DROPLET_TEST_LOG` to a file to get the engine's log there.
 
 On a small machine, build with `-m:1 -p:UseSharedCompilation=false`.
 

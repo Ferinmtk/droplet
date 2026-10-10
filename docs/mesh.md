@@ -677,7 +677,14 @@ No `features` means an older peer: it gets none of the new messages it
 couldn't use (a link goes as a chat message instead), and ignores the ones
 it doesn't know (`cancel`, `rename`), as §9.4 says of unknown types. The
 Linux and Mac agent is the reference (`mesh/node.py`, `mesh/transfers.py`,
-`mesh/links.py`); the Windows and Android apps follow this section.
+`mesh/links.py`); the Windows and Android apps follow this section. The
+Windows app does (`windows-net/src/Droplet.Core/Mesh/Transfers.cs`,
+`Links.cs`, `Several.cs`), with the reference's `test_transfers.py` and
+`test_sending.py` ported to .NET (`FeaturesTests.cs`) and run against the
+agent too (`FeaturesInteropTests.cs`). On Windows a link from your own device
+opens in the default browser, and one from someone else's comes as a toast
+with an Open button; the hub names a PC that has one, so Settings renames it
+there first.
 
 **Progress** is local: each side counts its own bytes, nothing is sent for
 it. The sender of a mesh file counts what it has served (the furthest byte

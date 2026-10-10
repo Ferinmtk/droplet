@@ -2039,9 +2039,9 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             var got = job.Kind == "text" ? await DirectTextAsync(link, job).ConfigureAwait(false) : await DirectFileAsync(link, job).ConfigureAwait(false);
             if (got.StartsWith("cancelled", StringComparison.Ordinal) || cancelJobs.ContainsKey(job.Id))
             {
-                var why = got.StartsWith("cancelled: ", StringComparison.Ordinal) ? got["cancelled: ".Length..]
+                var who = got.StartsWith("cancelled: ", StringComparison.Ordinal) ? got["cancelled: ".Length..]
                     : cancelJobs.GetValueOrDefault(job.Id) ?? "cancelled";
-                Finish(job, JobState.Cancelled, error: why);
+                Finish(job, JobState.Cancelled, error: who);
                 return "done";
             }
             if (got == "ok")
