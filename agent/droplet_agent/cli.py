@@ -374,7 +374,8 @@ def _ask_relation(name: str, args) -> str | None:
 
 
 def cmd_peers(args) -> int:
-    st = _ask_agent({"cmd": "status"})
+    # scan: also ask the gateway who it is, for a device serving this network's hotspot
+    st = _ask_agent({"cmd": "status", "scan": True})
     if st is None:
         return 1
     print(f"this device: {st['name']} (id {st['id']}), mesh port {st['port']}")

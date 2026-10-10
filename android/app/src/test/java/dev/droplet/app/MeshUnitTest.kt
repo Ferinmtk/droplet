@@ -471,4 +471,117 @@ class MeshUnitTest {
         assertEquals("127.0.0.1", link!!.address)
         assertTrue(link.keep)
     }
+
+    // --- pairing on a hotspot: nothing announces, the gateway is asked who it is (§9.10) -------
+
+    private fun named(name: String, gateways: List<String> = emptyList()) = object : QuietHost() {
+        override fun deviceName() = name
+        override fun gateways() = gateways
+    }
+
+    @Test
+    fun theDeviceServingTheHotspotCanBePairedFromEitherSide() {
+        val laptop = node("laptop", named("laptop"))                         // serves the hotspot
+        val phone = node("phone", named("phone", listOf("127.0.0.1")))      // joined it
+        phone.gatewayPort = laptop.listeningPort                             // 1739 in real life
+        assertTrue(phone.nearby().isEmpty() && laptop.nearby().isEmpty())
+
+        // the phone's Pair screen asks the gateway: the laptop, checked against its certificate
+        val found = phone.scanGateways()
+        assertEquals(listOf(laptop.identity.fp), found.map { it.fp })
+        assertEquals("laptop", found[0].name)
+        assertEquals(listOf("127.0.0.1"), found[0].addresses)
+        assertEquals(laptop.listeningPort, found[0].port)
+        assertEquals(listOf(laptop.identity.fp), phone.nearby().map { it.fp })
+        // the laptop lists the phone, which asked, at the address it asked from and its own port
+        val asked = laptop.nearby().single()
+        assertEquals(phone.identity.fp, asked.fp)
+        assertEquals("phone", asked.name)
+        assertEquals("android", asked.os)
+        assertEquals(phone.listeningPort, asked.port)
+        // nothing is trusted by itself
+        assertNull(laptop.trust.get(phone.identity.fp))
+        assertNull(phone.trust.get(laptop.identity.fp))
+
+        // the laptop's owner starts it, from its list: both show the same code, as always
+        val og = laptop.pairStart(asked.addresses[0], asked.port, asked.fp)
+        val waiting = phone.incoming.waiting().single()
+        assertEquals(og.code, waiting.code)
+        phone.pairAnswer(waiting.request, true)
+        val done = java.util.concurrent.CountDownLatch(1)
+        laptop.pairConfirm(og.request!!, true) { done.countDown() }
+        assertTrue(done.await(20, java.util.concurrent.TimeUnit.SECONDS))
+        assertNotNull(laptop.trust.get(phone.identity.fp))
+        assertNotNull(phone.trust.get(laptop.identity.fp))
+
+        // or the phone's owner starts it, from the phone's list
+        val other = node("other", named("other"))
+        phone.gatewayPort = other.listeningPort
+        val there = phone.scanGateways(force = true).single()
+        val og2 = phone.pairStart(there.addresses[0], there.port, there.fp)
+        assertEquals(og2.code, other.incoming.waiting().single().code)
+    }
+
+    @Test
+    fun aPlainRouterAtTheGatewayListsNothing() {
+        val phone = node("phone", named("phone", listOf("127.0.0.1")))
+        phone.gatewayPort = java.net.ServerSocket(0).use { it.localPort }   // nothing listening
+        assertTrue(phone.scanGateways(force = true).isEmpty())
+        assertTrue(phone.nearby().isEmpty())
+        // the hello is a POST, with no certificate, like the rest of pairing
+        assertEquals(405, request(phone.listeningPort, null, "/mesh/pair/hello"))
+        assertEquals(200, request(phone.listeningPort, null, "/mesh/pair/hello", "POST", "{}"))
+        assertTrue(phone.nearby().isEmpty())   // a hello that says nothing lists nothing
+    }
+
+    @Test
+    fun askingTheGatewayBacksOff() {
+        var now = 100_000L
+        val scan = dev.droplet.app.mesh.Hotspot.GatewayScan { now }
+        assertEquals(listOf("10.0.0.1"), scan.due(listOf("10.0.0.1")))
+        val waits = mutableListOf<Long>()
+        repeat(6) {
+            scan.result("10.0.0.1", null)
+            val t0 = now
+            while (scan.due(listOf("10.0.0.1")).isEmpty()) now += 1_000
+            waits += now - t0
+        }
+        assertEquals(listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L, 60_000L), waits)
+        val seen = dev.droplet.app.mesh.Seen("ab".repeat(32), "0123456789abcdef", "laptop", "linux", emptyList(), "", 1739, listOf("10.0.0.1"))
+        scan.result("10.0.0.1", seen)
+        assertEquals(listOf(seen), scan.peers())
+        assertTrue(scan.due(listOf("10.0.0.1")).isEmpty())
+        now += dev.droplet.app.mesh.Hotspot.HELLO_EVERY_MS
+        assertEquals(listOf("10.0.0.1"), scan.due(listOf("10.0.0.1")))
+        now += dev.droplet.app.mesh.Hotspot.FOUND_TTL_MS
+        assertTrue(scan.peers().isEmpty())   // it stopped answering: gone from the list
+        assertEquals(listOf("10.0.0.9"), scan.due(listOf("10.0.0.9")))   // another network
+    }
+
+    @Test
+    fun devicesThatAskedAreLimitedAndForgotten() {
+        var now = 0L
+        val own = "cd".repeat(32)
+        val k = dev.droplet.app.mesh.Hotspot.Knocks(own) { now }
+        fun hello(i: Int, fp: String = "%064x".format(i)) = JSONObject().put("v", 1).put("id", "%016x".format(i))
+            .put("name", " dev\n $i\u0007").put("os", "android").put("fp", fp).put("port", 1740)
+        k.answer(hello(1, own), "10.0.0.2", JSONObject())
+        assertTrue(k.peers().isEmpty())   // itself
+        for (bad in listOf(hello(1, "xyz"), hello(1).put("id", "NOPE"), null)) {
+            assertEquals(200, k.answer(bad, "10.0.0.2", JSONObject()).first)
+            assertTrue(k.peers().isEmpty())
+        }
+        k.answer(hello(1).put("port", 0).put("os", "beos"), "10.0.0.2", JSONObject())
+        val one = k.peers().single()
+        assertEquals("dev 1", one.name)
+        assertEquals("", one.os)
+        assertEquals(1739, one.port)
+        assertEquals(listOf("10.0.0.2"), one.addresses)
+        for (i in 2 until 20) k.answer(hello(i), "10.0.0.$i", JSONObject())
+        assertEquals(dev.droplet.app.mesh.Hotspot.MAX_KNOCKS, k.peers().size)
+        now += dev.droplet.app.mesh.Hotspot.KNOCK_TTL_MS + 1
+        assertTrue(k.peers().isEmpty())
+        repeat(dev.droplet.app.mesh.Hotspot.MAX_HELLOS) { assertEquals(200, k.answer(null, "10.0.0.2", JSONObject()).first) }
+        assertEquals(429, k.answer(null, "10.0.0.2", JSONObject()).first)
+    }
 }

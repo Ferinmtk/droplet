@@ -455,4 +455,48 @@ class MeshInteropTest {
         waitFor("the agent rings") { "ring (dry run)" in b.logText() }
         failed = false
     }
+
+    // --- a hotspot: the Linux agent serves it, nothing announces (docs/mesh.md §9.10) --------
+
+    @Test
+    fun pairingOnTheLinuxAgentsHotspot() {
+        val a = agent("linux-hotspot")
+        a.start()
+        Mesh.gatewayFinder = { listOf(lan) }       // the agent's computer is the gateway
+        try {
+            val node = phone()
+            node.gatewayPort = a.port                  // 1739 in real life
+            // the phone's Pair screen asks the gateway who it is: the agent, checked against its certificate
+            val found = node.scanGateways(force = true)
+            assertEquals(listOf(a.fp), found.map { it.fp })
+            assertEquals(listOf(lan), found[0].addresses)
+            assertEquals(a.port, found[0].port)
+            assertTrue(node.nearby().any { it.fp == a.fp })
+            // and the agent lists the phone, which asked, at its address and port
+            val near = a.status().getJSONArray("nearby")
+            val me = (0 until near.length()).map { near.getJSONObject(it) }.single { it.getString("fp") == node.identity.fp }
+            assertEquals("robo-phone", me.getString("name"))
+            assertEquals(phonePort, me.getInt("port"))
+            assertEquals(lan, me.getJSONArray("addresses").getString(0))
+
+            // the agent's owner starts pairing, by the name it listed: the phone shows the same code
+            val start = a.ctl(JSONObject().put("cmd", "pair-start").put("target", "robo-phone"))
+            assertTrue(start.toString(), !start.has("error"))
+            val waiting = node.incoming.waiting()
+            assertEquals(1, waiting.size)
+            assertEquals(start.getString("code"), waiting[0].code)
+            assertEquals(a.fp, waiting[0].fp)
+
+            // a device asking the phone, as the agent asks: answered, and listed at its port
+            val hello = JSONObject().put("v", 1).put("id", "0123456789abcdef").put("name", "joined-laptop")
+                .put("os", "linux").put("fp", "ab".repeat(32)).put("port", 1741)
+            assertEquals("200", requestPhone(null, "/mesh/pair/hello", "POST", hello.toString()))
+            val asked = node.nearby().single { it.fp == "ab".repeat(32) }
+            assertEquals("joined-laptop", asked.name)
+            assertEquals(1741, asked.port)
+            failed = false
+        } finally {
+            Mesh.gatewayFinder = null
+        }
+    }
 }
