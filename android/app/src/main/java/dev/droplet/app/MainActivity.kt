@@ -286,7 +286,8 @@ class MainActivity : AppCompatActivity() {
             ?.let { lines += it.text }
         v.findViewById<TextView>(R.id.route).apply {
             text = lines.joinToString("\n")
-            maxLines = lines.size
+            // "Paused · Connected on Wi-Fi" may need a second line beside the Pause button
+            maxLines = lines.size + 1
         }
         v.findViewById<View>(R.id.badge).visibility = if (e.isOther) View.VISIBLE else View.GONE
         v.findViewById<TextView>(R.id.pause).apply {

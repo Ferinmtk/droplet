@@ -57,22 +57,6 @@
                     android:textSize="18sp"
                     android:textStyle="bold"
                     tools:text="slim" />
-
-                <!-- someone else's device (docs/mesh.md §9.9) -->
-                <TextView
-                    android:id="@+id/badge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/r_pill"
-                    android:maxLines="1"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="1dp"
-                    android:text="@string/perm_badge_other"
-                    android:textColor="@color/r_accent"
-                    android:textSize="11.5sp"
-                    android:visibility="gone"
-                    tools:visibility="visible" />
             </LinearLayout>
 
             <LinearLayout
@@ -100,6 +84,22 @@
                     android:textSize="13.5sp"
                     tools:text="Connected on Wi-Fi" />
             </LinearLayout>
+
+            <!-- someone else's device (docs/mesh.md §9.9) -->
+            <TextView
+                android:id="@+id/badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/r_pill"
+                android:maxLines="1"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="1dp"
+                android:text="@string/perm_badge_other"
+                android:textColor="@color/r_accent"
+                android:textSize="11.5sp"
+                android:visibility="gone"
+                tools:visibility="visible" />
         </LinearLayout>
 
         <!-- Pause / Resume sharing with this device -->
