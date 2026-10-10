@@ -87,6 +87,9 @@ class Offer:
         self.opener = opener          # () -> a binary file object
         self.check = check            # () -> None, or why the file can't be sent any more
         self.sent = 0                 # bytes served, all requests together
+        self.position = 0             # how far into the file it has been served (resumes start further on)
+        self.on_progress = None       # (position) as it's served
+        self.cancelled = False        # stopped here: what's being served stops, and it's 404 from now on
         self.last_activity = time.monotonic()
         self.done = threading.Event()
         self.result: tuple[bool, str] | None = None   # (ok, error)
@@ -98,6 +101,10 @@ class Offer:
         if self.result is None:
             self.result = (ok, error)
         self.done.set()
+
+    def cancel(self, error: str = "cancelled"):
+        self.cancelled = True
+        self.finish(False, error)
 
 
 class Offers:
@@ -129,7 +136,7 @@ class Offers:
     def serve(self, sock, oid: str, fp: str, headers: dict, method: str, send_head):
         """Answer GET/HEAD /mesh/files/<oid> for the peer `fp`. `send_head(status, headers)`."""
         o = self.get(oid) if OFFER_ID.match(oid or "") else None
-        if o is None or o.fp != fp:
+        if o is None or o.fp != fp or o.cancelled:
             # the same answer whether it doesn't exist or isn't for you
             send_head(404, {"Content-Length": "0"})
             return
@@ -157,13 +164,18 @@ class Offers:
         with o.opener() as f:
             f.seek(first)
             while done < length:
+                if o.cancelled:
+                    raise OSError("the transfer was cancelled")
                 data = f.read(min(CHUNK, length - done))
                 if not data:
                     raise OSError("the file got shorter while it was being sent")
                 sock.sendall(data)
                 done += len(data)
                 o.sent += len(data)
+                o.position = max(o.position, first + done)
                 o.last_activity = time.monotonic()
+                if o.on_progress:
+                    o.on_progress(o.position)
                 if self.max_rate:
                     ahead = done / self.max_rate - (time.monotonic() - started)
                     if ahead > 0:
@@ -210,6 +222,18 @@ class DownloadError(Exception):
         self.permanent = permanent
 
 
+class Cancelled(DownloadError):
+    """The download was cancelled, here or by the sender: the partial file is gone."""
+
+    def __init__(self, message: str = "cancelled"):
+        super().__init__(message, True)
+
+
+def drop_partial(directory: Path, fp: str, oid: str):
+    for p in part_paths(directory, fp, oid):
+        p.unlink(missing_ok=True)
+
+
 def part_paths(directory: Path, fp: str, oid: str) -> tuple[Path, Path]:
     base = directory / f".droplet-{fp[:16]}-{oid}"
     return base.with_name(base.name + ".part"), base.with_name(base.name + ".json")
@@ -229,8 +253,21 @@ def check_offer(msg: dict) -> tuple[str, str, int, str]:
 
 def download(identity, fp: str, hosts: list[tuple[str, int]], oid: str, name: str, size: int,
              directory: Path, *, tries: int = DOWNLOAD_TRIES, timeout: float = 20, sleep=time.sleep,
-             on_progress=None) -> Path:
-    """Fetch an offer into `directory`, resuming a partial one. Returns the saved file."""
+             on_progress=None, cancelled=None) -> Path:
+    """Fetch an offer into `directory`, resuming a partial one. Returns the saved file.
+
+    `cancelled()` is asked between chunks: when it says yes, the partial file is deleted and
+    Cancelled is raised."""
+    try:
+        return _download(identity, fp, hosts, oid, name, size, directory, tries=tries, timeout=timeout,
+                         sleep=sleep, on_progress=on_progress, cancelled=cancelled or (lambda: False))
+    except Cancelled:
+        drop_partial(directory, fp, oid)
+        raise
+
+
+def _download(identity, fp, hosts, oid, name, size, directory, *, tries, timeout, sleep, on_progress,
+              cancelled) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     part, meta = part_paths(directory, fp, oid)
     try:
@@ -248,11 +285,13 @@ def download(identity, fp: str, hosts: list[tuple[str, int]], oid: str, name: st
     delay = 1.0
     for attempt in range(tries):
         for host, port in hosts:
+            if cancelled():
+                raise Cancelled()
             have = part.stat().st_size if part.exists() else 0
             if have == size:
                 break
             try:
-                _fetch(identity, fp, host, port, oid, part, have, size, timeout, on_progress)
+                _fetch(identity, fp, host, port, oid, part, have, size, timeout, on_progress, cancelled)
             except DownloadError as e:
                 if e.permanent:
                     raise
@@ -270,6 +309,8 @@ def download(identity, fp: str, hosts: list[tuple[str, int]], oid: str, name: st
                      name, got, size, last_error, delay)
             sleep(delay)
             delay = min(delay * 2, 16)
+            if cancelled():
+                raise Cancelled()
     else:
         raise DownloadError(last_error)
     if not part.exists():
@@ -298,7 +339,8 @@ def _claim(directory: Path, name: str, part: Path) -> Path:
         return final
 
 
-def _fetch(identity, fp, host, port, oid, part: Path, have: int, size: int, timeout, on_progress):
+def _fetch(identity, fp, host, port, oid, part: Path, have: int, size: int, timeout, on_progress,
+           cancelled=lambda: False):
     ctx = client_context(identity, fp)
     conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=timeout)
     try:
@@ -323,7 +365,11 @@ def _fetch(identity, fp, host, port, oid, part: Path, have: int, size: int, time
             f.seek(have)
             f.truncate()
             got = have
+            if on_progress:
+                on_progress(got, size)
             while True:
+                if cancelled():
+                    raise Cancelled()
                 data = resp.read(CHUNK)
                 if not data:
                     break

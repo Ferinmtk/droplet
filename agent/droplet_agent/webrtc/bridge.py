@@ -44,7 +44,7 @@ class BrowserLink:
         self.ready.set()
         self.closed = False
         self.opened = self.last_used = time.monotonic()
-        self.hello = {"name": conn.name, "os": "ios"}
+        self.hello = {"name": conn.name, "os": "ios", "features": list(conn.features)}
 
     def send(self, msg: dict) -> bool:
         if self.closed or not fits(msg):
@@ -67,6 +67,8 @@ class BrowserLink:
         if self.closed:
             return "the link dropped"
         self.last_used = time.monotonic()
+        node = self.bridge.node
+        self.conn.on_progress = lambda fid, n: node.transfers.progress(fid, n)
         fut = asyncio.run_coroutine_threadsafe(
             self.conn.send_file(job["id"], job["name"], job["size"], job["mime"], Path(job["path"])),
             self.bridge.listener.loop)
@@ -75,6 +77,27 @@ class BrowserLink:
         except Exception as e:
             return f"stopped: {e}"
         return "ok" if ok else why
+
+    def _on_loop(self, fn, *args):
+        """Run fn(*args) on the channel's loop and wait for its answer."""
+        done = concurrent.futures.Future()
+
+        def run():
+            try:
+                done.set_result(fn(*args))
+            except Exception as e:
+                done.set_exception(e)
+        self.bridge.listener.call(run)
+        try:
+            return done.result(5)
+        except Exception:
+            return False
+
+    def cancel_send(self, fid: str, why: str = "cancelled here") -> bool:
+        return bool(self._on_loop(self.conn.cancel_send, fid, why))
+
+    def cancel_receive(self, fid: str) -> bool:
+        return bool(self._on_loop(self.conn.cancel_receive, fid))
 
 
 class Bridge(Host):
@@ -190,6 +213,24 @@ class Bridge(Host):
 
     def perm(self, fp: str) -> dict | None:
         return self.node.perm_for(fp)
+
+    def transfer(self, conn: Conn, fid: str, **info):
+        t = self.node.transfers
+        state = info.get("state")
+        if info.get("dir") == "in" and state == "active":
+            t.start(fid, direction="in", fp=conn.fp, peer=conn.name, name=info.get("name") or "",
+                    size=info.get("size") or 0, route="webrtc")
+            return
+        if "done" in info and state in (None, "active"):
+            t.progress(fid, info["done"])
+        if state in ("done", "failed", "cancelled"):
+            t.finish(fid, state, info.get("error"))
+
+    def renamed(self, conn: Conn, fp: str, name) -> str | None:
+        e = self.node.trust.rename(fp, name)
+        if e is not None:
+            log.info("webrtc: the iPhone is called %s now", e["name"])
+        return e["name"] if e else None
 
     def refuse_file(self, conn: Conn, msg: dict) -> dict | None:
         from ..mesh import perms

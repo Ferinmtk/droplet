@@ -36,13 +36,16 @@ from . import DEFAULT_PORT, OS_NAME, PROTOCOL_VERSION, perms
 from .control import ControlServer
 from .desktop import Desktop
 from .discovery import Directory, txt_records
-from .files import Completed, DownloadError, Offer, Offers, check_offer, download, safe_name
+from . import transfers as tx
+from .files import Cancelled, Completed, DownloadError, Offer, Offers, check_offer, download, safe_name
 from .identity import PEER_ID, der_to_pem, load_or_create
-from .outbox import DONE, FAILED, QUEUED, SENDING, Outbox
+from .links import check_url
+from .outbox import CANCELLED, DONE, FAILED, FINISHED, QUEUED, SENDING, Outbox
 from .pairing import ACCEPTED, CANCELLED, DENIED, EXPIRED, Incoming, Outgoing, PairError
 from .server import Server
 from .tlsctx import ServerContexts, client_context
-from .trust import TrustList, clean_addresses, clean_port, make_browser_entry, make_entry
+from .transfers import Transfers
+from .trust import TrustList, check_name, clean_addresses, clean_port, make_browser_entry, make_entry
 from .wslink import Link, LinkError, client_handshake, server_handshake
 
 log = logging.getLogger("droplet_agent.mesh")
@@ -66,6 +69,10 @@ MAX_TEXT = 64 * 1024
 MAX_CHAT = 500          # messages one `chat` answer holds at most
 MAX_ANSWER = 768 * 1024  # and bytes (a control answer is one line, read up to control.MAX_LINE)
 LIVE = ("input", "media", "cmd")
+# what this peer understands besides v1 (docs/mesh.md §9.10), in its hello as "features":
+# `cancel` (stop a transfer), `link` (a web link, opened on your own devices), `rename`
+FEATURES = ["cancel", "link", "rename"]
+OPEN_LINKS = 5          # links opened at most, from one device, in a minute (the rest wait in Messages)
 TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
 TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 
@@ -87,7 +94,10 @@ class Host:
 
     def mesh_caps(self) -> list[str]: return []
     def shows_notifications(self) -> bool: return True
-    def device_name(self) -> str: return socket.gethostname().split(".")[0]
+    def device_name(self) -> str: return getattr(self, "_name", None) or socket.gethostname().split(".")[0]
+    # a new name for this device (droplet-agent rename): kept by the host; with a hub, the hub
+    # names it (and may refuse: a name another device has). Raises ValueError saying why not.
+    def set_device_name(self, name: str) -> None: self._name = name
     def hub_device_id(self) -> str | None: return None
     def hub_id(self) -> str | None: return None
     def dispatch_remote(self, msg: dict, source) -> None: pass
@@ -247,6 +257,11 @@ class MeshNode:
         self.incoming.on_ready = self._pair_request
         self.outgoing: dict[str, Outgoing] = {}
         self.offers = Offers(max_rate)
+        self.transfers = Transfers()
+        self._dl_cancel: dict[tuple[str, str], str] = {}   # (fp, offer id) → who cancelled it ("here", "sender")
+        self._cancelled_in: set[tuple[str, str]] = set()   # offers cancelled here: a re-offer is refused
+        self._cancel_jobs: set[str] = set()                 # outbox jobs cancelled while being sent
+        self._opened: dict[str, list] = {}                   # fp → when links from it were opened
         self.completed = Completed(data_dir / "received.json")
         self.outbox = Outbox(data_dir / "outbox.json")
         self.chat = Chat(data_dir / "chat.jsonl")
@@ -294,7 +309,7 @@ class MeshNode:
     def hello(self, t: str = "hello", fp: str | None = None) -> dict:
         """Our hello (or welcome) to the peer `fp`: the caps it may use, and how we treat it."""
         out = {"t": t, "id": self.peer_id, "name": self.name, "caps": self.host.mesh_caps(), "os": OS_NAME,
-               "v": PROTOCOL_VERSION, "port": self.port}
+               "v": PROTOCOL_VERSION, "port": self.port, "features": list(FEATURES)}
         if fp is not None:
             out["caps"] = self.caps_for(fp)
             out["perm"] = self.perm_for(fp)
@@ -318,6 +333,18 @@ class MeshNode:
 
     def perm_for(self, fp: str) -> dict:
         return perms.remote_view(self.trust.get(fp), self.paused_all)
+
+    @staticmethod
+    def label(entry: dict | None) -> str:
+        """What the owner here calls a peer: its nickname, else its own name. Never sent."""
+        entry = entry or {}
+        return entry.get("nickname") or entry.get("name") or "that device"
+
+    def features_of(self, fp: str) -> list:
+        """What the peer said it understands besides v1, on its open link (none: an older peer)."""
+        link = self.open_link(fp)
+        f = (getattr(link, "hello", None) or {}).get("features") if link is not None else None
+        return [x for x in f if isinstance(x, str)] if isinstance(f, list) else []
 
     def may_send(self, fp: str, msg: dict, entry: dict | None = None) -> None:
         """Raise Refused unless `msg` may go to the peer: by this device's settings, then by what
@@ -364,7 +391,7 @@ class MeshNode:
         text = perms.refusal_text(self.name, why, cap)
         log.info("mesh: refused %s from %s: %s", t, entry["name"], "paused" if why == "paused" else f"{cap} is off")
         mid = msg.get("id") if isinstance(msg.get("id"), str) and len(msg["id"]) <= 64 else None
-        if mid and t in ("text", "offer", "clip", "file"):
+        if mid and t in ("text", "offer", "clip", "file", "link"):
             if why == "denied":
                 link.send({"t": "nack", "id": mid, "error": text, "cap": cap, "why": why})
             else:
@@ -740,6 +767,19 @@ class MeshNode:
             link.send({"t": "pong"})
         elif t == "text":
             self._recv_text(link, entry, msg)
+        elif t == "link":
+            self._recv_link(link, entry, msg)
+        elif t == "cancel":
+            self._got_cancel(link, entry, msg)
+        elif t == "rename":
+            got = self.trust.rename(link.fp, msg.get("name"))
+            if got is not None:
+                log.info("mesh: %s is called %s now", entry["name"], got["name"])
+                if isinstance(link.hello, dict):
+                    link.hello["name"] = got["name"]
+                conn = getattr(link, "conn", None)
+                if conn is not None:
+                    conn.name = got["name"]
         elif t in ("ack", "nack"):
             oid = msg.get("id")
             if isinstance(oid, str):
@@ -798,7 +838,43 @@ class MeshNode:
         link.send({"t": "ack", "id": mid})
         if new:
             log.info("mesh: message from %s: %s", entry["name"], body[:200])
-            self.desktop.notify(entry["name"], body, key=f"chat-{link.fp[:16]}")
+            self.desktop.notify(self.label(entry), body, key=f"chat-{link.fp[:16]}")
+
+    def _recv_link(self, link: Link, entry: dict, msg: dict):
+        """A web link. From your own device it opens in the browser here; from someone else's it
+        waits in Messages with an Open button. Never anything but http(s)."""
+        mid = msg.get("id")
+        if not isinstance(mid, str) or not re.fullmatch(r"[0-9A-Za-z_-]{8,64}", mid):
+            return
+        try:
+            url = check_url(msg.get("url"))
+        except ValueError as e:
+            link.send({"t": "nack", "id": mid, "error": str(e)})
+            return
+        ts = msg.get("ts") if isinstance(msg.get("ts"), (int, float)) else time.time()
+        own = entry.get("relation", "own") == "own"
+        opened = own and self._may_open(link.fp)
+        new = self.chat.add({"id": f"{link.fp[:16]}:{mid}", "dir": "in", "fp": link.fp, "peer": entry["id"],
+                             "name": entry["name"], "body": url, "ts": ts, "kind": "link", "opened": opened})
+        link.send({"t": "ack", "id": mid})
+        if not new:
+            return
+        log.info("mesh: link from %s%s: %s", entry["name"], " (opening it)" if opened else "", url[:200])
+        if opened and self.desktop.open_url(url):
+            self.desktop.notify(f"{self.label(entry)} opened a link", url, key=f"chat-{link.fp[:16]}")
+        else:
+            self.desktop.notify(f"{self.label(entry)} sent a link", url + "\nOpen it from Messages in Droplet.",
+                                key=f"chat-{link.fp[:16]}")
+
+    def _may_open(self, fp: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            recent = [t for t in self._opened.get(fp, []) if now - t < 60]
+            if len(recent) >= OPEN_LINKS:
+                self._opened[fp] = recent
+                return False
+            self._opened[fp] = recent + [now]
+        return True
 
     def _recv_offer(self, link: Link, entry: dict, msg: dict):
         try:
@@ -810,6 +886,10 @@ class MeshNode:
             link.send({"t": "ack", "id": oid})   # already here: the last ack must have been lost
             return
         key = (link.fp, oid)
+        if key in self._cancelled_in:
+            # cancelled here, and offered again by a sender that didn't understand `cancel`
+            link.send({"t": "nack", "id": oid, "error": f"{self.name} cancelled it", "why": "cancelled"})
+            return
         with self._lock:
             if key in self._downloading:
                 return
@@ -821,26 +901,113 @@ class MeshNode:
 
     def _download(self, entry: dict, oid: str, name: str, size: int, hosts):
         fp = entry["fp"]
+        key = (fp, oid)
+        self.transfers.start(oid, direction="in", fp=fp, peer=entry["name"], name=name, size=size)
         try:
             log.info("mesh: receiving %s (%d bytes) from %s", name, size, entry["name"])
-            path = download(self.identity, fp, hosts, oid, name, size, self.downloads)
+            path = download(self.identity, fp, hosts, oid, name, size, self.downloads,
+                            on_progress=lambda got, _size: self.transfers.progress(oid, got),
+                            cancelled=lambda: key in self._dl_cancel)
             self.completed.add(fp, oid, str(path))
+            self.transfers.finish(oid, tx.DONE)
             log.info("mesh: saved %s from %s", path, entry["name"])
-            self.desktop.notify(f"{entry['name']} sent a file", path.name, key=f"file-{oid}")
+            self.desktop.notify(f"{self.label(entry)} sent a file", path.name, key=f"file-{oid}")
             reply = {"t": "ack", "id": oid}
+        except Cancelled:
+            here = self._dl_cancel.get(key) == "here"
+            self.transfers.finish(oid, tx.CANCELLED, "cancelled here" if here else f"{self.label(entry)} cancelled it")
+            log.info("mesh: receiving %s from %s cancelled %s", name, entry["name"], "here" if here else "by the sender")
+            # the sender cancelled: it knows. Cancelled here: tell it (an older sender ignores that,
+            # and is refused when it offers it again)
+            if here:
+                self._cancelled_in.add(key)
+            reply = {"t": "cancel", "id": oid} if here else None
         except DownloadError as e:
+            self.transfers.finish(oid, tx.FAILED if e.permanent else tx.WAITING, str(e))
             log.warning("mesh: receiving %s from %s failed: %s", name, entry["name"], e)
             reply = {"t": "nack", "id": oid, "error": str(e)} if e.permanent else None
-        except Exception:
+        except Exception as e:
             log.exception("mesh: receiving %s failed", name)
+            self.transfers.finish(oid, tx.FAILED, str(e))
             reply = None
         finally:
             with self._lock:
                 self._downloading.discard((fp, oid))
+                self._dl_cancel.pop(key, None)
         if reply is not None:
             link = self.direct(fp)
             if link is None or not link.send(reply):
                 log.info("mesh: couldn't tell %s about %s; it will offer it again", entry["name"], name)
+
+    def _got_cancel(self, link: Link, entry: dict, msg: dict):
+        """The peer cancelled a transfer: one it was sending here (stop fetching it, and drop
+        what came), or one this device was sending it (it doesn't want it)."""
+        oid = msg.get("id")
+        if not isinstance(oid, str) or len(oid) > 64:
+            return
+        key = (link.fp, oid)
+        with self._lock:
+            if key in self._downloading:
+                self._dl_cancel.setdefault(key, "sender")
+                return
+        job = self.outbox.get(oid)
+        if job is not None and job["fp"] == link.fp and job["state"] not in FINISHED:
+            self._cancel_out(job, f"{self.label(entry)} cancelled it", tell=False)
+
+    def cancel(self, tid: str) -> dict:
+        """Stop a transfer, or a send still waiting in the outbox, by its id (or the start of it,
+        6 characters or more). The other device is told. Returns {"id", "dir", "name", "peer"}."""
+        tid = str(tid or "").strip().lower()
+        if not tid:
+            raise ValueError("say which transfer: its id, as droplet-agent transfers shows it")
+
+        def match(i):
+            return i == tid or (len(tid) >= 6 and i.startswith(tid))
+        with self._lock:
+            downloads = [k for k in self._downloading if match(k[1])]
+        jobs = [j for j in self.outbox.queued() if match(j["id"])]
+        if len(downloads) + len(jobs) > 1:
+            raise ValueError(f"{tid!r} matches more than one transfer: give more of its id")
+        if downloads:
+            key = downloads[0]
+            with self._lock:
+                self._dl_cancel[key] = "here"
+            t = self.transfers.get(key[1]) or {}
+            log.info("mesh: cancelling %s from %s", t.get("name") or key[1], t.get("peer") or key[0][:12])
+            return {"id": key[1], "dir": "in", "name": t.get("name"), "peer": t.get("peer")}
+        if jobs:
+            job = jobs[0]
+            self._cancel_out(job, "cancelled here", tell=True)
+            return {"id": job["id"], "dir": "out", "name": job.get("name"), "peer": job["peer"]}
+        # a file arriving from the iPhone, over its data channel
+        for t in self.transfers.active():
+            if t["dir"] == "in" and match(t["id"]):
+                link = self.open_link(t["fp"])
+                if link is not None and hasattr(link, "cancel_receive") and link.cancel_receive(t["id"]):
+                    log.info("mesh: cancelling %s from %s", t["name"], t["peer"])
+                    return {"id": t["id"], "dir": "in", "name": t["name"], "peer": t["peer"]}
+        raise ValueError("no transfer with that id is going on (it may have finished already)")
+
+    def _cancel_out(self, job: dict, why: str, tell: bool):
+        """Cancel something this device sends: stop serving it, mark it cancelled, tell the peer."""
+        jid = job["id"]
+        with self._lock:
+            self._cancel_jobs.add(jid)
+        active = False
+        offer = self.offers.get(jid)
+        if offer is not None:
+            offer.cancel(f"cancelled: {why}")
+            active = True
+        link = self.open_link(job["fp"])
+        if link is not None and hasattr(link, "cancel_send") and link.cancel_send(jid, why):
+            active = True      # the iPhone: its data channel stops at once
+        if tell and link is not None and (active or job.get("attempts")):
+            link.send({"t": "cancel", "id": jid})
+        if not active:
+            # not on its way right now: it just leaves the outbox (the delivery thread, if it's
+            # about to send it, sees it was cancelled)
+            self._finish(job, CANCELLED, error=why)
+        log.info("mesh: %s to %s cancelled (%s)", job.get("name") or "a message", job["peer"], why)
 
     # --- sending: live messages (routes 1–3) --------------------------------------
 
@@ -892,6 +1059,73 @@ class MeshNode:
         if self._hub_has_it_live(entry) and self.hub_may_share(msg) and self.host.hub_send({"t": "clip", "text": text}):
             return "hub"
         raise NoRoute(f"{entry['name']} isn't reachable directly, and not through the hub either")
+
+    def send_link(self, fp: str, url: str) -> dict:
+        """A web link for the peer to open (docs/mesh.md §9.10): it opens on your own device, and
+        waits with an Open button on someone else's. Over an open link to a peer that understands
+        `link`; otherwise (not reachable, or an older peer) it goes as a chat message, which
+        waits in the outbox like any other and shows there with an Open button.
+
+        Returns {"how": "link", "route"} or {"how": "message", "job": <the text job>}."""
+        entry = self._entry(fp)
+        url = check_url(url)
+        try:
+            self.may_send(fp, {"t": "link"}, entry)
+        except Refused as e:
+            if e.why != "paused":
+                raise
+            # paused, here or there: it waits as a message, and goes on resume
+            return {"how": "message", "job": self.send_text(fp, url)}
+        link = self.direct(fp) if entry["source"] != "browser" else self.open_link(fp)
+        if link is None or "link" not in self.features_of(fp):
+            return {"how": "message", "job": self.send_text(fp, url)}
+        mid = secrets.token_hex(16)
+        ts = time.time()
+        waiter = [threading.Event(), False, "", link.fp]
+        self._acks[mid] = waiter
+        try:
+            if not link.send({"t": "link", "id": mid, "url": url, "ts": ts}):
+                return {"how": "message", "job": self.send_text(fp, url)}
+            if not waiter[0].wait(ACK_TIMEOUT):
+                return {"how": "message", "job": self.send_text(fp, url)}
+        finally:
+            self._acks.pop(mid, None)
+        if not waiter[1]:
+            why = waiter[2]
+            raise Refused(why.split(": ", 1)[-1] if why.startswith(("paused:", "denied:")) else why or "refused",
+                          "paused" if why.startswith("paused:") else "denied", "chat", False)
+        self.chat.add({"id": mid, "dir": "out", "fp": fp, "peer": entry["id"], "name": entry["name"], "body": url,
+                       "ts": ts, "route": link.kind, "kind": "link"})
+        log.info("mesh: link to %s delivered (%s)", entry["name"], link.kind)
+        return {"how": "link", "route": link.kind}
+
+    def rename(self, name: str) -> dict:
+        """Give this device a new name: kept by the host (with a hub, the hub names it, and its
+        rules apply), announced over mDNS, and told to every linked peer at once (`rename`).
+        Peers not linked now hear it in the next hello."""
+        name = check_name(name)
+        old = self.name
+        if name == old:
+            return {"name": name, "told": 0}
+        self.host.set_device_name(name)
+        try:
+            self.refresh_announcement()
+        except Exception:
+            log.exception("mesh: announcing the new name")
+        told = 0
+        with self._lock:
+            fps = list(self.links)
+        for fp in fps:
+            link = self.open_link(fp)
+            if link is not None and link.send({"t": "rename", "name": name}):
+                told += 1
+        log.info("mesh: this device is called %s now (was %s); told %d linked device(s)", name, old, told)
+        return {"name": name, "told": told}
+
+    def set_nickname(self, fp: str, nickname: str) -> dict:
+        e = self.trust.set_nickname(fp, nickname)
+        log.info("mesh: %s %s", e["name"], f"is called {e['nickname']} here" if e["nickname"] else "has no nickname")
+        return e
 
     def _may_queue(self, fp: str, msg: dict, entry: dict):
         """Chat and files: refused at once when a switch says no; a pause only makes them wait."""
@@ -964,6 +1198,12 @@ class MeshNode:
                         self._workers.discard(fp)
                         return
                 if self._attempt(jobs[0]) == "wait":
+                    # the ones behind it wait too, for the same reason: say so, so whoever sent
+                    # them hears "waiting" rather than nothing
+                    head = self.outbox.get(jobs[0]["id"]) or {}
+                    for j in self.outbox.for_peer(fp)[1:]:
+                        if j["attempts"] == 0 and head.get("error"):
+                            self.outbox.update(j["id"], attempts=1, retry=False, error=head["error"])
                     break
         except Exception:
             log.exception("mesh: delivering to %s", fp[:12])
@@ -972,7 +1212,17 @@ class MeshNode:
 
     def _finish(self, job: dict, state: str, **fields):
         self.outbox.update(job["id"], state=state, **fields)
-        if state in (DONE, FAILED) and job.get("cleanup"):
+        if job["kind"] == "file":
+            if self.transfers.get(job["id"]) is not None or state == CANCELLED:
+                if self.transfers.get(job["id"]) is None:
+                    self.transfers.start(job["id"], direction="out", fp=job["fp"], peer=job["peer"],
+                                         name=job.get("name") or "", size=job.get("size") or 0)
+                self.transfers.finish(job["id"], {DONE: tx.DONE, FAILED: tx.FAILED, CANCELLED: tx.CANCELLED}
+                                      .get(state, tx.WAITING), fields.get("error"))
+        if state in FINISHED:
+            with self._lock:
+                self._cancel_jobs.discard(job["id"])
+        if state in FINISHED and job.get("cleanup"):
             Path(job["path"]).unlink(missing_ok=True)
         if state == DONE and job["kind"] == "text":
             entry = self.trust.get(job["fp"]) or {}
@@ -984,6 +1234,12 @@ class MeshNode:
                      job["peer"], fields.get("route"))
         elif state == FAILED:
             log.warning("mesh: %s to %s failed: %s", job["kind"], job["peer"], fields.get("error"))
+
+    def _wait_job(self, job: dict, **fields):
+        """The job goes back to the queue; a transfer that had started says it's waiting."""
+        self.outbox.update(job["id"], state=QUEUED, **fields)
+        if job["kind"] == "file" and self.transfers.get(job["id"]) is not None:
+            self.transfers.finish(job["id"], tx.WAITING, fields.get("error"))
 
     def _file_changed(self, job: dict) -> str | None:
         try:
@@ -1014,6 +1270,9 @@ class MeshNode:
                 return "wait"
             self._finish(job, FAILED, error=str(e))
             return "done"
+        if job["id"] in self._cancel_jobs:
+            self._finish(job, CANCELLED, error=job.get("error") or "cancelled")
+            return "done"
         self.outbox.update(job["id"], state=SENDING, attempts=job["attempts"] + 1)
         link = self.direct(job["fp"])
         if link is None and self._just_accepted(job["fp"]):
@@ -1022,19 +1281,25 @@ class MeshNode:
             timer.daemon = True
             timer.start()
         if link is not None:
+            if job["kind"] == "file":
+                self.transfers.start(job["id"], direction="out", fp=job["fp"], peer=job["peer"], name=job["name"],
+                                     size=job["size"], route=link.kind)
             if job["kind"] == "text":
                 got = self._direct_text(link, job)
             elif hasattr(link, "send_file"):
                 got = link.send_file(job)    # a browser: the file goes over its data channel
             else:
                 got = self._direct_file(link, job)
+            if got.startswith("cancelled") or job["id"] in self._cancel_jobs:
+                why = got.split(": ", 1)[1] if got.startswith("cancelled: ") else "cancelled"
+                self._finish(job, CANCELLED, error=why)
+                return "done"
             if got == "ok":
                 self._finish(job, DONE, route=link.kind, error=None)
                 return "done"
             if got.startswith("paused:"):
                 # the peer paused sharing with us: wait for its perm saying it resumed
-                self.outbox.update(job["id"], state=QUEUED, error=f"waiting: {got[len('paused:'):].strip()}",
-                                   retry=False)
+                self._wait_job(job, error=f"waiting: {got[len('paused:'):].strip()}", retry=False)
                 with self._lock:
                     rp = self.remote_perm.setdefault(job["fp"], {"paused": True, "allow": {}})
                     rp["paused"] = True
@@ -1043,7 +1308,7 @@ class MeshNode:
                 self._finish(job, FAILED, error=got[len("refused:"):].strip() or "the peer refused it")
                 return "done"
             # the peer is there but it didn't finish: try again soon, directly
-            self.outbox.update(job["id"], state=QUEUED, error=got, retry=True)
+            self._wait_job(job, error=got, retry=True)
             threading.Timer(3, self._kick.set).start()
             return "wait"
         if self._hub_knows(entry):
@@ -1051,6 +1316,9 @@ class MeshNode:
                 if job["kind"] == "text":
                     self.host.hub_text(entry["id"], job["body"])
                 else:
+                    # through the hub there are no byte counts: it shows as going, then sent
+                    self.transfers.start(job["id"], direction="out", fp=job["fp"], peer=job["peer"],
+                                         name=job["name"], size=job["size"], route="hub")
                     self.host.hub_upload(entry["id"], Path(job["path"]), job["name"], job["mime"])
                 route = "hub" if self.host.hub_online(entry["id"]) else "hub-mailbox"
                 self._finish(job, DONE, route=route, error=None)
@@ -1060,7 +1328,7 @@ class MeshNode:
                 err = f"the hub: {e}"
         else:
             err = "not reachable directly, and no hub knows it right now"
-        self.outbox.update(job["id"], state=QUEUED, error=err, retry=False)
+        self._wait_job(job, error=err, retry=False)
         return "wait"
 
     def _direct_text(self, link: Link, job: dict) -> str:
@@ -1080,8 +1348,11 @@ class MeshNode:
     def _direct_file(self, link: Link, job: dict) -> str:
         offer = Offer(job["id"], link.fp, job["name"], job["size"], job["mime"],
                       opener=lambda: open(job["path"], "rb"), check=lambda: self._file_changed(job))
+        offer.on_progress = lambda n: self.transfers.progress(job["id"], n)
         self.offers.add(offer)
         try:
+            if job["id"] in self._cancel_jobs:
+                return "cancelled"
             if not link.send(offer.message()):
                 return "the link dropped"
             while not offer.done.wait(1):
@@ -1094,7 +1365,7 @@ class MeshNode:
                 if self.trust.get(link.fp) is None:
                     return "refused: not trusted any more"
             ok, error = offer.result or (False, "")
-            if not ok and error.startswith("paused:"):
+            if not ok and (error.startswith("paused:") or error.startswith("cancelled")):
                 return error
             return "ok" if ok else f"refused: {error}"
         finally:
@@ -1283,6 +1554,7 @@ class MeshNode:
             link = self.open_link(e["fp"])
             peers.append({k: e[k] for k in ("id", "name", "fp", "source", "lan", "port", "tailnet_ip", "os", "hub",
                                             "relation", "allow", "paused")}
+                         | {"nickname": e.get("nickname") or "", "features": self.features_of(e["fp"]) if link else []}
                          | {"link": f"{link.kind} {link.address}" if link else None,
                             "on_lan": any(s.fp == e["fp"] for s in seen),
                             # what it said about how it treats this device (a hint), and its last no
@@ -1297,8 +1569,9 @@ class MeshNode:
             "nearby": [{"id": s.id, "name": s.name, "fp": s.fp, "os": s.os, "addresses": s.addresses,
                         "port": s.port} for s in seen if s.fp not in trusted],
             "incoming": self.incoming.waiting(),
-            "outbox": [{k: j.get(k) for k in ("id", "kind", "peer", "state", "error", "name", "attempts")}
+            "outbox": [{k: j.get(k) for k in ("id", "kind", "peer", "fp", "state", "error", "name", "attempts")}
                        for j in self.outbox.queued()],
+            "transfers": self.transfers.list(),
             "refused": self.server.refused if self.server else 0,
             "caps": self.host.mesh_caps(),   # what this device offers right now
             "webrtc": self.webrtc.status() if self.webrtc is not None else None,
@@ -1312,14 +1585,15 @@ class MeshNode:
         out = []
         for m in self.chat.recent(n, fp):
             out.append({k: m.get(k) for k in ("id", "dir", "fp", "peer", "name", "body", "ts", "route")}
-                       | {"state": "sent" if m.get("dir") == "out" else "received"})
+                       | {"state": "sent" if m.get("dir") == "out" else "received", "kind": m.get("kind") or "text"}
+                       | ({"opened": True} if m.get("opened") else {}))
         jobs = [j for j in self.outbox.queued() + self.outbox.failed()
                 if j["kind"] == "text" and (fp is None or j["fp"] == fp)]
         for j in jobs:
             entry = self.trust.get(j["fp"]) or {}
             out.append({"id": j["id"], "dir": "out", "fp": j["fp"], "peer": entry.get("id"),
                         "name": entry.get("name") or j["peer"], "body": j["body"], "ts": j["created"],
-                        "route": None, "state": j["state"], "why": j.get("error")})
+                        "route": None, "state": j["state"], "why": j.get("error"), "kind": "text"})
         out.sort(key=lambda m: m["ts"] if isinstance(m["ts"], (int, float)) else 0)
         out = out[-n:]
         # one answer is one line, and the CLI reads at most MAX_LINE of it
@@ -1382,6 +1656,25 @@ class MeshNode:
                 return self._job_answer(job["id"], float(req.get("wait") or 0))
             if cmd == "job":
                 return self._job_answer(str(req.get("id")), float(req.get("wait") or 0))
+            if cmd == "transfers":
+                return {"transfers": self.transfers.list(),
+                        "queued": [{k: j.get(k) for k in ("id", "kind", "peer", "fp", "state", "error", "name", "size")}
+                                   for j in self.outbox.queued()]}
+            if cmd == "cancel":
+                return self.cancel(str(req.get("id") or ""))
+            if cmd == "link":
+                entry = self.resolve(str(req.get("peer") or ""))
+                out = self.send_link(entry["fp"], req.get("url"))
+                if out["how"] == "message":
+                    job = self._job_answer(out["job"]["id"], float(req.get("wait") or 0))
+                    return {"how": "message", **job}
+                return out
+            if cmd == "rename":
+                return self.rename(req.get("name"))
+            if cmd == "nickname":
+                entry = self.resolve(str(req.get("peer") or ""))
+                e = self.set_nickname(entry["fp"], req.get("nickname") or "")
+                return {k: e[k] for k in ("name", "fp", "nickname")}
             if cmd == "ring":
                 return {"route": self.ring(self.resolve(str(req.get("peer") or ""))["fp"], bool(req.get("stop")))}
             if cmd == "clip":
@@ -1418,7 +1711,7 @@ class MeshNode:
 
         A transfer that stopped part-way and is being retried isn't an answer yet.
         """
-        job = self.outbox.wait(jid, lambda j: j["state"] in (DONE, FAILED)
+        job = self.outbox.wait(jid, lambda j: j["state"] in FINISHED
                                or (j["state"] == QUEUED and j["attempts"] > 0 and not j.get("retry")),
                                min(wait, 3600))
         if job is None:

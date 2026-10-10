@@ -53,9 +53,10 @@ OTHER = {"files": True, "chat": True, "clipboard": False, "notify": False, "cont
          "access": False}
 
 # always allowed, even paused: what keeps the link up, says why something was refused,
-# and lets either side unpair. ack and nack answer what was sent before the pause.
+# and lets either side unpair. ack and nack answer what was sent before the pause; `cancel`
+# only stops a transfer, and `rename` only says what the sender is called now (as hello does).
 ALWAYS = frozenset({"hello", "welcome", "ping", "pong", "perm", "unpair", "ack", "nack", "refused", "error",
-                    "rpc-result"})
+                    "rpc-result", "cancel", "rename"})
 
 
 def defaults(relation: str) -> dict:
@@ -80,7 +81,7 @@ def capability(msg: dict) -> str | None:
     """The capability a message needs, either way. None: it needs none (but still stops while paused,
     unless it's in ALWAYS)."""
     t = msg.get("t")
-    if t == "text":
+    if t in ("text", "link"):
         return "chat"
     if t in ("offer", "file", "file-end"):
         return "files"
@@ -124,6 +125,13 @@ def allowed(entry: dict | None, cap: str) -> bool:
     if not isinstance(allow, dict):
         return True       # an entry from before permissions: your own device, as it was
     return bool(allow.get(cap, defaults(entry.get("relation") or "own").get(cap, True)))
+
+
+def own_targets(peers: list, cap: str) -> list:
+    """"All my devices", for sending to several at once: the peers (as `status` lists them) that
+    are your own and have `cap` on here. A paused one stays in: what it's sent waits for it."""
+    return [p for p in peers or [] if isinstance(p, dict) and p.get("relation", "own") == "own"
+            and allowed(p, cap)]
 
 
 def remote_view(entry: dict | None, paused_all: bool) -> dict:

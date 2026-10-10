@@ -388,7 +388,8 @@ def cmd_peers(args) -> int:
             how = {"paired": "paired directly", "browser": "web app, paired directly"}.get(
                 p["source"], "from the hub's roster")
             where = p["link"] or ("on this network" if p["on_lan"] else "not seen")
-            print(f"  {p['name']:<20} {p['id']:<16} {_short(p['fp'])}  {how}; {where}")
+            shown = f"{p['nickname']} ({p['name']})" if p.get("nickname") else p["name"]
+            print(f"  {shown:<20} {p['id']:<16} {_short(p['fp'])}  {how}; {where}")
             print(f"  {'':<20} {_perm_line(p)}")
             remote = p.get("remote") or {}
             if remote.get("paused"):
@@ -636,26 +637,274 @@ def _report_job(job: dict, what: str) -> int:
     return 0
 
 
+# --- sending to one device, or several ------------------------------------------
+
+def _split_targets(args, rest: list, cap: str, need: int) -> tuple[list, list] | None:
+    """(the devices to send to, what's left of the arguments). The devices come from --all (your
+    own devices that allow `cap`), --to (repeated), or the first argument: one device, or
+    several with commas (peer1,peer2). `need` is how many arguments must be left over at least."""
+    to = list(getattr(args, "to", None) or [])
+    if getattr(args, "all", False):
+        if to:
+            print("Use --all or --to, not both.", file=sys.stderr)
+            return None
+        st = _ask_agent({"cmd": "status"})
+        if st is None:
+            return None
+        from .mesh.perms import own_targets
+        found = own_targets(st.get("peers"), cap)
+        if not found:
+            print("None of your own devices takes that (see droplet-agent peers).", file=sys.stderr)
+            return None
+        return [p["fp"] for p in found], rest
+    if not to:
+        if len(rest) < need + 1:
+            return None
+        first, rest = rest[0], rest[1:]
+        to = [first]
+        if "," in first:
+            st = _ask_agent({"cmd": "status"}) or {}
+            whole = any(first.casefold() in (str(p.get("name") or "").casefold(), str(p.get("nickname") or "").casefold())
+                        for p in st.get("peers") or [])
+            if not whole:
+                to = [t.strip() for t in first.split(",") if t.strip()]
+    return list(dict.fromkeys(to)), rest
+
+
+def _usage(text: str) -> int:
+    print(f"Usage: droplet-agent {text}", file=sys.stderr)
+    return 2
+
+
+def _finished(job: dict) -> bool:
+    """Done, failed, cancelled, or waiting for a route (not a transfer being retried)."""
+    st = job.get("state")
+    return bool(job.get("error")) or st in ("done", "failed", "cancelled") or (
+        st == "queued" and job.get("attempts") and not job.get("retry"))
+
+
+def _result_line(job: dict, what: str) -> tuple[str, int]:
+    """("Sent photo.jpg to Pixel, directly, over the LAN.", 0): one line per device and file."""
+    if job.get("error"):
+        return f"{what}: {job['error']}", 1
+    st, why = job.get("state"), job.get("why") or ""
+    if st == "done":
+        return f"Sent {what} {ROUTE_TEXT.get(job.get('route'), job.get('route') or '')}.", 0
+    if st == "cancelled":
+        return f"{what}: cancelled{' (' + why + ')' if why and why != 'cancelled here' else ''}.", 1
+    if st == "failed":
+        return f"{what}: refused: {why}" if why else f"{what}: failed", 1
+    if why.startswith("waiting: "):
+        return f"{what}: waiting: {why[len('waiting: '):]}. It's kept in the outbox and sent on resume.", 0
+    return (f"{what}: can't be reached right now ({why or 'no route'}). It's kept in the outbox and sent as "
+            "soon as it or the hub can be reached.", 0)
+
+
+def _progress_line(transfers: list, jobs: list) -> str:
+    """The line send-file keeps rewriting: what's going, how far, how fast."""
+    from .mesh.transfers import progress_text
+    mine = {j["id"] for j in jobs}
+    going = [t for t in transfers if t["id"] in mine and t["state"] == "active"]
+    done = sum(1 for j in jobs if j.get("state") in ("done", "failed", "cancelled"))
+    head = f"{done}/{len(jobs)} · " if len(jobs) > 1 else ""
+    if not going:
+        return f"{head}waiting to start…"
+    t = going[0]
+    more = f" (+{len(going) - 1} more)" if len(going) > 1 else ""
+    return f"{head}{t['name']} → {t['peer']}: {progress_text(t)}{more}"
+
+
+def _follow(jobs: list, tty: bool, every: float = 0.25, limit: float = 3600) -> list:
+    """Wait for the jobs ({"id", "what", …}) to finish, showing progress on one line (a terminal
+    only), at most 4 times a second. Returns the jobs as they ended."""
+    import time as _time
+    end = _time.monotonic() + limit
+    shown = ""
+    try:
+        while _time.monotonic() < end:
+            for j in jobs:
+                if not _finished(j):
+                    out = _ask_agent({"cmd": "job", "id": j["id"], "wait": 0})
+                    if out is None:
+                        return jobs
+                    j.update({k: v for k, v in out.items() if k != "what"})
+            if all(_finished(j) for j in jobs):
+                break
+            if tty:
+                tr = _ask_agent({"cmd": "transfers"}) or {}
+                line = _progress_line(tr.get("transfers") or [], jobs)[:110]
+                print("\r" + line.ljust(len(shown)), end="", flush=True)
+                shown = line
+            _time.sleep(every)
+    except KeyboardInterrupt:
+        if tty and shown:
+            print()
+        left = [j for j in jobs if not _finished(j)]
+        print("Stopped watching; it carries on in the background. Cancel it with: droplet-agent cancel "
+              + (left[0]["id"][:12] if left else "<id>"), file=sys.stderr)
+        raise
+    if tty and shown:
+        print("\r" + " " * len(shown) + "\r", end="", flush=True)
+    return jobs
+
+
+def _send_jobs(targets: list, requests: list) -> list:
+    """Each request ({"cmd", …} without a peer, and "what") to each target: one job each."""
+    jobs = []
+    for req in requests:
+        for peer in targets:
+            r = dict(req)
+            what = r.pop("what")
+            r.update(peer=peer, wait=0)
+            from .mesh import control
+            try:
+                out = control.call(r, timeout=40)
+            except control.NotRunning:
+                _ask_agent({"cmd": "status"})   # says how to start it
+                return []
+            except (OSError, ValueError) as e:
+                out = {"error": f"couldn't talk to the agent: {e}"}
+            name = out.get("peer") or peer
+            jobs.append({**out, "what": what.format(peer=name)})
+    return jobs
+
+
+def _report(jobs: list) -> int:
+    status = 0
+    for j in jobs:
+        line, bad = _result_line(j, j["what"])
+        print(line, file=sys.stderr if bad else sys.stdout)
+        status |= bad
+    return status
+
+
 def cmd_text(args) -> int:
-    out = _ask_agent({"cmd": "text", "peer": args.peer, "body": args.message, "wait": 30}, timeout=40)
-    return 1 if out is None else _report_job(out, "Sent")
+    got = _split_targets(args, list(args.args), "chat", 1)
+    if got is None:
+        return _usage("text <device>[,<device>…] <message>   (or --to <device> …, or --all)")
+    targets, rest = got
+    body = " ".join(rest)
+    if len(targets) == 1 and not getattr(args, "all", False):
+        out = _ask_agent({"cmd": "text", "peer": targets[0], "body": body, "wait": 30}, timeout=40)
+        return 1 if out is None else _report_job(out, "Sent")
+    jobs = _send_jobs(targets, [{"cmd": "text", "body": body, "what": "a message to {peer}"}])
+    return _report(_follow(jobs, False, limit=30)) if jobs else 1
 
 
 def cmd_send_file(args) -> int:
-    status = 0
-    for path in args.paths:
+    got = _split_targets(args, list(args.args), "files", 1)
+    if got is None:
+        return _usage("send-file <device>[,<device>…] <file>…   (or --to <device> … <file>…, or --all <file>…)")
+    targets, paths = got
+    status, requests = 0, []
+    for path in paths:
         p = Path(path).expanduser()
         if not p.is_file():
             print(f"{path} isn't a file.", file=sys.stderr)
             status = 1
             continue
-        out = _ask_agent({"cmd": "send-file", "peer": args.peer, "path": str(p.resolve()), "wait": 3600},
-                         timeout=3700)
+        requests.append({"cmd": "send-file", "path": str(p.resolve()),
+                         "what": p.name if len(targets) == 1 else f"{p.name} to {{peer}}"})
+    if not requests:
+        return status
+    jobs = _send_jobs(targets, requests)
+    if not jobs:
+        return 1
+    tty = sys.stdout.isatty()
+    _follow(jobs, tty)
+    return status | _report(jobs)
+
+
+def cmd_open_link(args) -> int:
+    from .mesh.links import check_url
+    got = _split_targets(args, list(args.args), "chat", 1)
+    if got is None:
+        return _usage("open-link <device>[,<device>…] <url>   (or --to <device> … <url>, or --all <url>)")
+    targets, rest = got
+    if len(rest) != 1:
+        return _usage("open-link <device>[,<device>…] <url>")
+    try:
+        url = check_url(rest[0])
+    except ValueError as e:
+        print(f"Not sent: {e}.", file=sys.stderr)
+        return 1
+    status = 0
+    for peer in targets:
+        out = _ask_agent({"cmd": "link", "peer": peer, "url": url, "wait": 10}, timeout=30)
         if out is None:
             status = 1
             continue
-        status |= _report_job(out, f"Sent {p.name}")
+        name = out.get("peer") or peer
+        if out.get("how") == "link":
+            print(f"Sent the link to {name}, {ROUTE_TEXT.get(out.get('route'), out.get('route'))}: it opens there "
+                  "if it's your own device, and waits in its Messages with an Open button if it's someone else's.")
+        else:
+            line, bad = _result_line(out, f"the link to {name} as a message (it shows an Open button there)")
+            print(line, file=sys.stderr if bad else sys.stdout)
+            status |= bad
     return status
+
+
+def cmd_transfers(args) -> int:
+    from .mesh.transfers import progress_text, size_text
+    out = _ask_agent({"cmd": "transfers"})
+    if out is None:
+        return 1
+    ts, queued = out.get("transfers") or [], out.get("queued") or []
+    shown = {t["id"] for t in ts}
+    if not ts and not queued:
+        print("Nothing is being sent or received.")
+        return 0
+    for t in ts:
+        arrow = f"to {t['peer']}" if t["dir"] == "out" else f"from {t['peer']}"
+        print(f"  {t['id'][:12]}  {t['name']} {arrow} ({size_text(t['size'])}): {progress_text(t)}")
+    waiting = [j for j in queued if j["id"] not in shown]
+    if waiting:
+        print("Waiting to be sent:")
+        for j in waiting:
+            what = j.get("name") or "a message"
+            print(f"  {j['id'][:12]}  {what} to {j['peer']}" + (f": {j['error']}" if j.get("error") else ""))
+    print("Cancel one with: droplet-agent cancel <id>")
+    return 0
+
+
+def cmd_cancel(args) -> int:
+    out = _ask_agent({"cmd": "cancel", "id": args.id})
+    if out is None:
+        return 1
+    what = out.get("name") or "it"
+    print(f"Cancelled {what} " + (f"to {out['peer']}" if out.get("dir") == "out" else f"from {out['peer']}")
+          + ("; it was told." if out.get("peer") else "."))
+    return 0
+
+
+def cmd_rename(args) -> int:
+    from .mesh.trust import check_name
+    try:
+        name = check_name(" ".join(args.name), "the name")
+    except ValueError as e:
+        print(f"Not renamed: {e}.", file=sys.stderr)
+        return 2
+    out = _ask_agent({"cmd": "rename", "name": name}, timeout=40)
+    if out is None:
+        return 1
+    told = out.get("told") or 0
+    print(f"This computer is called {out['name']} now." + (
+        f" {told} connected device{'s' if told != 1 else ''} saw it at once; the rest see it when they connect."
+        if told else " Your devices see it when they next connect."))
+    return 0
+
+
+def cmd_nickname(args) -> int:
+    nick = " ".join(args.nickname or [])
+    out = _ask_agent({"cmd": "nickname", "peer": args.peer, "nickname": nick})
+    if out is None:
+        return 1
+    if out.get("nickname"):
+        print(f"{out['name']} is called {out['nickname']} on this computer (only here: it isn't sent).")
+    else:
+        print(f"{out['name']} has no nickname here now.")
+    return 0
 
 
 def cmd_ring(args) -> int:
@@ -667,6 +916,10 @@ def cmd_ring(args) -> int:
 
 
 def cmd_clip(args) -> int:
+    got = _split_targets(args, list(args.args), "clipboard", 0)
+    if got is None or got[1]:
+        return _usage("clip <device>[,<device>…] [--text …]   (or --to <device> …, or --all)")
+    targets = got[0]
     text = args.text
     if text is None:
         mode, why = clip.detect()
@@ -677,11 +930,15 @@ def cmd_clip(args) -> int:
         if not text:
             print("The clipboard holds no text (or a password manager marked it secret).", file=sys.stderr)
             return 1
-    out = _ask_agent({"cmd": "clip", "peer": args.peer, "text": text})
-    if out is None:
-        return 1
-    print(f"Sent the clipboard, {ROUTE_TEXT.get(out['route'], out['route'])}.")
-    return 0
+    status = 0
+    for peer in targets:
+        out = _ask_agent({"cmd": "clip", "peer": peer, "text": text})
+        if out is None:
+            status = 1
+            continue
+        to = f" to {peer}" if len(targets) > 1 else ""
+        print(f"Sent the clipboard{to}, {ROUTE_TEXT.get(out['route'], out['route'])}.")
+    return status
 
 
 def cmd_send(args) -> int:
@@ -1373,21 +1630,51 @@ def main(argv=None) -> int:
     rs.add_argument("peer", nargs="?")
     rs.add_argument("--all", action="store_true", help="resume everything")
     rs.set_defaults(func=cmd_resume)
-    tx = sub.add_parser("text", help="send a chat message to a device")
-    tx.add_argument("peer")
-    tx.add_argument("message")
+    def several(parser, cap_words):
+        parser.add_argument("--to", action="append", metavar="DEVICE",
+                            help="a device to send to (repeat it for several); then every argument is what to send")
+        parser.add_argument("--all", action="store_true", help=f"all your own devices that take {cap_words}")
+    tx = sub.add_parser("text", help="send a chat message to a device (or several)",
+                        description="droplet-agent text <device>[,<device>…] <message>, or --to/--all <message>.")
+    tx.add_argument("args", nargs="+", metavar="device/message")
+    several(tx, "messages")
     tx.set_defaults(func=cmd_text)
-    sf = sub.add_parser("send-file", help="send files to a device")
-    sf.add_argument("peer")
-    sf.add_argument("paths", nargs="+", metavar="path")
+    sf = sub.add_parser("send-file", help="send files to a device (or several)",
+                        description="droplet-agent send-file <device>[,<device>…] <file>…, or --to/--all <file>…. "
+                                    "Each device gets its own copy and its own result: sent, waiting (paused or "
+                                    "away) or refused. A terminal shows how far it has got.")
+    sf.add_argument("args", nargs="+", metavar="device/file")
+    several(sf, "files")
     sf.set_defaults(func=cmd_send_file)
+    ol = sub.add_parser("open-link", help="open a web link on another device",
+                        description="droplet-agent open-link <device>[,<device>…] <url>. It opens in the browser "
+                                    "of your own device; on someone else's it waits in Messages with an Open button. "
+                                    "http and https only.")
+    ol.add_argument("args", nargs="+", metavar="device/url")
+    several(ol, "messages")
+    ol.set_defaults(func=cmd_open_link)
+    tr = sub.add_parser("transfers", help="files being sent and received, and how far each has got")
+    tr.set_defaults(func=cmd_transfers)
+    ca = sub.add_parser("cancel", help="cancel a file being sent or received (the other device is told)")
+    ca.add_argument("id", help="its id, as droplet-agent transfers shows it (the start of it is enough)")
+    ca.set_defaults(func=cmd_cancel)
+    rn = sub.add_parser("rename", help="give this computer a new name, which your devices see")
+    rn.add_argument("name", nargs="+")
+    rn.set_defaults(func=cmd_rename)
+    nn = sub.add_parser("nickname", help="call a device something else on this computer only",
+                        description="droplet-agent nickname <device> <nickname>: shown here instead of its own "
+                                    "name, and never sent. With no nickname, it goes back to its own name.")
+    nn.add_argument("peer")
+    nn.add_argument("nickname", nargs="*")
+    nn.set_defaults(func=cmd_nickname)
     rg = sub.add_parser("ring", help="ring a device to find it")
     rg.add_argument("peer")
     rg.add_argument("--stop", action="store_true", help="stop ringing it")
     rg.set_defaults(func=cmd_ring)
-    cp = sub.add_parser("clip", help="send this computer's clipboard to a device")
-    cp.add_argument("peer")
+    cp = sub.add_parser("clip", help="send this computer's clipboard to a device (or several)")
+    cp.add_argument("args", nargs="*", metavar="device")
     cp.add_argument("--text", help="send this text instead of the clipboard")
+    several(cp, "the clipboard")
     cp.set_defaults(func=cmd_clip)
     sn = sub.add_parser("send", help="send one input, media or cmd message (docs/remote.md), for scripting")
     sn.add_argument("peer")

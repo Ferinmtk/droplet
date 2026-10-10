@@ -42,6 +42,7 @@ class FakeHost(Host):
         self.hub_calls = []
 
     def device_name(self): return self.name
+    def set_device_name(self, name): self.name = name
     def mesh_caps(self): return ["input", "media"]
     def hub_device_id(self): return self.peer_id
     def hub_id(self): return self.hub
