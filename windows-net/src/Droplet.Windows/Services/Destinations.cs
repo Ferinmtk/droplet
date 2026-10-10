@@ -21,7 +21,7 @@ internal sealed record Destination
     /// <summary>The nickname given it here; "" for none. Never sent.</summary>
     public string Nickname { get; init; } = "";
 
-    /// <summary>A mesh peer that said it takes links (docs/mesh.md §9.10), while linked.</summary>
+    /// <summary>A mesh peer that said it takes links (docs/mesh.md §9.11), while linked.</summary>
     public bool TakesLinks { get; init; }
 
     /// <summary>The mesh peer's fingerprint, when it's one.</summary>
@@ -183,7 +183,7 @@ internal static class Destinations
     }
 
     /// <summary>
-    /// "All my devices" (docs/mesh.md §9.10): every device that's your own (the hub's, or a peer
+    /// "All my devices" (docs/mesh.md §9.11): every device that's your own (the hub's, or a peer
     /// paired as yours) with <paramref name="cap"/> switched on here. A paused one stays in:
     /// what it's sent waits for it. Not the hub itself.
     /// </summary>

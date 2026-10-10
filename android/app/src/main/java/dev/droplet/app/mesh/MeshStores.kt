@@ -95,7 +95,7 @@ class Outbox(private val file: File) {
         const val SENDING = "sending"
         const val DONE = "done"
         const val FAILED = "failed"
-        /** Stopped by either end (docs/mesh.md §9.10): never offered again. */
+        /** Stopped by either end (docs/mesh.md §9.11): never offered again. */
         const val CANCELLED = "cancelled"
         val FINISHED = setOf(DONE, FAILED, CANCELLED)
         fun newId(): String = ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }

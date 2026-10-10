@@ -68,7 +68,7 @@ public sealed record TrustEntry
 
     /// <summary>
     /// What the owner calls it here ("Brian's laptop"; "" for none), shown instead of its own
-    /// name (docs/mesh.md §9.10). Only on this device: never sent to anyone.
+    /// name (docs/mesh.md §9.11). Only on this device: never sent to anyone.
     /// </summary>
     [JsonPropertyName("nickname")] public string Nickname { get; init; } = "";
 
@@ -438,7 +438,7 @@ public sealed class TrustList
     /// <summary>
     /// What the owner calls a peer here, shown instead of its own name. Only on this device:
     /// it's never sent. Empty clears it. Throws <see cref="ArgumentException"/> for an unknown
-    /// peer or a nickname that isn't one (docs/mesh.md §9.10).
+    /// peer or a nickname that isn't one (docs/mesh.md §9.11).
     /// </summary>
     public TrustEntry SetNickname(string fp, string? nickname)
     {

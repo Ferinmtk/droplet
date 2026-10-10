@@ -12,7 +12,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * The parts of docs/mesh.md §9.10 that need no network, ported from the
+ * The parts of docs/mesh.md §9.11 that need no network, ported from the
  * reference's tests (agent/tests/test_transfers.py and test_sending.py):
  * speed and time left from byte counts, which links may travel, and names.
  */

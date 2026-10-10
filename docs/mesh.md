@@ -536,7 +536,7 @@ this is it.
   talk to the TV and the computer directly, not over the mesh, so they're
   unaffected.
 - **Progress and Cancel, links, rename and nicknames, several devices**
-  (§9.10; `mesh/Transfers.kt`, `mesh/Links.kt`, `MeshNode`): the same
+  (§9.11; `mesh/Transfers.kt`, `mesh/Links.kt`, `MeshNode`): the same
   messages, rules and features as the reference. A file on its way shows on
   its device's card on the home screen (progress, time left, speed, and
   Cancel; a send still waiting in the outbox can be cancelled there too), and

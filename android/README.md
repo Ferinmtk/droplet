@@ -428,7 +428,7 @@ you"), and each side enforces its own settings whatever the other does
 until you say otherwise.
 
 **Progress, Cancel, links, names, several at once**
-([docs/mesh.md §9.10](../docs/mesh.md)). A file on its way shows on its
+([docs/mesh.md §9.11](../docs/mesh.md)). A file on its way shows on its
 device's card with how far it's got, the time left and the speed, and a
 **Cancel** (so does a file arriving, in its notification); cancelling from
 either end stops it on both and deletes what had arrived. ⋮ → **Send a

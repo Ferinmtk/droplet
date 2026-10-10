@@ -212,7 +212,7 @@ public interface ISound
     void StopRing();
 }
 
-/// <summary>Opening web links (docs/mesh.md §9.10).</summary>
+/// <summary>Opening web links (docs/mesh.md §9.11).</summary>
 public interface IBrowser
 {
     /// <summary>Opens an http(s) link in the default browser. False when it couldn't.</summary>

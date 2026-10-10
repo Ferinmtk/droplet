@@ -6,7 +6,7 @@ using Droplet.Core.Tests.Support;
 namespace Droplet.Core.Tests.Interop;
 
 /// <summary>
-/// Progress and Cancel, links and rename (docs/mesh.md §9.10) between the .NET peer and the
+/// Progress and Cancel, links and rename (docs/mesh.md §9.11) between the .NET peer and the
 /// reference, the Linux agent, as real processes: each says what it understands in its hello,
 /// a link from your own device opens on the other, a rename is heard at once, and a file
 /// cancelled from either end stops on both, with the partial file gone.

@@ -201,7 +201,7 @@ public partial class SettingsWindow : Window
             var name = HubSetup.CleanDeviceName(NameBox.Text);
             try
             {
-                // no control or invisible characters (docs/mesh.md §9.10)
+                // no control or invisible characters (docs/mesh.md §9.11)
                 name = Core.Mesh.Names.Check(name, "the name");
             }
             catch (ArgumentException ex)

@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Droplet.Core.Mesh;
 
-/// <summary>Where a transfer stands (docs/mesh.md §9.10).</summary>
+/// <summary>Where a transfer stands (docs/mesh.md §9.11).</summary>
 public static class TransferState
 {
     /// <summary>Bytes are moving (or about to).</summary>

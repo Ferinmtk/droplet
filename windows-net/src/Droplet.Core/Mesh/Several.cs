@@ -21,7 +21,7 @@ public static class SendResult
 public sealed record DeviceResult(string Fp, string Name, string Result, string? Detail);
 
 /// <summary>
-/// Sending to several devices at once (docs/mesh.md §9.10): purely local. Each device gets its
+/// Sending to several devices at once (docs/mesh.md §9.11): purely local. Each device gets its
 /// own job and its own result, exactly as if it were sent to it alone, so permissions, Pause
 /// and routes apply to each.
 /// </summary>

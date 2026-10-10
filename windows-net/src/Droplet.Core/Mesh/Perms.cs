@@ -99,7 +99,7 @@ public static class Perms
     public static readonly IReadOnlySet<string> Always = new HashSet<string>(StringComparer.Ordinal)
     {
         "hello", "welcome", "ping", "pong", "perm", "unpair", "ack", "nack", "refused", "error", "rpc-result",
-        // cancel only stops a transfer, and rename only says what the sender is called now, as hello does (§9.10)
+        // cancel only stops a transfer, and rename only says what the sender is called now, as hello does (§9.11)
         "cancel", "rename",
     };
 
@@ -183,7 +183,7 @@ public static class Perms
     }
 
     /// <summary>
-    /// "All my devices", for sending to several at once (docs/mesh.md §9.10): the peers that are
+    /// "All my devices", for sending to several at once (docs/mesh.md §9.11): the peers that are
     /// your own and have <paramref name="cap"/> on here. A paused one stays in: what it's sent waits for it.
     /// </summary>
     public static List<TrustEntry> OwnTargets(IEnumerable<TrustEntry> peers, string cap)

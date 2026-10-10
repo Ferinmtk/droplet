@@ -19,7 +19,7 @@ public static class JobState
     /// <summary>Failed for good.</summary>
     public const string Failed = "failed";
 
-    /// <summary>Cancelled, here or by the peer (docs/mesh.md §9.10): never sent again.</summary>
+    /// <summary>Cancelled, here or by the peer (docs/mesh.md §9.11): never sent again.</summary>
     public const string Cancelled = "cancelled";
 
     /// <summary>Whether a job in <paramref name="state"/> is over: done, failed or cancelled.</summary>
@@ -277,7 +277,7 @@ public sealed record ChatEntry
     /// <summary>How a sent message went.</summary>
     [JsonPropertyName("route")] public string? Route { get; init; }
 
-    /// <summary>"link" for a web link (docs/mesh.md §9.10); null for a message.</summary>
+    /// <summary>"link" for a web link (docs/mesh.md §9.11); null for a message.</summary>
     [JsonPropertyName("kind")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Kind { get; init; }

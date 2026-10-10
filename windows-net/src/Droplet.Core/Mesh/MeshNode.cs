@@ -62,7 +62,7 @@ public interface IMeshHost
     void SetPausedEverything(bool on);
 
     /// <summary>
-    /// Gives this device a new name, already checked, and keeps it (docs/mesh.md §9.10). With a
+    /// Gives this device a new name, already checked, and keeps it (docs/mesh.md §9.11). With a
     /// hub, the hub names it: the app renames it there first. Throws when it can't.
     /// </summary>
     void SetDeviceName(string name) => throw new NotSupportedException("this device is renamed in Settings");
@@ -198,7 +198,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     static readonly string[] Live = ["input", "media", "cmd"];
 
     /// <summary>
-    /// What this peer understands besides v1 (docs/mesh.md §9.10), in its hello as <c>features</c>:
+    /// What this peer understands besides v1 (docs/mesh.md §9.11), in its hello as <c>features</c>:
     /// <c>cancel</c> (stop a transfer), <c>link</c> (a web link, opened on your own devices), <c>rename</c>.
     /// </summary>
     public static readonly IReadOnlyList<string> Features = ["cancel", "link", "rename"];
@@ -279,7 +279,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     /// <summary>Chat sent and received directly.</summary>
     public ChatLog Chat { get; }
 
-    /// <summary>Files on their way, either way, with progress (docs/mesh.md §9.10).</summary>
+    /// <summary>Files on their way, either way, with progress (docs/mesh.md §9.11).</summary>
     public Transfers Transfers { get; } = new();
 
     /// <summary>The mesh port, once started.</summary>
@@ -1353,7 +1353,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     }
 
     /// <summary>
-    /// A web link (docs/mesh.md §9.10). From your own device it opens in the browser here (at
+    /// A web link (docs/mesh.md §9.11). From your own device it opens in the browser here (at
     /// most <see cref="OpenLinks"/> a minute); from someone else's it waits in Messages with an
     /// Open button. Never anything but http(s).
     /// </summary>
@@ -1556,7 +1556,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         return downloadCancel.ContainsKey(key);
     }
 
-    // --- cancelling (docs/mesh.md §9.10) ---------------------------------------------------------
+    // --- cancelling (docs/mesh.md §9.11) ---------------------------------------------------------
 
     /// <summary>
     /// The peer cancelled a transfer: one it was sending here (stop fetching it, and drop what
@@ -1777,7 +1777,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     }
 
     /// <summary>
-    /// A web link for the peer to open (docs/mesh.md §9.10): it opens on your own device, and
+    /// A web link for the peer to open (docs/mesh.md §9.11): it opens on your own device, and
     /// waits with an Open button on someone else's. Over an open link to a peer that
     /// understands <c>link</c>; otherwise (not reachable, an older peer, or paused) it goes as a
     /// chat message, which waits in the outbox like any other. Throws
@@ -1840,7 +1840,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         return new LinkSent("link", link.Kind, null);
     }
 
-    // --- names (docs/mesh.md §9.10) ----------------------------------------------------------------
+    // --- names (docs/mesh.md §9.11) ----------------------------------------------------------------
 
     /// <summary>
     /// Gives this device a new name: kept by the host, announced over mDNS, and told to every

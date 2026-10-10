@@ -32,7 +32,7 @@ import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
 
 /**
- * Progress and Cancel, links, rename and nicknames (docs/mesh.md §9.10)
+ * Progress and Cancel, links, rename and nicknames (docs/mesh.md §9.11)
  * between the phone and the real Linux reference peer, both ways: the
  * phone's own code on Robolectric (Mesh, the node, its notifications), the
  * agent `droplet-agent run --dry-run` in a throwaway HOME, driven through its

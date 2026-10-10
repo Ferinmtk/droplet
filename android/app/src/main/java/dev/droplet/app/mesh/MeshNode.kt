@@ -62,7 +62,7 @@ interface MeshHost {
     fun saveFile(entry: TrustList.Entry, part: File, name: String, mime: String): String
     fun onReceiving(entry: TrustList.Entry, name: String, got: Long, size: Long) {}
     /**
-     * A web link arrived (docs/mesh.md §9.10), already in the chat history.
+     * A web link arrived (docs/mesh.md §9.11), already in the chat history.
      * [open]: it's from your own device and within the rate, so it may open
      * by itself; otherwise it waits in Messages with an Open button.
      */
@@ -164,7 +164,7 @@ class MeshNode(
     val refusals = ConcurrentHashMap<String, Refusal>()
     /** (fp, type) → when this phone last told it no. */
     private val refusedAt = ConcurrentHashMap<Pair<String, String>, Long>()
-    /** Files on their way, either way, with real byte counts (docs/mesh.md §9.10). */
+    /** Files on their way, either way, with real byte counts (docs/mesh.md §9.11). */
     val transfers = Transfers()
     /** "fp:offer id" being received → who cancelled it ("here" or "sender"). */
     private val dlCancel = ConcurrentHashMap<String, String>()
@@ -1042,7 +1042,7 @@ class MeshNode(
         }
     }
 
-    // --- cancelling a transfer (docs/mesh.md §9.10) --------------------------------
+    // --- cancelling a transfer (docs/mesh.md §9.11) --------------------------------
 
     /**
      * The peer cancelled a transfer: one it was sending here (stop fetching it,
@@ -1179,7 +1179,7 @@ class MeshNode(
     data class Each(val fp: String, val name: String, val outcome: String, val text: String, val job: JSONObject?)
 
     /**
-     * Several devices at once (docs/mesh.md §9.10): each gets its own job and
+     * Several devices at once (docs/mesh.md §9.11): each gets its own job and
      * its own result, exactly as if it were sent to it alone, so permissions,
      * Pause and routes apply to each. [send] queues one device's job. Waits
      * up to [waitMs] in all for the jobs to settle. Blocks.
@@ -1213,7 +1213,7 @@ class MeshNode(
     data class LinkSent(val how: String, val route: String? = null, val job: JSONObject? = null)
 
     /**
-     * A web link for the peer to open (docs/mesh.md §9.10): it opens on your
+     * A web link for the peer to open (docs/mesh.md §9.11): it opens on your
      * own device, and waits with an Open button on someone else's. Over an
      * open link to a peer that understands `link`; otherwise (not reachable,
      * paused, or an older peer) it goes as a chat message, which waits in the
@@ -1709,7 +1709,7 @@ class MeshNode(
         /** A stream of refused messages (input, say) gets one `refused` this often, per type. */
         const val REFUSE_EVERY_MS = 5_000L
         /**
-         * What this peer understands besides v1 (docs/mesh.md §9.10), in its hello as "features":
+         * What this peer understands besides v1 (docs/mesh.md §9.11), in its hello as "features":
          * `cancel` (stop a transfer), `link` (a web link, opened on your own devices), `rename`.
          */
         val FEATURES = listOf("cancel", "link", "rename")

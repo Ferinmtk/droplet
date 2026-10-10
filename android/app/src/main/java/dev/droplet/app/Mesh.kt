@@ -494,7 +494,7 @@ object Mesh {
 
     private fun running(): MeshNode = node ?: throw NoRoute(app.getString(R.string.mesh_off_now))
 
-    // --- progress and Cancel, links, names (docs/mesh.md §9.10) ---------------------------
+    // --- progress and Cancel, links, names (docs/mesh.md §9.11) ---------------------------
 
     /** Files on their way to or from [fp] (every device's when null): active first, then the recently finished. */
     fun transfers(fp: String? = null): List<dev.droplet.app.mesh.Transfers.View> =

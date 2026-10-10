@@ -9,7 +9,7 @@ using Droplet.Core.Tests.Support;
 namespace Droplet.Core.Tests;
 
 // Progress and Cancel, links, rename and nicknames, and sending to several devices
-// (docs/mesh.md §9.10), ported from the reference's agent/tests/test_transfers.py and
+// (docs/mesh.md §9.11), ported from the reference's agent/tests/test_transfers.py and
 // test_sending.py, between real .NET peers on loopback.
 
 /// <summary>The transfer list's arithmetic and words.</summary>

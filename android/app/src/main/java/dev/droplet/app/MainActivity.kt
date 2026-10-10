@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
     private var sendToFp: String? = null
     private val onRing: () -> Unit = { runOnUiThread { if (::b.isInitialized) renderRinging() } }
 
-    /** Select: sending to several devices at once (docs/mesh.md §9.10). */
+    /** Select: sending to several devices at once (docs/mesh.md §9.11). */
     private var selecting = false
     private val ticked = LinkedHashSet<String>()
     /** "All my devices": your own devices that allow what's sent, worked out when it's sent. */
@@ -411,7 +411,7 @@ class MainActivity : AppCompatActivity() {
         return v
     }
 
-    // --- files on their way (docs/mesh.md §9.10) -----------------------------------------
+    // --- files on their way (docs/mesh.md §9.11) -----------------------------------------
 
     private fun renderAllTransfers() {
         if (!::b.isInitialized) return
@@ -466,7 +466,7 @@ class MainActivity : AppCompatActivity() {
         background({ Mesh.cancelTransfer(id) }) { say(getString(R.string.transfer_cancelled, name)) }
     }
 
-    // --- several devices at once (docs/mesh.md §9.10) -------------------------------------
+    // --- several devices at once (docs/mesh.md §9.11) -------------------------------------
 
     private fun renderSelect(devices: Int) {
         b.select.visibility = if (devices >= 2) View.VISIBLE else View.GONE

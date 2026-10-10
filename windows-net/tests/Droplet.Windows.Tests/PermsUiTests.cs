@@ -252,7 +252,7 @@ public sealed class SharingScreenshotTests
             }
             made.Add(Shoot(app, new Window { Content = new ScrollViewer { Content = cards }, Width = 720, Height = 600 }, "3-device-cards", _ => cards));
 
-            // docs/mesh.md §9.10: a nickname with its own name small, files on their way with Cancel, and Send a link…
+            // docs/mesh.md §9.11: a nickname with its own name small, files on their way with Cancel, and Send a link…
             var busy = new StackPanel { Margin = new Thickness(24), Width = 640 };
             var nick = new DeviceCard();
             nick.Show(Card(new PeerView(SharingTests.Peer("DESKTOP-7Q2", 'e') with { Nickname = "Brian's laptop" }, "lan", true, Features: ["cancel", "link", "rename"])), false);

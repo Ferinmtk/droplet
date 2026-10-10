@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- a file on its way to or from a device, on its card: progress, time left, speed, Cancel (docs/mesh.md §9.10) -->
+<!-- a file on its way to or from a device, on its card: progress, time left, speed, Cancel (docs/mesh.md §9.11) -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"

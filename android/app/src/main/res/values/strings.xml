@@ -766,7 +766,7 @@
     <string name="conn_resume_all">Resume</string>
     <string name="clip_paused">Everything is paused: resume to send the clipboard</string>
 
-    <!-- progress and Cancel, links, rename and nicknames, several devices (docs/mesh.md §9.10) -->
+    <!-- progress and Cancel, links, rename and nicknames, several devices (docs/mesh.md §9.11) -->
     <string name="transfer_sending">Sending</string>
     <string name="transfer_receiving">Receiving</string>
     <string name="transfer_waiting">Waiting: %1$s</string>

@@ -696,7 +696,7 @@ internal sealed class AppHost : IAsyncDisposable
         }
     }
 
-    // --- progress and Cancel, links, names, several devices (docs/mesh.md §9.10) ---------------------
+    // --- progress and Cancel, links, names, several devices (docs/mesh.md §9.11) ---------------------
 
     /// <summary>
     /// Files on their way to or from a device (every device with null), the moving ones first,
@@ -1087,7 +1087,7 @@ internal sealed class AppHost : IAsyncDisposable
 /// <param name="Route">How it went ("lan", "hub"...), when known.</param>
 /// <param name="Waiting">Still in the outbox.</param>
 /// <param name="Url">A web link it is (or is nothing but), for an Open button; never opened by itself.</param>
-/// <param name="IsLink">Sent as a link (docs/mesh.md §9.10), not a message.</param>
+/// <param name="IsLink">Sent as a link (docs/mesh.md §9.11), not a message.</param>
 /// <param name="Opened">A link from your own device that opened here when it came.</param>
 internal sealed record ChatLine(bool Mine, string Text, DateTimeOffset At, string? Route, bool Waiting = false, string? Url = null,
     bool IsLink = false, bool Opened = false);

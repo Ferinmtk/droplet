@@ -54,7 +54,7 @@ object Perms {
      * Always allowed, even paused: what keeps the link up, says why something
      * was refused, and lets either side unpair. ack and nack answer what was
      * sent before the pause; `cancel` only stops a transfer, and `rename` only
-     * says what the sender is called now, as hello does (docs/mesh.md §9.10).
+     * says what the sender is called now, as hello does (docs/mesh.md §9.11).
      */
     val ALWAYS = setOf("hello", "welcome", "ping", "pong", "perm", "unpair", "ack", "nack", "refused", "error",
         "rpc-result", "cancel", "rename")
@@ -112,7 +112,7 @@ object Perms {
     fun allowed(entry: TrustList.Entry?, cap: String): Boolean = entry?.allow?.get(cap) ?: (entry != null)
 
     /**
-     * "All my devices", for sending to several at once (docs/mesh.md §9.10):
+     * "All my devices", for sending to several at once (docs/mesh.md §9.11):
      * the peers that are your own and have [cap] on here. A paused one stays
      * in: what it's sent waits for it.
      */

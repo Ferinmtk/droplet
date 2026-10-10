@@ -40,7 +40,7 @@ class UploadService : Service() {
     /**
      * One share: files and/or text, to [to] (and, sending to several devices
      * at once, to each of [more] as well: each gets its own job and result).
-     * [link]: the text is a web link, sent as one (docs/mesh.md §9.10).
+     * [link]: the text is a web link, sent as one (docs/mesh.md §9.11).
      */
     private data class Share(val files: List<Outgoing>, val text: String?, val to: String, val toName: String,
                              val link: Boolean = false, val more: List<Pair<String, String>> = emptyList()) {
@@ -200,7 +200,7 @@ class UploadService : Service() {
     }
 
     /**
-     * Several devices at once (docs/mesh.md §9.10): each gets its own jobs,
+     * Several devices at once (docs/mesh.md §9.11): each gets its own jobs,
      * exactly as if sent to it alone, and its own result (sent; waiting,
      * paused or away, in the outbox; or refused), all in one notification.
      */

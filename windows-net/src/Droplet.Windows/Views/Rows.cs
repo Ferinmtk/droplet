@@ -41,7 +41,7 @@ public sealed record ChatRow(string Text, string Meta, bool Mine, string? Url = 
 }
 
 /// <summary>
-/// A file on its way, on a device's card and in the tray (docs/mesh.md §9.10): its name, which
+/// A file on its way, on a device's card and in the tray (docs/mesh.md §9.11): its name, which
 /// way and with whom, a progress bar, "45% · 12 s left · 3.2 MB/s" (or how it ended), and Cancel.
 /// </summary>
 public sealed record TransferRow(string Id, string Name, string Way, double Percent, string Status, bool Active, bool CanCancel, bool Indeterminate)

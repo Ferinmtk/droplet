@@ -39,7 +39,7 @@ class TrustList(private val file: File, private val ownFp: String) {
         val paused: Boolean = false,
         /**
          * What the owner calls it here ("Brian's laptop"), shown instead of its own name.
-         * Only on this phone: never sent (docs/mesh.md §9.10). Empty for none.
+         * Only on this phone: never sent (docs/mesh.md §9.11). Empty for none.
          */
         val nickname: String = "",
     ) {

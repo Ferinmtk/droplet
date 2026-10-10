@@ -520,7 +520,7 @@ class ScreensTest {
 
     /**
      * Progress and Cancel, links, rename and nicknames, several devices
-     * (docs/mesh.md §9.10): a file on its way on a card, Select, a link with
+     * (docs/mesh.md §9.11): a file on its way on a card, Select, a link with
      * its Open button, the nickname, link and rename dialogs, and the share
      * sheet picking several devices for a shared link.
      */

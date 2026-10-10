@@ -6,7 +6,7 @@ import android.content.Intent
 import kotlinx.coroutines.launch
 
 /**
- * Cancel on a file's progress notification (docs/mesh.md §9.10): stops the
+ * Cancel on a file's progress notification (docs/mesh.md §9.11): stops the
  * transfer, deletes what had arrived, and tells the other device.
  */
 class TransferCancelReceiver : BroadcastReceiver() {

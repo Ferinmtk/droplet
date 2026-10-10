@@ -3,7 +3,7 @@ using System.Text;
 namespace Droplet.Core.Mesh;
 
 /// <summary>
-/// Links sent to another device (docs/mesh.md §9.10, the reference's mesh/links.py). Only web
+/// Links sent to another device (docs/mesh.md §9.11, the reference's mesh/links.py). Only web
 /// addresses travel as links, and only those are ever opened: <c>http</c> and <c>https</c>,
 /// with a host, no spaces, control or invisible formatting characters, and at most
 /// <see cref="MaxUrl"/> characters. Anything else (<c>file:</c>, <c>javascript:</c>,
@@ -82,7 +82,7 @@ public static class Links
 
 /// <summary>
 /// Names someone typed: this device's (renaming it) or a nickname for another (docs/mesh.md
-/// §9.10, the reference's trust.check_name).
+/// §9.11, the reference's trust.check_name).
 /// </summary>
 public static class Names
 {

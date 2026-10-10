@@ -4,7 +4,7 @@ import java.util.ArrayDeque
 
 /**
  * Files on their way, either way: how far each has got, how fast, and how
- * long it has left (docs/mesh.md §9.10), as the reference's
+ * long it has left (docs/mesh.md §9.11), as the reference's
  * mesh/transfers.py.
  *
  * The numbers are real byte counts: for a file this phone sends, the bytes

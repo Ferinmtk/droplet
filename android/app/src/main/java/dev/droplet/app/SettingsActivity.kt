@@ -365,7 +365,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * Rename this phone (docs/mesh.md §9.10): what paired devices see, told
+     * Rename this phone (docs/mesh.md §9.11): what paired devices see, told
      * to the linked ones at once. With a hub, the hub names it: it's renamed
      * there first, and a name the hub refuses (one another device has) isn't
      * changed here either.

@@ -1,7 +1,7 @@
 package dev.droplet.app.mesh
 
 /**
- * Links sent to another device (docs/mesh.md §9.10), as the reference's
+ * Links sent to another device (docs/mesh.md §9.11), as the reference's
  * mesh/links.py.
  *
  * Only web addresses travel as links, and only those are ever opened: `http`

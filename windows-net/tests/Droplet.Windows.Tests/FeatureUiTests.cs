@@ -4,7 +4,7 @@ using Droplet.Windows.Views;
 
 namespace Droplet.Windows.Tests;
 
-/// <summary>What the windows and the tray show of progress and Cancel, links, nicknames and several devices (docs/mesh.md §9.10).</summary>
+/// <summary>What the windows and the tray show of progress and Cancel, links, nicknames and several devices (docs/mesh.md §9.11).</summary>
 public sealed class FeatureUiTests
 {
     internal static List<TransferRow> SomeTransfers() =>

@@ -30,7 +30,7 @@ import java.util.Collections
 
 /**
  * Progress and Cancel, links, rename and nicknames, and several devices at
- * once (docs/mesh.md §9.10): the Android port of the reference's
+ * once (docs/mesh.md §9.11): the Android port of the reference's
  * agent/tests/test_transfers.py and test_sending.py, between real nodes over
  * TLS on loopback.
  */
