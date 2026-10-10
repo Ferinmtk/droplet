@@ -1,0 +1,79 @@
+# The Android app (android/): its JVM unit tests (Robolectric, with real TLS on loopback for
+# the mesh) and a debug build, on every change to it. Tests that need something outside the
+# runner (a hub, a real peer, a TV) skip themselves unless their DROPLET_TEST_* variable is
+# set; the mesh interop tests run against the Linux agent from this same commit.
+name: android
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'android/**'
+      - 'agent/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'agent/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Unit tests and debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # the mesh interop tests talk to real `droplet-agent run --dry-run` processes
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the agent for the interop tests
+        working-directory: .
+        run: |
+          python -m venv "$RUNNER_TEMP/agent-venv"
+          "$RUNNER_TEMP/agent-venv/bin/pip" install --quiet ./agent
+          echo "DROPLET_TEST_AGENT_PY=$RUNNER_TEMP/agent-venv/bin/python" >> "$GITHUB_ENV"
+
+      # the runner has an Android SDK preinstalled ($ANDROID_HOME); the build fetches the
+      # platform and build tools it needs
+      - name: Unit tests and debug build
+        run: ./gradlew --no-daemon --stacktrace -PtestHeap=1536m testDebugUnitTest assembleDebug
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: |
+            android/app/build/reports/tests/
+            android/app/build/test-results/
+          retention-days: 14
+
+      - name: Upload the debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: droplet-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
