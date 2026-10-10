@@ -159,14 +159,15 @@ public sealed class SharingScreenshotTests
         return Brushes.White;
     }
 
-    static string Shoot(Application app, Window w, string name)
+    /// <summary>Shows <paramref name="w"/> off screen and saves it (or the <paramref name="part"/> of it, whole, past any scrolling) as a PNG.</summary>
+    static string Shoot(Application app, Window w, string name, Func<Window, FrameworkElement>? part = null)
     {
         w.WindowStartupLocation = WindowStartupLocation.Manual;
         (w.Left, w.Top, w.ShowInTaskbar, w.ShowActivated) = (-20000.0, -20000.0, false, false);
         w.Show();
         w.UpdateLayout();
         Pump();
-        var root = (FrameworkElement)w.Content;
+        var root = part?.Invoke(w) ?? (FrameworkElement)w.Content;
         var size = new Size(root.ActualWidth, root.ActualHeight);
         Assert.True(size.Width > 100 && size.Height > 100, $"{name} laid out at {size}");
         const double Scale = 1.5;
@@ -213,8 +214,8 @@ public sealed class SharingScreenshotTests
 
             var editor = new FakeEditor(new PermsView("Brian's laptop", Perms.Other, Perms.Defaults(Perms.Other), false,
                 new RemotePerm(false, new Dictionary<string, bool> { ["clipboard"] = false, ["control"] = false }), false));
-            var perms = new PermissionsWindow(editor) { Height = 1180 };
-            made.Add(Shoot(app, perms, "2-permissions-someone-elses"));
+            var perms = new PermissionsWindow(editor);
+            made.Add(Shoot(app, perms, "2-permissions-someone-elses", w => (FrameworkElement)((ScrollViewer)((DockPanel)w.Content).Children[1]).Content));
             // the switches change what's kept, and choosing a relation again starts from its defaults
             editor.Set(allow: new Dictionary<string, bool> { ["chat"] = false });
             Assert.False(editor.Now.Allow["chat"]);
@@ -245,7 +246,7 @@ public sealed class SharingScreenshotTests
                 card.Show(Card(view), pausedAll);
                 cards.Children.Add(new Border { Style = (Style)app.FindResource("Card"), Child = card });
             }
-            made.Add(Shoot(app, new Window { Content = cards, SizeToContent = SizeToContent.WidthAndHeight }, "3-device-cards"));
+            made.Add(Shoot(app, new Window { Content = new ScrollViewer { Content = cards }, Width = 720, Height = 600 }, "3-device-cards", _ => cards));
             return made;
         });
         Assert.All(shots, p => Assert.True(new FileInfo(p).Length > 1000, p));
