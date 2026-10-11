@@ -33,14 +33,18 @@ import java.net.InetAddress
 import javax.net.ssl.SSLException
 
 /**
- * First run: droplet with a hub, or without one.
+ * First run: name the phone, and pair devices directly. The hub is optional
+ * and hidden: a fresh install goes straight to naming the phone, and never
+ * sees the word.
  *
- * **Without a hub** ("No hub: pair directly with my devices"): name the
- * phone, and it's ready. Its mesh identity is made, Stay connected starts
- * the peer server, and the home screen shows how to pair a first device.
+ * **Without a hub** (every new install): name the phone, and it's ready.
+ * Its mesh identity is made, Stay connected starts the peer server, and the
+ * home screen shows how to pair a first device.
  *
  * **With a hub**, finding it and getting let in (docs/local-first.md §4),
- * with or without Tailscale (also Settings → Add a hub, later):
+ * with or without Tailscale. Only reached on a phone that has a hub already
+ * (Settings → Change, pairing again), or through the hidden way in:
+ * [EXTRA_ADD_HUB], from a long-press on Settings' About line.
  *
  * 1. **Find:** hubs announcing themselves on the Wi-Fi, an address typed in,
  *    or the tailnet URL.
@@ -68,8 +72,10 @@ class SetupActivity : AppCompatActivity() {
     private var info: HubInfo? = null
     private var waiting: Pairing.Standing.Waiting? = null
     private var trustedRoute = false
-    /** Not set up yet: the choice between a hub and none comes first, and Back returns to it. */
+    /** Not set up yet: naming the phone (no hub) comes first. */
     private var firstRun = false
+    /** Opened by the hidden "add a hub" way in: hub setup, with a way back to naming the phone on a first run. */
+    private var addingHub = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // droplet's dark teal, whatever the system theme
@@ -107,8 +113,8 @@ class SetupActivity : AppCompatActivity() {
 
         b.chooseDirect.setOnClickListener { showDirect() }
         b.chooseHub.setOnClickListener { showFind() }
-        b.findBack.setOnClickListener { showChoose() }
-        b.directBack.setOnClickListener { showChoose() }
+        b.findBack.setOnClickListener { showDirect() }
+        b.directBack.setOnClickListener { showFind() }
         b.directGo.setOnClickListener { goDirect() }
         b.directName.setOnEditorActionListener { _, id, _ ->
             if (id == EditorInfo.IME_ACTION_GO) { goDirect(); true } else false
@@ -117,8 +123,10 @@ class SetupActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
-                    panel == Panel.DIRECT || (panel == Panel.FIND && firstRun) -> showChoose()
-                    panel != Panel.FIND && panel != Panel.CHOOSE -> showFind()
+                    panel == Panel.DIRECT && addingHub -> showFind()
+                    panel == Panel.FIND && firstRun -> showDirect()
+                    panel == Panel.CHOOSE -> showDirect()
+                    panel != Panel.FIND && panel != Panel.DIRECT -> showFind()
                     else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
                 }
             }
@@ -136,8 +144,12 @@ class SetupActivity : AppCompatActivity() {
                 proceed()
             }
         } else {
-            firstRun = !Prefs.isSetUp && !intent.getBooleanExtra(EXTRA_REPAIR, false)
-            if (firstRun) showChoose() else showFind()
+            val repair = intent.getBooleanExtra(EXTRA_REPAIR, false)
+            addingHub = intent.getBooleanExtra(EXTRA_ADD_HUB, false)
+            firstRun = !Prefs.isSetUp && !repair
+            // hub setup only for a phone that has a hub, or asked for through the hidden way in;
+            // everyone else names the phone and pairs directly
+            if (addingHub || repair || Prefs.hasHub) showFind() else showDirect()
         }
     }
 
@@ -184,7 +196,11 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun showDirect() {
+        busy?.cancel()
         show(Panel.DIRECT)
+        setBusy(false)
+        // back to hub setup only when that's where this came from
+        b.directBack.visibility = if (addingHub) View.VISIBLE else View.GONE
         if (b.directName.text.isNullOrBlank()) b.directName.setText(Prefs.meshDeviceName ?: suggestedName(this))
         showError(b.directError, null)
     }
@@ -569,6 +585,8 @@ class SetupActivity : AppCompatActivity() {
         const val EXTRA_PAIR = "pair"
         /** The hub's identity changed: explain, and pair again. */
         const val EXTRA_REPAIR = "repair"
+        /** The hidden way to add a hub (Settings: long-press About). Nothing visible offers it. */
+        const val EXTRA_ADD_HUB = "add_hub"
         const val LAN_PORT = 8443
         private const val POLL_MS = 2_500L
         private const val NOTHING_YET_MS = 6_000L

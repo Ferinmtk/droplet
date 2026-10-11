@@ -3,6 +3,9 @@ namespace Droplet.Windows.Tray;
 /// <summary>Everything the tray shows, gathered from the engine.</summary>
 internal sealed record TrayState
 {
+    /// <summary>This PC has a hub (let in, waiting, or its address set): only then is the hub shown.</summary>
+    public bool UsesHub { get; init; }
+
     /// <summary>Let in to a hub.</summary>
     public bool Configured { get; init; }
 
@@ -65,7 +68,7 @@ internal sealed record TrayState
             { PendingCode: { } code } => $"waiting to be let in to {HubName} (code {code})",
             { NotAllowed: true } => $"{HubName} doesn't let this PC in (open Settings)",
             { Configured: false, Peers: > 0 } => PeersText(),
-            { Configured: false } => "not set up yet (open Settings)",
+            { Configured: false } => "no devices paired yet",
             { Polled: false } => $"connecting to {HubName}…",
             { Connected: true, IdentityChanged: true } => $"{where}; the hub's identity on Wi-Fi changed (open Settings)",
             { Connected: true } => where + (NotificationsPaused ? " (notifications paused)" : ""),

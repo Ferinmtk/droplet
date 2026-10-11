@@ -333,9 +333,11 @@ class LocalFirstHubTest {
 
     private fun startSetup(vararg hubs: Announced): org.robolectric.android.controller.ActivityController<SetupActivity> {
         SetupActivity.browser = { _, onChange, _ -> onChange(hubs.toList()); Discovery.Handle { } }
-        val c = Robolectric.buildActivity(SetupActivity::class.java).setup()
-        // a first run asks "with a hub, or without?" first: with one
-        if (c.get().visible(R.id.panel_choose)) c.get().findViewById<View>(R.id.choose_hub).performClick()
+        // the hub is hidden from new installs: hub setup is the hidden way in (Settings: long-press About)
+        val c = Robolectric.buildActivity(SetupActivity::class.java,
+            android.content.Intent(ApplicationProvider.getApplicationContext(), SetupActivity::class.java)
+                .putExtra(SetupActivity.EXTRA_ADD_HUB, true)).setup()
+        assertTrue("hub setup: finding the hub", c.get().visible(R.id.panel_find))
         return c
     }
 

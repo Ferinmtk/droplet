@@ -131,8 +131,9 @@ the player allows it; Setup and Settings are native windows instead of a
 local web page; the PC is a mesh peer, with pairing in both directions.
 
 **Command line:** `droplet` (start, or bring it to the front),
-`droplet send --to <device|hub> <files>` (what Send To runs),
-`droplet settings | devices | stop-ring | uninstall | version`. A second
+`droplet send --to <device> <files>` (what Send To runs),
+`droplet settings | devices | stop-ring | uninstall | version`, and, for
+the optional hub, `droplet hub` (see below). A second
 `droplet.exe` hands its command to the running one and exits.
 
 ## Packaged and unpackaged
@@ -235,6 +236,27 @@ On a small machine, build with `-m:1 -p:UseSharedCompilation=false`.
   Application Packaging project (which needs Visual Studio's MSBuild) or
   single-project MSIX (which comes with the Windows App SDK).
 
+## Optional: a hub (hidden until used)
+
+droplet needs no hub: devices pair directly with a four-digit code, and a
+fresh install never shows the word. The hub (a home server that keeps
+things for devices that are off, reached over Tailscale too) is still fully
+supported, just out of sight:
+
+- **Adding one:** run `droplet hub` (or `droplet.exe hub` from a terminal).
+  It opens the hub's setup window: join a hub found on the LAN and compare
+  the code, use its PIN, link with a six-digit code, or give its Tailscale
+  address. Nothing in the app points there by default.
+- **Once a PC has one** (let in, waiting to be, or given its address:
+  `AppConfig.UsesHub`), everything comes back as before: the Hub card in
+  Settings (Change hub…, Re-pair), "Download files sent through the hub
+  automatically", "Open droplet" (the hub's web app) in the tray and the
+  Devices window, the hub and its devices in the device list, and the hub's
+  wording in the tooltip and in errors.
+- What shows where is decided in one place, `ViewModels/HubUi.cs`, and
+  tested in `HubHiddenTests` (CI also renders Settings and Devices both
+  ways, as pictures).
+
 ## Test on maryanne
 
 This is the only real verification: nothing here has run on Windows yet.
@@ -246,7 +268,8 @@ Go app first (its tray icon → Quit droplet).
 1. Put `droplet.exe` in `%LOCALAPPDATA%\Programs\droplet\` and run it.
    SmartScreen: More info → Run anyway. Expect: no console window; the drop
    appears in the notification area; since the Go app's config is imported,
-   the Devices window opens (on a fresh PC, Setup opens instead).
+   the Devices window opens (on a fresh PC it opens at Pair a device, with
+   no mention of a hub).
 2. Run `droplet.exe` again: the Devices window comes to the front, and there's
    still one tray icon. Try `droplet.exe version` from a terminal.
 3. Hover the tray icon: "droplet — t15 on Wi-Fi". Turn Wi-Fi off with

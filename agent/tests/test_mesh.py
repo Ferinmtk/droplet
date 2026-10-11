@@ -532,6 +532,28 @@ def test_the_hub_route_is_only_for_peers_the_hub_knows(nodes):
     assert a.host.hub_calls == []
 
 
+def test_without_a_hub_the_errors_dont_mention_one(nodes):
+    """The hub is optional and hidden: a device with none never hears of it; one with a hub still does."""
+    a, b = nodes("a"), nodes("b")
+    trust_each_other(a, b)
+    b.close()
+    fp = b.identity.fp
+    a.host.hub = None                  # not linked to a hub
+    with pytest.raises(NoRoute) as e:
+        a.send_live(fp, {"t": "input", "ev": []})
+    assert str(e.value) == "b isn't reachable right now"
+    with pytest.raises(NoRoute) as e:
+        a.ring(fp)
+    assert "hub" not in str(e.value)
+    j = a.send_text(fp, "x")
+    got = a.outbox.wait(j["id"], lambda j: j["attempts"] > 0 and j["state"] != "sending", 8)
+    assert got["state"] == QUEUED and got["error"] == "not reachable right now"
+    a.host.hub = "ab" * 8              # linked to one: it says so
+    with pytest.raises(NoRoute) as e:
+        a.send_live(fp, {"t": "input", "ev": []})
+    assert str(e.value) == "b isn't reachable directly, and not through the hub either"
+
+
 # --- the outbox --------------------------------------------------------------------------------
 
 def test_outbox_survives_a_restart(tmp_path):

@@ -74,39 +74,54 @@ class NoHubUnitTest {
     }
 
     @Test
-    fun setupOffersNoHubFirstOnlyOnAFreshInstall() {
+    fun setupGoesStraightToNamingThePhoneOnAFreshInstall() {
+        var looked = false
         SetupActivity.browser = { _, onChange, _ ->
+            looked = true
             onChange(listOf(Announced("9b16173d305cd15a", "ab".repeat(32), "t15", "192.168.100.20", 8443, 8000, null)))
             Discovery.Handle { }
         }
         val a = Robolectric.buildActivity(SetupActivity::class.java).setup().get()
         fun shown(id: Int) = a.findViewById<View>(id).visibility == View.VISIBLE
-        assertTrue(shown(R.id.panel_choose))
-        assertEquals("the hub card says a hub is right here", "t15 is on this Wi-Fi.",
-            a.findViewById<android.widget.TextView>(R.id.choose_hub_body).text.toString())
-        a.findViewById<View>(R.id.choose_hub).performClick()
-        assertTrue(shown(R.id.panel_find))
-        assertTrue("a way back to the choice", shown(R.id.find_back))
-        a.onBackPressedDispatcher.onBackPressed()
-        assertTrue(shown(R.id.panel_choose))
-        a.findViewById<View>(R.id.choose_direct).performClick()
+        // no choice, no hub: naming the phone is the first thing, and nothing looks for hubs
         assertTrue(shown(R.id.panel_direct))
-        a.onBackPressedDispatcher.onBackPressed()
-        assertTrue(shown(R.id.panel_choose))
+        assertFalse(shown(R.id.panel_choose))
+        assertFalse(shown(R.id.panel_find))
+        assertFalse("no way to a hub from here", shown(R.id.direct_back))
+        assertFalse("no hubs looked for on a fresh install", looked)
+        assertEquals(emptyList<String>(), HiddenHub.hubWords(a))
         // an empty name isn't a name
-        a.findViewById<View>(R.id.choose_direct).performClick()
         a.findViewById<android.widget.TextView>(R.id.direct_name).text = "   "
         a.findViewById<View>(R.id.direct_go).performClick()
         idle()
         assertTrue(shown(R.id.direct_error))
         assertFalse(Prefs.isSetUp)
+        // Back leaves setup: there's nothing before naming the phone
+        a.onBackPressedDispatcher.onBackPressed()
+        assertTrue(a.isFinishing)
 
-        // Settings → Add a hub, for a phone set up without one: straight to finding it
+        // the hidden way in (Settings: long-press About) on a first run: hub setup, with a way back
+        val first = Robolectric.buildActivity(SetupActivity::class.java,
+            android.content.Intent(app, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_ADD_HUB, true)).setup().get()
+        assertEquals(View.VISIBLE, first.findViewById<View>(R.id.panel_find).visibility)
+        assertEquals(View.VISIBLE, first.findViewById<View>(R.id.find_back).visibility)
+        first.findViewById<View>(R.id.find_back).performClick()
+        assertEquals(View.VISIBLE, first.findViewById<View>(R.id.panel_direct).visibility)
+        assertEquals(View.VISIBLE, first.findViewById<View>(R.id.direct_back).visibility)
+        first.onBackPressedDispatcher.onBackPressed()
+        assertEquals(View.VISIBLE, first.findViewById<View>(R.id.panel_find).visibility)
+
+        // a phone set up without one: the hidden way in goes straight to finding it
         Prefs.noHub = true
-        val add = Robolectric.buildActivity(SetupActivity::class.java).setup().get()
+        val add = Robolectric.buildActivity(SetupActivity::class.java,
+            android.content.Intent(app, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_ADD_HUB, true)).setup().get()
         assertEquals(View.VISIBLE, add.findViewById<View>(R.id.panel_find).visibility)
         assertEquals(View.GONE, add.findViewById<View>(R.id.panel_choose).visibility)
         assertEquals(View.GONE, add.findViewById<View>(R.id.find_back).visibility)
+        // and without it, setup is just naming the phone again: no hub
+        val plain = Robolectric.buildActivity(SetupActivity::class.java).setup().get()
+        assertEquals(View.VISIBLE, plain.findViewById<View>(R.id.panel_direct).visibility)
+        assertEquals(View.GONE, plain.findViewById<View>(R.id.panel_find).visibility)
     }
 
     @Test
@@ -143,9 +158,11 @@ class NoHubUnitTest {
         assertTrue("still set up: no hub now", Prefs.noHub && Prefs.isSetUp)
         assertEquals("the directly paired device stays; the hub's goes", listOf("slim"), n.trust.all().map { it.name })
         assertFalse("Settings stays open, now without a hub", settings.isFinishing)
-        assertEquals(View.VISIBLE, settings.findViewById<View>(R.id.add_hub).visibility)
+        // the hub is hidden again: no Add a hub, no Forget or Find again, just "This phone"
+        assertEquals(View.GONE, settings.findViewById<View>(R.id.add_hub).visibility)
         assertEquals("no Forget or Find again without a hub", View.GONE, settings.findViewById<View>(R.id.hub_buttons).visibility)
-        assertEquals("No hub", settings.findViewById<android.widget.TextView>(R.id.hub_name).text.toString())
+        assertEquals(View.GONE, settings.findViewById<View>(R.id.hub_row).visibility)
+        assertEquals("This phone", settings.findViewById<android.widget.TextView>(R.id.hub_header).text.toString())
         assertNull(shadowOf(settings).nextStartedActivity)
 
         // the home screen, with the device and no Hub tile

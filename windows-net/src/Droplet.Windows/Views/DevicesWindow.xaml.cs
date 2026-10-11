@@ -63,6 +63,8 @@ public partial class DevicesWindow : Window
     {
         var tray = Host.Tray;
         StatusText.Text = tray.Tooltip().Replace("droplet — ", "", StringComparison.Ordinal);
+        // the hub's web app: only for a PC that has a hub (it's optional, and hidden until then)
+        WebButton.Visibility = tray.UsesHub ? Visibility.Visible : Visibility.Collapsed;
         RingBanner.Visibility = tray.RingingFrom is null ? Visibility.Collapsed : Visibility.Visible;
         RingText.Text = $"{tray.RingingFrom} is ringing this PC.";
         ControlBanner.Visibility = tray.ControlledBy is null || tray.RemotePaused ? Visibility.Collapsed : Visibility.Visible;

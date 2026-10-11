@@ -584,4 +584,30 @@ class MeshUnitTest {
         repeat(dev.droplet.app.mesh.Hotspot.MAX_HELLOS) { assertEquals(200, k.answer(null, "10.0.0.2", JSONObject()).first) }
         assertEquals(429, k.answer(null, "10.0.0.2", JSONObject()).first)
     }
+
+    // --- the hub, hidden: named only on a device that has one --------------------------------
+
+    @Test
+    fun noRouteNamesTheHubOnlyWhenThereIsOne() {
+        val far = MeshIdentity.loadOrCreate(File(tmp, "far"))
+        fun unreachable(host: MeshHost): String {
+            val n = node("n" + nodes.size, host)
+            n.trust.addPaired(TrustList.makeEntry(peerId = "0123456789abcdef", name = "laptop", certPem = far.pem,
+                source = TrustList.SOURCE_PAIRED))
+            return try {
+                n.ring(far.fp)
+                fail("rang a device it can't reach")
+                ""
+            } catch (e: dev.droplet.app.mesh.NoRoute) {
+                e.message.orEmpty()
+            }
+        }
+        // no hub (every new install): no hub in the words
+        val plain = unreachable(QuietHost())
+        assertEquals("laptop isn't reachable right now", plain)
+        assertFalse(plain.contains("hub", ignoreCase = true))
+        // a device linked to a hub: as before
+        val linked = unreachable(object : QuietHost() { override fun hubId() = "9b16173d305cd15a" })
+        assertTrue(linked, linked.contains("not through the hub either"))
+    }
 }

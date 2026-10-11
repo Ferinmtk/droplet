@@ -56,7 +56,7 @@ class DemoAgent:
             self._msg("in", PHONE_FP, "Got them, thanks!", now - 1200),
             self._msg("out", WIN_FP, "The printer is fixed", now - 86400 * 2),
             self._msg("out", LINUX_FP, "Backup finished?", now - 600, state="queued",
-                      why="not reachable directly, and no hub knows it right now"),
+                      why="not reachable right now"),
         ]
         self.received = [
             self._file("IMG_20261008_093114.jpg", PHONE_FP, now - 900, 3_481_120),
@@ -175,17 +175,17 @@ class DemoAgent:
                 if j["_reachable"]:
                     j.update(state="done", route="lan", attempts=1)
                 else:
-                    j.update(attempts=1, why="not reachable directly, and no hub knows it right now")
+                    j.update(attempts=1, why="not reachable right now")
             return self._job(j["id"])
         if cmd == "ring":
             p = self._find(req.get("peer"))
             if not p["link"]:
-                return {"error": f"{p['name']} isn't reachable directly, and not through the hub either"}
+                return {"error": f"{p['name']} isn't reachable right now"}
             return {"route": "lan"}
         if cmd == "clip":
             p = self._find(req.get("peer"))
             if not p["link"]:
-                return {"error": f"{p['name']} isn't reachable directly, and not through the hub either"}
+                return {"error": f"{p['name']} isn't reachable right now"}
             return {"route": "lan"}
         if cmd == "transfers":
             return {"transfers": [dict(t) for t in self.transfers], "queued": []}
@@ -215,7 +215,7 @@ class DemoAgent:
                 return {"how": "link", "route": "lan"}
             return {"how": "message", "id": secrets.token_hex(8), "kind": "text", "peer": p["name"],
                     "state": "queued", "route": None, "attempts": 1, "name": None,
-                    "why": "not reachable directly, and no hub knows it right now"}
+                    "why": "not reachable right now"}
         if cmd == "unpair":
             p = self._find(req.get("peer"))
             self.peers.remove(p)

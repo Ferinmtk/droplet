@@ -89,6 +89,7 @@ class SettingsPage(QWidget):
         form.addRow("Id", self.ident)
         form.addRow("Fingerprint", self.fp)
         form.addRow("Hub", self.hub)
+        self.form = form                  # the Hub row shows only on a computer linked to one
         form.addRow("Received files", self.folder)
         note = label("Your devices show this name; renaming tells the connected ones at once. Paired "
                      "devices check the fingerprint.", muted=True, wrap=True)
@@ -163,7 +164,9 @@ class SettingsPage(QWidget):
             cb.setChecked(self.saved.get(key, True))
             cb.blockSignals(False)
         hub = cfg.get("hub") if config.is_set_up(cfg) else ""
-        self.hub.setText(f"Linked to {hub}" if hub else "None: your devices pair with this computer directly")
+        # The hub is optional and hidden: only a computer already linked to one sees the row.
+        self.hub.setText(f"Linked to {hub}" if hub else "")
+        self.form.setRowVisible(self.hub, bool(hub))
         self.folder.setText(str(config.downloads_dir(cfg)))
         self.tray.blockSignals(True)
         self.tray.setChecked(tray.autostart_path().exists())

@@ -21,6 +21,9 @@ internal enum CommandKind
     /// <summary>Open the devices window.</summary>
     Devices,
 
+    /// <summary>Set up (or change) a hub: optional, so only here and in Settings once there is one.</summary>
+    Hub,
+
     /// <summary>Silence this PC.</summary>
     StopRing,
 
@@ -46,12 +49,16 @@ internal sealed record Command(CommandKind Kind, string? Target = null, IReadOnl
 
         Usage:
           droplet                            start in the tray, or bring droplet to the front
-          droplet send --to <device> <file>...  send files: a device name, or "hub"
+          droplet send --to <device> <file>...  send files to a device, by its name
           droplet settings | devices         open Settings or the devices
           droplet stop-ring                  silence this PC
           droplet uninstall                  remove Start with Windows, Send To, the Start menu entry
                                              and the droplet: link handler (settings are kept)
           droplet version
+
+        Advanced (an optional home server; droplet doesn't need one):
+          droplet hub                        link this PC to a droplet hub
+          droplet send --to hub <file>...    send files to the hub's shared storage
         """;
 
     /// <summary>Reads the arguments droplet.exe was started with.</summary>
@@ -75,6 +82,8 @@ internal sealed record Command(CommandKind Kind, string? Target = null, IReadOnl
                 return new(CommandKind.Settings);
             case "DEVICES":
                 return new(CommandKind.Devices);
+            case "HUB":
+                return new(CommandKind.Hub);
             case "STOP-RING":
                 return new(CommandKind.StopRing);
             case "UNINSTALL":
@@ -103,7 +112,7 @@ internal sealed record Command(CommandKind Kind, string? Target = null, IReadOnl
                         }
                     }
                     return string.IsNullOrWhiteSpace(to) || files.Count == 0
-                        ? new(CommandKind.Invalid, Error: "usage: droplet send --to <device|hub> <file>...")
+                        ? new(CommandKind.Invalid, Error: "usage: droplet send --to <device> <file>...")
                         : new(CommandKind.Send, to, files);
                 }
         }

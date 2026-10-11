@@ -35,8 +35,8 @@
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="This PC" Style="{StaticResource SectionTitle}" />
-                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,4"
-                               Text="Rename this PC: its name on your devices, told to the ones connected now. With a hub, the hub renames it first." />
+                    <TextBlock x:Name="NameNote" Style="{StaticResource Caption}" Margin="0,0,0,4"
+                               Text="Rename this PC: its name on your devices, told to the ones connected now." />
                     <DockPanel>
                         <Button x:Name="SaveName" Content="Rename" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="SaveName_Click" />
                         <TextBox x:Name="NameBox" MaxLength="40" AutomationProperties.Name="Name" />
@@ -45,8 +45,8 @@
                 </StackPanel>
             </Border>
 
-            <!-- the hub -->
-            <Border Style="{StaticResource Card}">
+            <!-- the hub: optional, and only shown once this PC has one (AppConfig.UsesHub) -->
+            <Border x:Name="HubCard" Style="{StaticResource Card}" Visibility="Collapsed">
                 <StackPanel>
                     <TextBlock Text="Hub" Style="{StaticResource SectionTitle}" />
                     <TextBlock x:Name="HubSummary" Style="{StaticResource Body}" />
@@ -110,7 +110,8 @@
                         <TextBox x:Name="FolderBox" AutomationProperties.Name="Download folder" />
                     </DockPanel>
                     <TextBlock x:Name="FolderError" Style="{StaticResource ErrorText}" Visibility="Collapsed" />
-                    <CheckBox x:Name="AutoDownload" Content="Download files sent through the hub automatically" Style="{StaticResource Switch}" Margin="0,10,0,2" Click="Switch_Click" />
+                    <CheckBox x:Name="AutoDownload" Content="Download files sent through the hub automatically" Style="{StaticResource Switch}" Margin="0,10,0,2" Click="Switch_Click"
+                              Visibility="Collapsed" />
                 </StackPanel>
             </Border>
 
@@ -122,7 +123,7 @@
                     <CheckBox x:Name="NotifyMessages" Content="When a message arrives" Style="{StaticResource Switch}" Click="Switch_Click" />
                     <CheckBox x:Name="PhoneNotifications" Content="Show my phone's notifications" Style="{StaticResource Switch}" Click="Switch_Click" />
                     <TextBlock Style="{StaticResource Caption}" Margin="28,0,0,6">
-                        Sent straight from a paired phone running droplet, no hub needed. Turned off, phones stop sending them here.
+                        Sent straight from a paired phone running droplet. Turned off, phones stop sending them here.
                     </TextBlock>
                     <CheckBox x:Name="RingSound" Content="Play a sound when a device rings this PC" Style="{StaticResource Switch}" Click="Switch_Click" />
                     <CheckBox x:Name="Paused" Content="Pause file, message and phone notifications" Style="{StaticResource Switch}" Click="Switch_Click" />
@@ -146,10 +147,8 @@
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="Direct connections (mesh)" Style="{StaticResource SectionTitle}" />
-                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,6">
-                        Your devices talk to this PC directly, on your Wi-Fi or over Tailscale, and the hub is only a helper.
-                        Only devices you paired, or that your hub vouches for, can connect.
-                    </TextBlock>
+                    <TextBlock x:Name="MeshNote" Style="{StaticResource Caption}" Margin="0,0,0,6" TextWrapping="Wrap"
+                               Text="Your devices talk to this PC directly, on your Wi-Fi or a phone's hotspot. Only devices you paired can connect." />
                     <CheckBox x:Name="MeshEnabled" Content="Let paired devices connect directly" Style="{StaticResource Switch}" />
                     <CheckBox x:Name="MeshAnnounce" Content="Announce this PC on the local network" Style="{StaticResource Switch}" />
                     <TextBlock Text="Port (empty: the first free one from 1739 to 1749)" Style="{StaticResource Caption}" Margin="0,8,0,4" />

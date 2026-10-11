@@ -62,7 +62,7 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_REPAIR, true))
         }
         b.forget.setOnClickListener { askForget() }
-        b.addHub.setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
+        b.addHub.setOnClickListener { addHub() }
         b.rename.setOnClickListener { askRename() }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -101,6 +101,8 @@ class SettingsActivity : AppCompatActivity() {
         b.autostartButton.setOnClickListener { openAutostart() }
 
         b.about.text = getString(R.string.s_about, BuildConfig.VERSION_NAME)
+        // the hidden way to add a hub (it's optional, and not offered anywhere): long-press About
+        b.about.setOnLongClickListener { addHub(); true }
 
         setUpRemote()
         setUpMesh()
@@ -295,14 +297,22 @@ class SettingsActivity : AppCompatActivity() {
         Live.refresh()
     }
 
-    /** The hub card: how it's reached now, and who it is; or that there's none, and how to add one. */
+    /**
+     * The hub card: how it's reached now, and who it is. Only a phone that
+     * has a hub sees it: without one (droplet's usual way now) the card is
+     * just "This phone", and nothing mentions a hub. A hub can still be added
+     * through a hidden way in (long-press the About line: see android/README.md).
+     */
     private fun showRoute(s: Router.State) {
         val hub = Prefs.hasHub
-        for (v in listOf(b.changeHub, b.hubIdentity, b.hubTailnet, b.hubButtons, b.open, b.linkRow)) {
+        for (v in listOf(b.hubRow, b.changeHub, b.hubIdentity, b.hubTailnet, b.hubButtons, b.open, b.linkRow,
+                b.thisPhoneLine, b.thisPhoneTitle)) {
             v.visibility = if (hub) View.VISIBLE else View.GONE
         }
-        b.hubNone.visibility = if (hub) View.GONE else View.VISIBLE
-        b.addHub.visibility = b.hubNone.visibility
+        b.hubHeader.setText(if (hub) R.string.s_hub else R.string.s_this_phone)
+        // the "what a hub adds" card and its button stay out of sight: the hub is optional, and hidden
+        b.hubNone.visibility = View.GONE
+        b.addHub.visibility = View.GONE
         // with a hub too: the hub takes the new name first, and your devices are told
         b.rename.visibility = View.VISIBLE
         if (!hub) {
@@ -325,6 +335,11 @@ class SettingsActivity : AppCompatActivity() {
         } else getString(R.string.s_hub_identity_none)
         b.hubTailnet.text = Prefs.hubUrl?.let { getString(R.string.s_hub_tailnet, it.removePrefix("https://")) }
             ?: getString(R.string.s_hub_tailnet_none)
+    }
+
+    /** Hub setup, finding one on the Wi-Fi or by address: only from the hidden long-press. */
+    private fun addHub() {
+        startActivity(Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_ADD_HUB, true))
     }
 
     /** Settings → Forget this hub. */
