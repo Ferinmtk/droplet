@@ -174,11 +174,11 @@ class RemoteActivity : AppCompatActivity() {
             return true
         }
         if (to == null) {
-            showStatus(getString(if (Live.state.value.connected) R.string.remote_no_target else R.string.remote_offline), bad = true)
+            showStatus(getString(if (Live.state.value.connected) R.string.remote_no_target else offlineText), bad = true)
             return false
         }
         if (!Live.send(JSONObject().put("t", "input").put("to", to).put("ev", ev))) {
-            showStatus(getString(R.string.remote_offline), bad = true)
+            showStatus(getString(offlineText), bad = true)
             return false
         }
         return true
@@ -290,13 +290,17 @@ class RemoteActivity : AppCompatActivity() {
         }
     }
 
+    /** Nothing to send to: the hub is named only on a phone that has one. */
+    private val offlineText: Int
+        get() = if (Prefs.hasHub) R.string.remote_offline else R.string.remote_offline_direct
+
     /**
      * Computers running droplet's helper, then paired Bluetooth devices, then
      * the way to set Bluetooth up (or pair another computer).
      */
     private fun pickTarget() {
         if (candidates.isEmpty()) {
-            showStatus(getString(if (Live.state.value.connected) R.string.remote_none_help else R.string.remote_offline), bad = true)
+            showStatus(getString(if (Live.state.value.connected) R.string.remote_none_help else offlineText), bad = true)
         }
         val bonded = BtHid.controller.bonded()
         val ids = candidates + bonded.map { Prefs.BT_TARGET + it.address }

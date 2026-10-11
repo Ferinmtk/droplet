@@ -1,14 +1,13 @@
 # droplet for Android
 
-The native droplet app. It works **on its own**, paired directly with your
-other devices ([Without a hub](#without-a-hub)), or with a droplet hub. It
-opens on a native home screen: your devices and one tap for each thing to do
-with them, pairing, the phone's own remotes, and what arrived. With a hub,
-the hub's web app is one tap away. It does eight things that the web app
-can't do as a browser tab or PWA:
+The native droplet app. It pairs directly with your other devices, like
+Bluetooth, with a four-digit code ([Without a hub](#without-a-hub)): nothing
+else to install. It opens on a native home screen: your devices and one tap
+for each thing to do with them, pairing, the phone's own remotes, and what
+arrived. It does eight things that a browser tab or PWA can't:
 
-- **Share → droplet from any app.** A native sheet lists the hub and your
-  named devices. Files stream up in the background with a progress
+- **Share → droplet from any app.** A native sheet lists your paired
+  devices. Files stream up in the background with a progress
   notification and keep their real names, even from Xiaomi Gallery, which
   otherwise gives files numeric names.
 - **Find my phone, loud.** Another device rings this phone, and it plays the
@@ -16,8 +15,7 @@ can't do as a browser tab or PWA:
   mute. It also vibrates and shows a full-screen Stop button over the lock
   screen.
 - **Notification mirroring.** The phone's notifications pop up on your
-  paired Windows and Linux computers, straight from the phone, and with a
-  hub also in a Phone card on your other devices, with the battery level.
+  paired Windows and Linux computers, straight from the phone.
 - **Notifications for files and messages** sent to the phone. Push doesn't
   work inside an app WebView, so the app checks for these itself.
 - **Remote control, both ways.** Your other devices can control the phone's
@@ -26,27 +24,23 @@ can't do as a browser tab or PWA:
   change slides. See [Remote control](#remote-control).
 - **Direct connections to your devices (the mesh).** The phone talks to
   your computers straight over the Wi-Fi or Tailscale, so sending files and
-  messages, ringing, the clipboard and the presentation remote keep working
-  when the hub is down. See [Direct connections](#direct-connections-the-mesh).
+  messages, ringing, the clipboard and the presentation remote. See
+  [Direct connections](#direct-connections-the-mesh).
 - **A Bluetooth mouse and keyboard.** The phone pairs with a computer or TV
   as an ordinary Bluetooth keyboard and mouse: touchpad, keyboard, media keys
-  and slides, with nothing installed on the other side and no Wi-Fi or hub.
+  and slides, with nothing installed on the other side and no Wi-Fi.
   See [Bluetooth mouse & keyboard](#bluetooth-mouse--keyboard).
 - **A TV remote that talks to the TV itself.** The phone pairs with an
   Android TV or Google TV and controls it over the Wi-Fi with the same
   protocol as Google's own remote app: D-pad or touchpad, volume (the phone's
-  volume keys too), apps, typing and power, with the hub off. See
+  volume keys too), apps, typing and power. See
   [TV remote](#tv-remote).
 
-With a hub, the **Hub** tile opens the droplet web app in a WebView, with an
-arrow back to the home screen. It uses the same device token as the page, so
-the app is the same device the page named. The app talks only to your own
-devices (and your hub, if you have one): no Firebase, no Google Play
+The app talks only to your own devices: no Firebase, no Google Play
 Services, no analytics.
 
-It's **local-first**, like KDE Connect: at home it talks to the hub straight
-over the Wi-Fi, and Tailscale is only the way in when you're away. See
-[Local-first: home Wi-Fi first, Tailscale away](#local-first-home-wi-fi-first-tailscale-away).
+A droplet hub (a home server with a web app) is optional, advanced, and
+hidden in the app: see [Optional: a hub](#optional-a-hub).
 
 ## Build
 
@@ -92,32 +86,15 @@ keytool -genkeypair -keystore ~/.android/droplet-release.jks -storetype PKCS12 \
 
 ## Install on the phone
 
-1. Download the APK on the phone: from the
-   [GitHub release](https://github.com/Ferinmtk/droplet/releases), or the
-   hub's `shared/` folder.
+1. Download the APK on the phone, from the
+   [GitHub release](https://github.com/Ferinmtk/droplet/releases).
 2. Open it. Android asks to allow installs from that app once.
-3. Open droplet. It asks how you want to use it:
-   - **No hub: pair directly**: name the phone, and it's ready. See
-     [Without a hub](#without-a-hub).
-   - **I have a droplet hub**: go on below. (The card says when a hub is on
-     this Wi-Fi.)
-4. On the same Wi-Fi as the hub, it shows "Looking for droplet on your
-   Wi-Fi…" and lists the hubs it finds. Tap yours. (Or enter its IP, or use
-   its Tailscale address.)
-5. Name the phone (it suggests the phone's own name) and tap **Ask to join**.
-   A four-digit code shows. On one of your devices that's already in, droplet
-   shows "<name> wants to join" with the same code: check it matches and
-   allow it. The hub's PIN, if it has one, or a link code also let it in.
-   Over Tailscale, naming the phone lets it in straight away.
-6. The home screen opens. Settings is the ⚙ at the top right.
+3. Open droplet, name the phone (it suggests the phone's own name), and tap
+   **Continue**. See [Without a hub](#without-a-hub).
+4. The home screen opens. Settings is the ⚙ at the top right.
 
-**Updating from 1.5** needs nothing: the app opens on the new home screen,
-with the **Hub** tile for the web app. Notification links into the web app
-(a chat, the inbox) still open it there.
-
-Updating from 1.1 (which knew only the tailnet URL) needs nothing: the first
-time it reaches the hub, the app learns what it needs for the Wi-Fi. See
-[Upgrading from 1.1](#upgrading-from-11).
+A phone already linked to a hub keeps it after an update: see
+[Optional: a hub](#optional-a-hub).
 
 ## Without a hub
 
@@ -126,7 +103,7 @@ tablets and friends' phones, like Bluetooth, and talks to them over the
 Wi-Fi (or Tailscale), with mutual TLS and each device's certificate pinned
 (see [Direct connections](#direct-connections-the-mesh)).
 
-**Setting up.** On first run choose **No hub: pair directly**, name the
+**Setting up.** On first run name the
 phone (it suggests the phone's own name), and tap **Continue**. That makes
 the phone's identity (its key, in the Android Keystore when the phone
 allows it), turns on **Stay connected**, which runs the server your devices
@@ -139,8 +116,7 @@ steps:
    [GitHub release](https://github.com/Ferinmtk/droplet/releases). (The
    Linux agent pairs directly too, with `droplet-agent pair`.) **Send the
    download link** shares the link with a friend.
-2. Open it there, on the same Wi-Fi. With no hub, it too chooses to pair
-   directly.
+2. Open it there, on the same Wi-Fi, and pair with this phone.
 3. Tap **Pair your first device**. The droplet devices on the Wi-Fi are
    listed; tap one. Both screens show the same four digits: tap **They
    match**, and accept on the other device. (A device that doesn't show up,
@@ -185,10 +161,7 @@ mailbox for a device that's off
 back), Link with code, and reaching devices on another network without
 Tailscale.
 
-**Adding a hub later**: Settings → **Add a hub**. The phone joins it as
-usual, and your hub's devices appear next to the ones you paired. **Forget
-this hub** takes it away again: the devices the hub vouched for go, the ones
-you paired directly stay, and the phone carries on without a hub.
+**Adding a hub later**: see [Optional: a hub](#optional-a-hub).
 
 **Renaming**: without a hub, Settings → This phone → **Rename** (with one,
 the name is the hub's, set on its page).
@@ -680,6 +653,41 @@ built from the library's own protobufs, over real TLS. What it can't show:
    with a new code.
 9. Whether the Keystore key works for TLS on the phone: "This remote" on
    the remote screen says where the key is.
+
+## Optional: a hub
+
+droplet doesn't need a hub, and a new install never mentions one: setup goes
+straight to naming the phone, Settings has no hub section, and the home
+screen no Hub tile. A hub (droplet's server on a computer that stays on)
+adds the web app for any browser, the Phone card, a mailbox for devices that
+are off, and Link with code.
+
+**A phone that already has a hub** keeps everything as it was: the **Hub**
+section in Settings (how it's reached, Change, Find hub again, Forget this
+hub, Link with code), the **Hub** tile on the home screen (the web app in a
+WebView, with an arrow back home; it uses the same device token as the page),
+and notification links into the web app. **Forget this hub** takes it away:
+the devices the hub vouched for go, the ones you paired directly stay, and
+the phone carries on without a hub (and the hub's UI goes with it).
+
+**Adding a hub** (hidden on purpose): in Settings, **long-press the version
+line at the bottom** ("droplet 1.x · your own devices, no cloud"). That opens
+hub setup (`SetupActivity` with `EXTRA_ADD_HUB`):
+
+1. On the same Wi-Fi as the hub, it lists the hubs it finds. Tap yours. (Or
+   enter its IP, or use its Tailscale address.)
+2. Name the phone and tap **Ask to join**. A four-digit code shows. On one of
+   your devices that's already in, droplet shows "<name> wants to join" with
+   the same code: check it matches and allow it. The hub's PIN, if it has
+   one, or a link code also let it in. Over Tailscale, naming the phone lets
+   it in straight away.
+
+Your hub's devices then appear next to the ones you paired.
+
+**Updating** needs nothing: a phone linked to a hub opens with its **Hub**
+tile and section as before. Updating from 1.1 (which knew only the tailnet
+URL): the first time it reaches the hub, the app learns what it needs for
+the Wi-Fi. See [Upgrading from 1.1](#upgrading-from-11).
 
 ## Local-first: home Wi-Fi first, Tailscale away
 
