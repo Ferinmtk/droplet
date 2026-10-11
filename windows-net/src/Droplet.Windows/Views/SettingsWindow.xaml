@@ -148,7 +148,7 @@
                 <StackPanel>
                     <TextBlock Text="Direct connections (mesh)" Style="{StaticResource SectionTitle}" />
                     <TextBlock x:Name="MeshNote" Style="{StaticResource Caption}" Margin="0,0,0,6" TextWrapping="Wrap"
-                               Text="Your devices talk to this PC directly, on your Wi-Fi or over Tailscale. Only devices you paired can connect." />
+                               Text="Your devices talk to this PC directly, on your Wi-Fi or a phone's hotspot. Only devices you paired can connect." />
                     <CheckBox x:Name="MeshEnabled" Content="Let paired devices connect directly" Style="{StaticResource Switch}" />
                     <CheckBox x:Name="MeshAnnounce" Content="Announce this PC on the local network" Style="{StaticResource Switch}" />
                     <TextBlock Text="Port (empty: the first free one from 1739 to 1749)" Style="{StaticResource Caption}" Margin="0,8,0,4" />

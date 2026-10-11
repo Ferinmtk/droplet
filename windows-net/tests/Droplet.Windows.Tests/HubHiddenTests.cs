@@ -38,7 +38,7 @@ public sealed class HubHiddenTests
         Assert.False(SaysHub(HubUi.NameNote(false)));
         Assert.False(SaysHub(HubUi.MeshNote(false)));
         // the tray, with nothing paired and with paired devices
-        Assert.Equal("droplet — no devices paired yet (open droplet to pair one)", new TrayState().Tooltip());
+        Assert.Equal("droplet — no devices paired yet", new TrayState().Tooltip());
         Assert.False(SaysHub(new TrayState().Tooltip()));
         Assert.False(SaysHub(new TrayState { Peers = 2, PeersLinked = 1 }.Tooltip()));
         Assert.False(new TrayState().UsesHub);

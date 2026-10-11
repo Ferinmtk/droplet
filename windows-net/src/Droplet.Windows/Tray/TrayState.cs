@@ -68,7 +68,7 @@ internal sealed record TrayState
             { PendingCode: { } code } => $"waiting to be let in to {HubName} (code {code})",
             { NotAllowed: true } => $"{HubName} doesn't let this PC in (open Settings)",
             { Configured: false, Peers: > 0 } => PeersText(),
-            { Configured: false } => "no devices paired yet (open droplet to pair one)",
+            { Configured: false } => "no devices paired yet",
             { Polled: false } => $"connecting to {HubName}…",
             { Connected: true, IdentityChanged: true } => $"{where}; the hub's identity on Wi-Fi changed (open Settings)",
             { Connected: true } => where + (NotificationsPaused ? " (notifications paused)" : ""),

@@ -18,7 +18,7 @@ cloud. Send a file from your phone and it lands in Downloads. Copy on one device
 another. Ring your phone when it's lost in the sofa. Use your phone as a touchpad, keyboard,
 media remote or presentation clicker for your PC.
 
-Everything goes directly between your own devices, on your Wi-Fi or over Tailscale, with
+Everything goes directly between your own devices, on your Wi-Fi or a phone's hotspot, with
 each device checking the other's identity. Pair two devices by comparing a four-digit code:
 there's no account to make and no server to set up.
 
@@ -38,7 +38,7 @@ analytics.
 
 ## Features (up to 20, 200 characters each)
 
-1. Send files between your phone and PC directly, on your Wi-Fi or over Tailscale
+1. Send files between your phone and PC directly, on your Wi-Fi or a phone's hotspot
 2. Copy on one device, paste on another (clipboard sync, off by default)
 3. Ring a lost phone, or find your PC, with a loud ring that stops when you answer
 4. Use your phone as a touchpad, keyboard, media remote and presentation clicker

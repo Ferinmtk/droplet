@@ -152,7 +152,7 @@
                         <StackPanel>
                             <TextBlock Text="Pair a device" Style="{StaticResource SectionTitle}" />
                             <TextBlock Style="{StaticResource Body}">
-                                Pairing lets a device reach this PC directly, on your Wi-Fi or over Tailscale.
+                                Pairing lets a device reach this PC directly, on your Wi-Fi or a phone's hotspot.
                                 Both of you see a four-digit code: say yes only if they match.
                             </TextBlock>
                             <TextBlock Text="On this network" Style="{StaticResource Caption}" Margin="0,8,0,4" />

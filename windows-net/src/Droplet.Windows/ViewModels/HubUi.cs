@@ -41,5 +41,5 @@ internal static class HubUi
     public static string MeshNote(bool usesHub) => usesHub
         ? "Your devices talk to this PC directly, on your Wi-Fi or over Tailscale, and the hub is only a helper. " +
           "Only devices you paired, or that your hub vouches for, can connect."
-        : "Your devices talk to this PC directly, on your Wi-Fi or over Tailscale. Only devices you paired can connect.";
+        : "Your devices talk to this PC directly, on your Wi-Fi or a phone's hotspot. Only devices you paired can connect.";
 }

@@ -175,7 +175,7 @@ public sealed class TrayTests
     [Fact]
     public void Without_a_hub_the_tooltip_counts_linked_devices_and_dims_when_none()
     {
-        Assert.Equal("droplet — no devices paired yet (open droplet to pair one)", new TrayState().Tooltip());
+        Assert.Equal("droplet — no devices paired yet", new TrayState().Tooltip());
         Assert.Equal("tray-dim", new TrayState().Icon());
         var mesh = new TrayState { Peers = 3, PeersLinked = 2 };
         Assert.Equal("droplet — 2 of 3 devices linked", mesh.Tooltip());
