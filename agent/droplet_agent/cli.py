@@ -270,7 +270,8 @@ def cmd_run(args) -> int:
         if not mesh_on:
             print(why, file=sys.stderr)
             return 2
-        log.info("%s Until then, only the mesh runs: devices you pair with directly still work.", why)
+        if cfg.get("pending"):
+            log.info("%s Until then, only the mesh runs: devices you pair with directly still work.", why)
     from .agent import Agent
     from .connection import Connection
 
@@ -622,6 +623,18 @@ ROUTE_TEXT = {"lan": "directly, over the LAN", "tailnet": "directly, over Tailsc
               "hub": "through the hub", "hub-mailbox": "to the hub's mailbox (it's offline)"}
 
 
+def _has_hub() -> bool:
+    """Whether this computer is linked to a hub: only then do messages mention one."""
+    try:
+        return config.is_set_up(config.load())
+    except (OSError, ValueError):
+        return False
+
+
+def _kept_note() -> str:
+    return "as soon as it or the hub can be reached" if _has_hub() else "as soon as it can be reached"
+
+
 def _report_job(job: dict, what: str) -> int:
     if job["state"] == "done":
         print(f"{what} {ROUTE_TEXT.get(job['route'], job['route'])}.")
@@ -634,7 +647,7 @@ def _report_job(job: dict, what: str) -> int:
         print(f"Waiting: {why[len('waiting: '):]}. It's kept in the outbox and sent on resume.")
         return 0
     print(f"{job['peer']} can't be reached right now ({job.get('why') or 'no route'}). "
-          "It's kept in the outbox and sent as soon as it or the hub can be reached.")
+          f"It's kept in the outbox and sent {_kept_note()}.")
     return 0
 
 
@@ -697,8 +710,8 @@ def _result_line(job: dict, what: str) -> tuple[str, int]:
         return f"{what}: refused: {why}" if why else f"{what}: failed", 1
     if why.startswith("waiting: "):
         return f"{what}: waiting: {why[len('waiting: '):]}. It's kept in the outbox and sent on resume.", 0
-    return (f"{what}: can't be reached right now ({why or 'no route'}). It's kept in the outbox and sent as "
-            "soon as it or the hub can be reached.", 0)
+    return (f"{what}: can't be reached right now ({why or 'no route'}). It's kept in the outbox and sent "
+            f"{_kept_note()}.", 0)
 
 
 def _progress_line(transfers: list, jobs: list) -> str:
@@ -1087,8 +1100,6 @@ def cmd_status(args) -> int:
                                       else "NOT known to the hub; run setup again"))
             except hub.HubError as e:
                 print(f"token:    can't check ({e})")
-    else:
-        print("not set up: run droplet-agent setup")
     print(f"service:  {_service_state()}")
     running = _mesh_status(cfg)
     print(f"iphone:   {_iphone_line(cfg, running)}")
@@ -1126,7 +1137,8 @@ def _mesh_status(cfg: dict) -> dict | None:
     peers = list(peers)
     paired = sum(1 for p in peers if isinstance(p, dict) and p.get("source") == "paired")
     print(f"mesh:     fingerprint {fp}")
-    print(f"          {len(peers) - paired} peer(s) from the hub's roster, {paired} paired directly; "
+    roster = len(peers) - paired
+    print(f"          {f'{roster} peer(s) from the hub roster, ' if roster else ''}{paired} paired directly; "
           f"files land in {config.downloads_dir(cfg)}")
     try:
         st = control.call({"cmd": "status"}, timeout=5)
@@ -1311,9 +1323,8 @@ def cmd_doctor(args) -> int:
     mesh_on = (cfg.get("mesh") or {}).get("enabled", True) is not False
     if not config.is_set_up(cfg) and mesh_on and not cfg.get("pending"):
         # a hub is optional: the mesh works without one
-        print("• No hub: your devices pair with this computer directly (droplet-agent pair, or")
-        print("  Pair a device in droplet on the phone). To link a droplet hub as well, if you")
-        print("  have one: droplet-agent setup\n")
+        print("• Your devices pair with this computer directly: droplet-agent pair, or")
+        print("  Pair a device in droplet on the phone.\n")
     elif not config.is_set_up(cfg):
         problems += 1
         print("• Not linked to a hub. Run droplet-agent setup: it finds the hub on this network")
@@ -1390,8 +1401,8 @@ def _doctor_mac(cfg: dict, caps: dict) -> int:
     from . import app, macos
     problems = 0
     if not config.is_set_up(cfg) and not cfg.get("pending"):
-        print("• No hub: your devices pair with this Mac directly (droplet-agent pair, or")
-        print("  Pair a device in droplet on the phone).\n")
+        print("• Your devices pair with this Mac directly: droplet-agent pair, or")
+        print("  Pair a device in droplet on the phone.\n")
     settings = "System Settings → Privacy & Security"
     if config.enabled(cfg, "input") and not caps["input"][0]:
         problems += 1
@@ -1510,6 +1521,7 @@ def cmd_uninstall(args) -> int:
         return _uninstall_mac(args)
     targets = [unit_path(), desktop_file_path(), tray.autostart_path(), Path.home() / ".local/bin/droplet-agent",
                config.config_dir(), data_dir()]
+    linked = _has_hub()   # read before the config goes
     if not args.yes:
         print("This stops the agent and removes:")
         for t in targets:
@@ -1530,7 +1542,8 @@ def cmd_uninstall(args) -> int:
             print(f"couldn't remove {t}: {e}", file=sys.stderr)
     if env.which("systemctl"):
         env.run(["systemctl", "--user", "daemon-reload"], timeout=30)
-    print("Removed. The hub still lists the device; remove its link there if you like.")
+    print("Removed. Your hub still lists the device; remove its link there if you like." if linked
+          else "Removed.")
     if Path(UDEV_RULE_FILE).exists():
         print(f"The uinput rule stays; remove it with: sudo rm {UDEV_RULE_FILE} "
               "/etc/modules-load.d/droplet-uinput.conf")
@@ -1565,11 +1578,17 @@ def _uninstall_mac(args) -> int:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="droplet-agent",
-                                description="Lets your other devices control this computer through droplet.")
+                                description="Lets your other devices control this computer through droplet.",
+                                formatter_class=argparse.RawDescriptionHelpFormatter,
+                                epilog="advanced:\n"
+                                       "    setup      link this computer to an optional droplet hub (a home\n"
+                                       "               server). Most people don't need one: droplet-agent\n"
+                                       "               setup -h for more")
     p.add_argument("--version", action="version", version=f"droplet-agent {__version__}")
-    sub = p.add_subparsers(dest="cmd")
+    sub = p.add_subparsers(dest="cmd", metavar="<command>")
 
-    s = sub.add_parser("setup", help="link this computer to a droplet hub",
+    # no help=: setup isn't in the command list, only in the "advanced" note above
+    s = sub.add_parser("setup",
                        description="Link this computer to a droplet hub. With no --hub, looks for hubs on "
                                    "this network. With no --code, joins as a new device that one of your "
                                    "devices allows in (or --pin). On a linked computer with no options, "
@@ -1583,7 +1602,7 @@ def main(argv=None) -> int:
                    help="get in with the hub's PIN instead of waiting to be allowed (asked for if left out)")
     s.set_defaults(func=cmd_setup)
 
-    r = sub.add_parser("run", help="connect to the hub and act on what arrives")
+    r = sub.add_parser("run", help="run the agent: connect to your devices and act on what arrives")
     r.add_argument("--dry-run", action="store_true",
                    help="log input, media, lock and clipboard actions instead of doing them; fake screenshots")
     r.add_argument("--input", choices=config.INPUT_BACKENDS, help="force an input backend")

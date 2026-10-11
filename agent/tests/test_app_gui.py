@@ -338,6 +338,52 @@ def test_settings_save_to_config_and_restart_the_agent(win):
     assert win.statusBar().currentMessage() == "Saved. Restarted."
 
 
+def visible_text(widget) -> str:
+    """Every word a person can see on a page: labels, group titles, buttons, check boxes."""
+    from PySide6.QtWidgets import QAbstractButton, QGroupBox
+    out = [lb.text() for lb in widget.findChildren(QLabel) if lb.isVisibleTo(widget)]
+    out += [g.title() for g in widget.findChildren(QGroupBox) if g.isVisibleTo(widget)]
+    out += [b.text() for b in widget.findChildren(QAbstractButton) if b.isVisibleTo(widget)]
+    return " ".join(out)
+
+
+def no_hub(text: str) -> bool:
+    return "hub" not in text.lower().replace("github", "")
+
+
+def test_a_fresh_install_never_mentions_the_hub(win, qapp):
+    """The hub is optional and hidden: a computer that isn't linked to one doesn't see it anywhere."""
+    win.show()
+    for name, page in win.pages.items():
+        win.go(name)
+        qapp.processEvents()
+        assert no_hub(visible_text(page)), (name, visible_text(page))
+    page = win.pages["settings"]
+    assert not page.hub.isVisibleTo(page) and not page.form.isRowVisible(page.hub)
+    shot(win, "settings-fresh")
+
+
+def test_a_computer_linked_to_a_hub_still_shows_it(win, qapp):
+    cfg = config.load()
+    cfg.update(hub="http://t15.local:8000", token="t0ken")
+    config.save(cfg)
+    win.show()
+    win.go("settings")
+    page = win.pages["settings"]
+    page.load()
+    qapp.processEvents()
+    assert page.form.isRowVisible(page.hub) and page.hub.isVisibleTo(page)
+    assert page.hub.text() == "Linked to http://t15.local:8000"
+    shot(win, "settings-hub")
+
+
+def shot(win, name):
+    shots = os.environ.get("SHOTS")
+    if shots:
+        Path(shots).mkdir(parents=True, exist_ok=True)
+        win.grab().save(str(Path(shots) / f"{name}.png"))
+
+
 def test_the_worker_answers_on_the_gui_thread(qapp):
     import threading
     seen = []

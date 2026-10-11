@@ -592,3 +592,32 @@ def test_status_shows_a_pin_mismatch(monkeypatch, capsys, isolated_home):
     assert cli.main(["status"]) == 0
     out = capsys.readouterr().out
     assert "route:    none: the hub's identity changed" in out and "droplet-agent setup" in out
+
+
+# --- the hub is optional and hidden ------------------------------------------------
+
+def _no_hub(text: str) -> bool:
+    return "hub" not in text.lower().replace("github", "")
+
+
+def test_help_keeps_the_hub_in_an_advanced_note(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    out = capsys.readouterr().out
+    commands, advanced = out.split("advanced:")
+    assert _no_hub(commands) and "\n    pair " in commands and "setup" not in commands
+    assert "setup" in advanced and "optional droplet hub" in advanced
+    # still there for whoever has one
+    with pytest.raises(SystemExit):
+        cli.main(["setup", "--help"])
+    assert "--hub" in capsys.readouterr().out
+
+
+def test_a_fresh_computers_status_doesnt_mention_a_hub(monkeypatch, capsys, isolated_home):
+    monkeypatch.setattr(cli, "_probe_caps", lambda cfg: {"input": (True, "ok")})
+    monkeypatch.setattr(cli, "_service_state", lambda: "active")
+    assert cli.main(["status"]) == 0
+    assert _no_hub(capsys.readouterr().out)
+    assert cli._kept_note() == "as soon as it can be reached"
+    config.save(paired_cfg())
+    assert cli._kept_note() == "as soon as it or the hub can be reached"

@@ -126,7 +126,7 @@ def test_select_several_devices_and_send_them_the_clipboard(win, demo, qapp):
     clips = [c for c in demo.calls if c["cmd"] == "clip"]
     assert {c["peer"] for c in clips} == {PHONE_FP, LINUX_FP}
     assert win.statusBar().currentMessage() == \
-        "Sent the clipboard to 1 of 2. sheffield: sheffield isn't reachable directly, and not through the hub either."
+        "Sent the clipboard to 1 of 2. sheffield: sheffield isn't reachable right now."
     page.select.click()
     assert page.bar.isHidden() and not any(c.check.isChecked() for c in page.cards.values())
 
