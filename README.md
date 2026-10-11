@@ -1,10 +1,211 @@
 # droplet 💧
 
-LAN file drop. Run it on any device on your network — every other device
-sends/fetches files through its web page. No cloud, no accounts, no installs
-on the other devices.
+Your devices, together, on your own network. Send files, photos, links and
+messages between your phone and your computers, ring a lost phone, share the
+clipboard, and use your phone as a remote: straight from one device to the
+other, over your Wi-Fi. No cloud, no accounts, no server to run.
 
-## Run (venv)
+Website and downloads: [droplet.noxeratech.com](https://droplet.noxeratech.com)
+
+## Get it
+
+Put droplet on two devices and pair them once: both screens show the same
+four digits, you check they match, and that's it.
+
+| Device | How |
+|---|---|
+| **Android** | Download `droplet-android.apk` from the [releases page](https://github.com/Ferinmtk/droplet/releases) and open it. Then open droplet and tap **Pair a device**. See [Android app](#android-app). |
+| **iPhone** | Open [droplet.noxeratech.com/app](https://droplet.noxeratech.com/app) in Safari and **Add to Home Screen**. On a Mac or Linux computer running droplet, choose **Pair an iPhone** and scan the code. |
+| **Windows** | **NOXERA Droplet** on the [Microsoft Store](https://apps.microsoft.com/detail/9N8VX22MW0N4) (or `droplet-windows.exe` from the releases). See [Windows app](#windows-app). |
+| **Mac, Linux** | One command, no sudo: `curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh \| sh`. See [Linux and Mac computers](#linux-computers-droplet-agent). |
+
+## Devices talk directly (the mesh)
+
+droplet's apps are **peers**, like KDE Connect: they find each other on the
+Wi-Fi and talk directly over mutual TLS, and over
+[Tailscale](https://tailscale.com) when you're away from home if you use it.
+Nothing sits in the middle and there's nothing else to install.
+
+Two devices **pair** with a matching four-digit code, protected by a
+commit-then-reveal exchange so a machine in the middle can't fake it. After
+that, chat, files, ringing, the clipboard and remote control work between
+them, and what you send to a device that's off waits until it's back.
+
+The **Linux and Mac agent** is the reference peer (`droplet-agent peers`,
+`pair`, `text`, `send-file`, `ring`, `clip`); Android, Windows and the iPhone
+web app speak the same protocol. Details: [agent/README.md](agent/README.md)
+and [docs/mesh.md](docs/mesh.md).
+
+### Your devices, and someone else's
+
+When you pair, droplet asks: **is this your device, or someone else's?**
+A deskmate's laptop or a friend's phone gets files, messages and ring, and
+nothing else: no clipboard, no notifications, no remote control. Every
+device has a switch for each of these, changeable any time, and a
+**Pause** that stops all sharing with it until you resume (pause the
+deskmate so they don't get your clipboard). **Pause everything** does it
+for every device at once, while you present. Each device enforces its own
+settings, both ways; the other side is told, so its app can say "Paused
+by…" and grey out what won't work. Devices paired before stay your own,
+with everything on.
+
+Built into every app: the Linux and Mac agent (its window, tray and
+`droplet-agent allow`, `pause`, `resume`), Windows, Android and the iPhone
+web app. Details: [agent/README.md](agent/README.md#your-devices-and-someone-elses)
+and [docs/mesh.md §9.9](docs/mesh.md).
+
+## Android app
+
+A native app in `android/` (see [android/README.md](android/README.md)). It
+opens on its own home screen: your devices, with one tap each for files, a
+message, a ring, the clipboard and the presentation remote; pairing; the
+phone's TV remote and Bluetooth mouse & keyboard; and the files and messages
+that arrived.
+
+A phone and a PC (or two phones) pair with a matching four-digit code and
+talk directly over the Wi-Fi or Tailscale: nothing in the middle, nothing
+else to install.
+
+It also does what a web page can't do on a phone:
+
+- **Share → droplet** from any app, with a device picker and the original
+  file names (Xiaomi Gallery otherwise hands over bare numbers).
+- **A loud "find my phone" ring.** It plays on the alarm channel at full
+  volume, so silent mode doesn't mute it, then puts the volume back.
+- **Notification mirroring:** the phone's notifications pop up on your
+  paired Windows and Linux computers, straight from the phone.
+- **Notifications for files and messages** sent to the phone, even with the
+  app closed.
+- **A TV remote** for Android TV and Google TV, over the Wi-Fi with the same
+  protocol as the Google TV phone app: the quick-settings tile, the launcher
+  shortcut, Settings or the devices screen open it, and the phone's volume
+  keys drive the TV's volume. Details:
+  [android/README.md](android/README.md#tv-remote).
+
+**Install:** download `droplet-android-<version>.apk` from the
+[releases page](https://github.com/Ferinmtk/droplet/releases) and open it;
+Android asks once to allow installs from your browser. Then open droplet and
+tap **Pair a device**. Settings live behind ⚙ (top right):
+
+- **Stay connected** lets other devices ring the phone and notifies you about
+  files and messages. It shows a quiet "droplet connected" notification.
+- **Notification access** turns on mirroring. Leave apps out under **Apps not
+  to mirror**; **Show phone notifications on my computers** switches off the
+  direct copy to your computers (each computer can also refuse them in its
+  own settings).
+
+Permissions: notifications, notification access (you grant it), a
+foreground service, exact alarms, and run at startup. No Google services.
+
+**Xiaomi / Redmi (MIUI, HyperOS):** MIUI kills background apps. For rings to
+arrive, turn on **Autostart** for droplet, set its battery saver to **No
+restrictions**, and lock it in Recents. The app's settings have buttons for
+the first two.
+
+**Build:** `cd android && ./gradlew assembleRelease` (JDK 17+, Android SDK).
+Release builds are signed with `~/.android/droplet-release.jks` when
+`~/.android/droplet-release.properties` exists, otherwise with the debug key.
+Keep that keystore backed up: updates must be signed with the same key.
+
+### Bluetooth mouse & keyboard (Android)
+
+The phone can pair with **any computer or TV as an ordinary Bluetooth
+keyboard, mouse and media remote**:
+- a touchpad (tap, two-finger right-click, drag, natural scrolling);
+- a keyboard with special keys and shortcuts;
+- media and volume keys, plus Home and Back for TVs;
+- the presentation remote's slide keys (the volume buttons change slides).
+
+**Nothing is installed on the other side, and it needs no Wi-Fi.** That
+covers the TV, a friend's laptop, a projector PC, even a computer's boot
+menu.
+
+Open it from **Settings → Bluetooth mouse & keyboard** in the Android app, or
+pick **Bluetooth: <device>** in the presentation remote. The first time, tap
+**Make this phone visible** and pair from the computer or TV (the app shows
+the steps for Windows, KDE and Google TV). After that, it's one tap to
+reconnect.
+
+It types by key position with a US layout, so characters a US keyboard can't
+produce are skipped, and the app names them. It needs Android 9+ and a phone
+whose firmware allows Bluetooth HID device mode. If yours doesn't, the app
+says so. Details: [android/README.md](android/README.md#bluetooth-mouse--keyboard).
+
+## Linux computers (droplet agent)
+
+On the computer, run:
+
+```sh
+curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
+```
+
+**On a Mac**, paste the same command into Terminal. It's free and needs no
+Apple developer account: it uses the Mac's Python 3, runs the agent at login
+with launchd, puts droplet in the menu bar and Droplet in Launchpad. Remote
+control needs one switch in System Settings → Privacy & Security →
+Accessibility. See [agent/README.md](agent/README.md#on-a-mac).
+
+Then pair it with your phone (droplet on the phone → **Pair a device**, and
+accept on the computer from its window, the tray or `droplet-agent pair`).
+Computers pair with each other with `droplet-agent pair <name>`.
+
+No sudo: it installs into `~/.local/share/droplet-agent` and runs as a
+`systemd --user` service with your desktop. The agent comes from the latest
+GitHub release, checked against its `SHA256SUMS.txt`.
+
+- **Input.** On KDE and GNOME it goes through the desktop's remote-control
+  portal, which asks you once to allow it. On niri, sway and other
+  compositors it needs `/dev/uinput`, which takes a one-time root step:
+  `droplet-agent doctor` prints the exact commands.
+- **Media and volume** use `playerctl` and `wpctl`, and **lock** runs
+  `loginctl lock-session` or your locker (gtklock, swaylock).
+- **Screenshots** use the portal, then niri, spectacle, gnome-screenshot or
+  grim, whichever works. **Clipboard** uses wl-clipboard (xclip on X11).
+- **The window and the tray.** Droplet has its own window (your devices,
+  pairing, settings) and sits in the system tray (KDE Plasma, Wayland bars,
+  GNOME with the AppIndicator extension): send files, the clipboard or a
+  ring to a device, and accept or decline pairing requests. The installer
+  starts it with your desktop; on older installs, `droplet-agent tray --autostart`.
+- `droplet-agent status` shows what works and why the rest doesn't. Switch
+  abilities off in `~/.config/droplet-agent/config.json`. Details:
+  [agent/README.md](agent/README.md).
+
+## Windows app
+
+**NOXERA Droplet** on the [Microsoft Store](https://apps.microsoft.com/detail/9N8VX22MW0N4),
+built in C# on .NET in `windows-net/` (see
+[windows-net/README.md](windows-net/README.md)). It's a mesh peer like the
+others: pair it with your phone (**Pair a device** on the phone, accept on
+the PC when both show the same four digits), then send files, messages, the
+clipboard and rings both ways, mirror the phone's notifications, and let
+your phone control the PC (mouse and keyboard, slides, media, lock,
+screenshots). It's also a plain `droplet-windows.exe` on the
+[releases page](https://github.com/Ferinmtk/droplet/releases).
+
+The older Go tray app in `windows/` is described under
+[Optional: a hub](#optional-a-hub-advanced).
+
+## Optional: a hub (advanced)
+
+Everything above works with no hub. A **hub** is an optional home server for
+people who want more: it's this repository's top level (`app.py`), a small
+web app you run on an always-on computer. When it's up it vouches for your
+devices (every device you've let in trusts the others automatically), holds
+messages and files for devices that are off, serves a web page any browser
+can use, controls a TV, and runs preset commands. **When it's down,** chat,
+files, ringing, the clipboard and remote control between your devices keep
+working. New installs of the apps don't mention it; the Linux and Mac agent
+links to one with `droplet-agent setup` or the installer's `--hub` /
+`--code` options.
+
+### What the hub is
+
+The hub is a LAN file drop and more. Run it on any device on your network, and
+every other device can send and fetch files through its web page, with no
+installs on them. It also hosts the Hub tab, the TV remote and preset commands
+below.
+
+### Run (venv)
 
 ```bash
 cd ~/curiosity/projects/droplet
@@ -26,7 +227,7 @@ To open the firewall port permanently:
 sudo firewall-cmd --permanent --add-port=8000/tcp && sudo firewall-cmd --reload
 ```
 
-## Run (Docker)
+### Run (Docker)
 
 ```bash
 docker compose up -d --build
@@ -58,7 +259,7 @@ Docker 29, SELinux enforcing):
   `.secret_key` all live under the one mounted volume, nothing writes outside
   it.
 
-### mDNS in Docker — what actually happens
+#### mDNS in Docker — what actually happens
 
 - **With `network_mode: host` (the shipped default): mDNS works.** Verified
   with `avahi-browse` — the container's `_http._tcp` service showed up on the
@@ -83,7 +284,7 @@ Docker 29, SELinux enforcing):
   networking the same way — mDNS discovery won't work there regardless; use
   the IP/QR fallback.
 
-## Run as a service
+### Run as a service
 
 Runs droplet as a `systemd --user` service, so it starts automatically and
 restarts if it crashes, instead of you having to remember to launch it.
@@ -118,7 +319,7 @@ and start at boot:
 sudo loginctl enable-linger "$USER"
 ```
 
-## Local-first: home Wi-Fi first, Tailscale when away
+### Local-first: home Wi-Fi first, Tailscale when away
 
 droplet works like KDE Connect: on the home network, devices talk to the hub
 directly. [Tailscale](#tailnet-real-https-from-anywhere) is the extra that
@@ -158,47 +359,7 @@ trusted one is Tailscale's. So the web app is Tailscale-first. On the plain
 LAN address it still works for the basics, as its own device, once let in.
 The native apps are local-first.
 
-### Devices talk directly (the mesh)
-
-droplet's native apps are **peers**, like KDE Connect: they find each other
-on the Wi-Fi and talk directly over mutual TLS, and over Tailscale when
-you're away. The Android app controls your TV directly too, and since 1.6 it
-starts and runs with no hub at all.
-
-The hub is an **optional helper**. When it's up, it vouches for your devices
-(every device you've let in trusts the others automatically), and it holds
-messages and files for devices that are off. **When it's down,** chat,
-files, ringing, the clipboard and remote control between your devices keep
-working.
-
-**Without a hub at all,** pair two devices directly: both screens show the
-same four-digit code, protected by a commit-then-reveal exchange so a
-machine in the middle can't fake it.
-
-The **Linux and Mac agent** is the first peer (`droplet-agent peers`, `pair`,
-`text`, `send-file`, `ring`, `clip`); Android and Windows follow. Browsers
-still go through the hub. The Android app also controls your TV directly.
-Details: [agent/README.md](agent/README.md) and [docs/mesh.md](docs/mesh.md).
-
-### Your devices, and someone else's
-
-When you pair, droplet asks: **is this your device, or someone else's?**
-A deskmate's laptop or a friend's phone gets files, messages and ring, and
-nothing else: no clipboard, no notifications, no remote control. Every
-device has a switch for each of these, changeable any time, and a
-**Pause** that stops all sharing with it until you resume (pause the
-deskmate so they don't get your clipboard). **Pause everything** does it
-for every device at once, while you present. Each device enforces its own
-settings, both ways; the other side is told, so its app can say "Paused
-by…" and grey out what won't work. Devices paired before, and your hub's
-devices, stay your own, with everything on.
-
-Built in the Linux and Mac agent (its window, tray and `droplet-agent
-allow`, `pause`, `resume`) and the iPhone web app; Windows and Android
-next. Details: [agent/README.md](agent/README.md#your-devices-and-someone-elses)
-and [docs/mesh.md §9.9](docs/mesh.md).
-
-## Tailnet: real HTTPS from anywhere
+### Tailnet: real HTTPS from anywhere
 
 If the hub is on [Tailscale](https://tailscale.com), droplet can put itself
 behind `tailscale serve`. Every device on your tailnet then reaches it at
@@ -251,7 +412,7 @@ systemd user service), tested from another tailnet machine:
 tailnet devices too, because droplet didn't set serve up and doesn't trust
 the header.
 
-## Install it as an app + "Share → droplet" (Android)
+### Install it as an app + "Share → droplet" (Android)
 
 Over HTTPS (the [tailnet URL](#tailnet-real-https-from-anywhere)) droplet is
 an installable web app. Browsers only allow installing from a secure origin,
@@ -292,7 +453,7 @@ name the app gives it.
 The share sheet is Android-only. iOS Safari can add droplet to the home
 screen, but it doesn't offer web apps as share targets.
 
-## Devices: send to one, chat, get notified
+### Devices: send to one, chat, get notified
 
 Every browser can **name itself as a device** in the box at the top of the
 page. Over the tailnet the name is filled in from the machine's Tailscale name
@@ -346,13 +507,13 @@ both ways. Tested in two desktop browsers: unread counts, opening a chat
 from a notification link, duplicate names refused, an unnamed browser can't
 chat, and one device can't read another's inbox.
 
-## The Hub tab: control the hub from any device
+### The Hub tab: control the hub from any device
 
 The app has four tabs on a phone (**Send · Files · Hub · Devices**). On a
 desktop they sit side by side. The **Hub** tab is a remote for the hub
 machine, with four cards.
 
-### Now playing
+#### Now playing
 
 Shows what's playing on the hub: album art, title and artist, a progress bar
 (tap it to jump), previous / play-pause / next, ±10 s skips when the player
@@ -373,7 +534,7 @@ doesn't appear.
   5 MB. Web art loads straight from its URL.
 - The card only polls while it's on screen and the page is visible.
 
-### Shared clipboard
+#### Shared clipboard
 
 Copy on one device, paste on another.
 
@@ -399,7 +560,7 @@ clipboard until something replaces it, or until the droplet service restarts
 (systemd stops wl-copy's background process along with the service).
 `DROPLET_CLIPBOARD=0` turns it off.
 
-### Hub commands
+#### Hub commands
 
 Like KDE Connect's **Run command**: the hub's owner lists commands in a file,
 and each gets a button. Tap one to see its output and exit code. Devices only
@@ -445,7 +606,7 @@ Anyone who can open droplet can press these, so only list commands you'd let
 any of your devices run. The example deliberately has no suspend or
 power-off: the hub is meant to stay awake.
 
-### Find a device
+#### Find a device
 
 A button for every other device, plus **Ring the hub**.
 
@@ -469,7 +630,7 @@ silent mode and Do Not Disturb mute. The [Android app](#android-app) rings
 through the alarm channel instead, which isn't muted by silent mode. Rings
 live in memory, so restarting the hub forgets them.
 
-### Cross-site protection
+#### Cross-site protection
 
 Tailnet devices are trusted by network, not by cookie. Without a guard, any
 website you visit could make your browser post to droplet (delete files, run
@@ -484,62 +645,12 @@ against real `playerctl`/`wl-clipboard`, with no sound played and nothing
 changed on the hub. Not yet tried: ringing a real phone, and the hub's ring
 sound.
 
-## Android app
+### The Android app with a hub
 
-A native app in `android/` (see [android/README.md](android/README.md)).
-**It works with or without a hub.** On first run it asks: pair directly with
-your devices, or connect to a droplet hub. Either way it opens on its own home
-screen — your devices, with one tap each for files, a message, a ring, the
-clipboard and the presentation remote; pairing; the phone's TV remote and
-Bluetooth mouse & keyboard; and the files and messages that arrived. With a
-hub, the **Hub** tile opens the web app as before.
-
-Without a hub, a phone and a PC (or two phones) pair with a matching four-digit
-code and talk directly over the Wi-Fi or Tailscale — nothing in the middle,
-nothing else to install. See
-[Without a hub](android/README.md#without-a-hub).
-
-It also adds what a web app can't do on a phone:
-
-- **Share → droplet** from any app, with a device picker and the original
-  file names (Xiaomi Gallery otherwise hands over bare numbers).
-- **A loud "find my phone" ring.** It plays on the alarm channel at full
-  volume, so silent mode doesn't mute it, then puts the volume back.
-- **Notification mirroring:** the phone's notifications pop up on your
-  paired Windows and Linux computers, straight from the phone, no hub
-  needed. With a hub they also appear on a **Phone** card in the Hub tab on
-  your other devices, with its battery level.
-- **Notifications for files and messages** sent to the phone, even with the
-  app closed.
-
-Everything else is the normal web app inside it.
-
-**Install:** download `droplet-android-<version>.apk` from the
-[releases page](https://github.com/Ferinmtk/droplet/releases) (or tap
-**droplet.apk** under Shared on your own hub) and open it; Android asks once to
-allow installs from your browser. Then open droplet and choose **No hub: pair
-directly** or **I have a droplet hub**. Settings live behind ⚙ (top right):
-
-- **Stay connected** lets other devices ring the phone and notifies you about
-  files and messages. It shows a quiet "droplet connected" notification.
-- **Notification access** turns on mirroring. Leave apps out under **Apps not
-  to mirror**; **Show phone notifications on my computers** switches off the
-  direct copy to your computers (each computer can also refuse them in its
-  own settings).
-
-Permissions: notifications, notification access (you grant it), a
-foreground service, exact alarms, and run at startup. No Google services,
-nothing outside your tailnet.
-
-**Xiaomi / Redmi (MIUI, HyperOS):** MIUI kills background apps. For rings to
-arrive, turn on **Autostart** for droplet, set its battery saver to **No
-restrictions**, and lock it in Recents. The app's settings have buttons for
-the first two.
-
-**Build:** `cd android && ./gradlew assembleRelease` (JDK 17+, Android SDK).
-Release builds are signed with `~/.android/droplet-release.jks` when
-`~/.android/droplet-release.properties` exists, otherwise with the debug key.
-Keep that keystore backed up: updates must be signed with the same key.
+On a phone already linked to a hub, the home screen has a **Hub** tile that
+opens the hub's web app, and the phone's notifications also appear on a
+**Phone** card in the Hub tab on your other devices, with its battery level.
+You can get the APK from **droplet.apk** under Shared on your own hub.
 
 Hub side (`phone.py`): `POST /api/phone/notifications` (`posted` / `removed`
 / `sync`), `GET /api/phone/notifications`, `POST /api/phone/status`
@@ -554,7 +665,7 @@ and the full-screen screen, auto-stop, waking a locked screen), and
 mirroring a posted and removed notification to the Phone card. Not yet
 tried on the Redmi itself (MIUI autostart and battery rules, real Doze).
 
-## Remote control: drive your other devices
+### Remote control: drive your other devices
 
 Like KDE Connect's remote input and multimedia control, for every machine
 you own. A device becomes controllable once a small **helper** runs on it:
@@ -613,54 +724,10 @@ droplet can control a device whose helper allows it: the same trust as the
 rest of droplet (your tailnet, or the PIN). Each helper lets you switch every
 ability off.
 
-### Bluetooth mouse & keyboard (Android)
+#### Linking the Linux and Mac agent to a hub
 
-The phone can pair with **any computer or TV as an ordinary Bluetooth
-keyboard, mouse and media remote**:
-- a touchpad (tap, two-finger right-click, drag, natural scrolling);
-- a keyboard with special keys and shortcuts;
-- media and volume keys, plus Home and Back for TVs;
-- the presentation remote's slide keys (the volume buttons change slides).
-
-**Nothing is installed on the other side, and it needs no hub and no
-Wi-Fi.** That covers the TV, a friend's laptop, a projector PC, even a
-computer's boot menu.
-
-Open it from **Settings → Bluetooth mouse & keyboard** in the Android app, or
-pick **Bluetooth: <device>** in the presentation remote. The first time, tap
-**Make this phone visible** and pair from the computer or TV (the app shows
-the steps for Windows, KDE and Google TV). After that, it's one tap to
-reconnect.
-
-It types by key position with a US layout, so characters a US keyboard can't
-produce are skipped, and the app names them. It needs Android 9+ and a phone
-whose firmware allows Bluetooth HID device mode. If yours doesn't, the app
-says so. Details: [android/README.md](android/README.md#bluetooth-mouse--keyboard).
-
-### Linux computers (droplet agent)
-
-No hub needed. On the computer, run:
-
-```sh
-curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
-```
-
-**On a Mac**, paste the same command into Terminal. It's free and needs no
-Apple developer account: it uses the Mac's Python 3, runs the agent at login
-with launchd, puts droplet in the menu bar and Droplet in Launchpad. Remote
-control needs one switch in System Settings → Privacy & Security →
-Accessibility. See [agent/README.md](agent/README.md#on-a-mac).
-
-then pair it with your phone (droplet on the phone → **Pair a device**, and
-accept on the computer from the tray or with `droplet-agent pair`).
-Computers pair with each other with `droplet-agent pair <name>`.
-
-No sudo: it installs into `~/.local/share/droplet-agent` and runs as a
-`systemd --user` service with your desktop. The agent comes from the latest
-GitHub release, checked against its `SHA256SUMS.txt`.
-
-**With a hub** (optional), run the command **Set up remote control** shows
-instead: the hub serves the script and the agent itself, and links the
+To link a computer to a hub, run the command the hub's **Set up remote
+control** shows instead of the plain installer: the hub serves the script and the agent itself, and links the
 computer to it. At home, use the hub's LAN address; no Tailscale needed:
 
 ```sh
@@ -676,23 +743,7 @@ on an agent installed without one. Like the other apps, the agent is
 local-first. On the hub machine itself it uses loopback, and
 `droplet-agent status` shows the route.
 
-- **Input.** On KDE and GNOME it goes through the desktop's remote-control
-  portal, which asks you once to allow it. On niri, sway and other
-  compositors it needs `/dev/uinput`, which takes a one-time root step:
-  `droplet-agent doctor` prints the exact commands.
-- **Media and volume** use `playerctl` and `wpctl`, and **lock** runs
-  `loginctl lock-session` or your locker (gtklock, swaylock).
-- **Screenshots** use the portal, then niri, spectacle, gnome-screenshot or
-  grim, whichever works. **Clipboard** uses wl-clipboard (xclip on X11).
-- **The tray.** droplet sits in the system tray (KDE Plasma, Wayland bars,
-  GNOME with the AppIndicator extension): send files, the clipboard or a
-  ring to a device, and accept or decline pairing requests. The installer
-  starts it with your desktop; on older installs, `droplet-agent tray --autostart`.
-- `droplet-agent status` shows what works and why the rest doesn't. Switch
-  abilities off in `~/.config/droplet-agent/config.json`. Details:
-  [agent/README.md](agent/README.md).
-
-### Windows app
+#### The older Windows tray app (Go)
 
 `windows/` holds **droplet.exe**, a tray app for Windows 10/11. It's in
 droplet's **Shared** folder on the hub.
@@ -714,7 +765,7 @@ anyway**. Input can't reach apps running as administrator unless droplet
 does too. Build it on any OS with Go 1.26+ (`cd windows && ./build.sh`).
 Details: [windows/README.md](windows/README.md).
 
-### TV remote
+#### TV remote
 
 Control an Android TV or Google TV from any droplet device. The hub talks to
 the TV directly, over the same protocol as the Google TV phone app.
@@ -773,7 +824,7 @@ and links must be https://.
 **Not yet tried on real hardware:** input on slim, the T15 or maryanne; the
 Redmi's SMS and file access under MIUI; the real TV.
 
-## Config (env vars)
+### Config (env vars)
 
 | Var | Default | Meaning |
 |---|---|---|
@@ -793,13 +844,13 @@ Redmi's SMS and file access under MIUI; the real TV.
 | `DROPLET_COMMANDS` | `~/.config/droplet/commands.json` | preset commands for the Hub tab (see [Hub commands](#hub-commands)) |
 | `DROPLET_CLIPBOARD` | `1` | `0` = no shared hub clipboard (see [Shared clipboard](#shared-clipboard)) |
 
-## How files flow
+### How files flow
 
 - **Send to the hub:** open the page on any device, drop/pick files → they land in `received/` on the hub.
 - **Fetch from the hub:** anything in `shared/` (or `received/`) is listed on the page with a download link.
 - **Phone → phone:** phone A uploads, phone B downloads from the list. The hub relays.
 
-## Phone as the hub (Termux, Android)
+### Phone as the hub (Termux, Android)
 
 ```bash
 pkg install python
@@ -807,7 +858,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-## Posting files from a microcontroller / script
+### Posting files from a microcontroller / script
 
 `/upload` is a plain multipart POST — anything that can speak HTTP can drop
 files into `received/` with zero changes on the droplet side. Sensor logs,
@@ -815,7 +866,7 @@ camera captures, cron jobs, whatever. The field name is `files` (see
 `request.files.getlist("files")` in `app.py`), and the response is JSON:
 `{"saved": ["<filename>", ...]}`.
 
-### curl
+#### curl
 
 Tested against a running container from this branch:
 
@@ -828,7 +879,7 @@ Filenames get sanitized (`secure_filename`) and de-duplicated
 (`reading.csv`, `reading-1.csv`, …) — you don't need to worry about
 collisions from repeated posts.
 
-### ESP8266 (Arduino, `ESP8266HTTPClient`)
+#### ESP8266 (Arduino, `ESP8266HTTPClient`)
 
 `ESP8266HTTPClient` has no built-in multipart helper, so the sketch below
 builds the multipart body by hand. The field name (`files`) and the response
@@ -911,7 +962,7 @@ void loop() {
 (ESP32's `HTTPClient` is API-compatible with the above — same approach works
 with `#include <HTTPClient.h>` and `WiFi.h` instead of the ESP8266 headers.)
 
-### `DROPLET_PIN` and devices
+#### `DROPLET_PIN` and devices
 
 If the droplet instance has `DROPLET_PIN` set, the PIN gate applies to
 **every** route, including `/upload` — verified: an unauthenticated POST to
@@ -929,7 +980,7 @@ unset on any droplet instance a device posts to.** If you need the PIN for
 browser access too, consider a second droplet instance/port dedicated to
 device ingestion with the PIN off.
 
-## Notes
+### Notes
 
 - Flask's built-in server — fine for home LAN and your tailnet, not for the public internet (don't `tailscale funnel` it).
 - Repeated filenames don't overwrite: `shot.png`, `shot-1.png`, …
