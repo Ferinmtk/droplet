@@ -1076,6 +1076,12 @@ class MeshNode:
         hub_id = self.host.hub_id()
         return bool(hub_id and entry.get("hub") == hub_id and self.host.hub_connected())
 
+    def _unreachable(self, entry: dict) -> str:
+        """Why a live message can't go: the hub is only mentioned on a device that has one."""
+        if self.host.hub_id():
+            return f"{entry['name']} isn't reachable directly, and not through the hub either"
+        return f"{entry['name']} isn't reachable right now"
+
     def _hub_has_it_live(self, entry: dict) -> bool:
         """The hub knows the peer and the peer is connected to it now: live messages can go that way."""
         return self._hub_knows(entry) and self.host.hub_online(entry["id"])
@@ -1089,7 +1095,7 @@ class MeshNode:
             return link.kind
         if self._hub_has_it_live(entry) and self.host.hub_send({**msg, "to": entry["id"]}):
             return "hub"
-        raise NoRoute(f"{entry['name']} isn't reachable directly, and not through the hub either")
+        raise NoRoute(self._unreachable(entry))
 
     def ring(self, fp: str, stop: bool = False) -> str:
         entry = self._entry(fp)
@@ -1100,7 +1106,7 @@ class MeshNode:
         if self._hub_knows(entry):
             self.host.hub_ring(entry["id"], stop)
             return "hub"
-        raise NoRoute(f"{entry['name']} isn't reachable directly, and not through the hub either")
+        raise NoRoute(self._unreachable(entry))
 
     def clip(self, fp: str, text: str) -> str:
         entry = self._entry(fp)
@@ -1119,7 +1125,7 @@ class MeshNode:
         # so not while any of them shouldn't have it
         if self._hub_has_it_live(entry) and self.hub_may_share(msg) and self.host.hub_send({"t": "clip", "text": text}):
             return "hub"
-        raise NoRoute(f"{entry['name']} isn't reachable directly, and not through the hub either")
+        raise NoRoute(self._unreachable(entry))
 
     def send_link(self, fp: str, url: str) -> dict:
         """A web link for the peer to open (docs/mesh.md §9.11): it opens on your own device, and
@@ -1388,7 +1394,8 @@ class MeshNode:
                 log.info("mesh: through the hub failed: %s", e)
                 err = f"the hub: {e}"
         else:
-            err = "not reachable directly, and no hub knows it right now"
+            err = ("not reachable directly, and no hub knows it right now" if self.host.hub_id()
+                   else "not reachable right now")
         self._wait_job(job, error=err, retry=False)
         return "wait"
 

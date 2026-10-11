@@ -1115,6 +1115,11 @@ class MeshNode(
 
     private fun hubHasItLive(entry: TrustList.Entry) = hubKnows(entry) && host.hubOnline(entry.id)
 
+    /** No route to [e]: the hub is named only on a device that has one. */
+    private fun noRoute(e: TrustList.Entry) = NoRoute(
+        if (host.hubId() != null) "${e.name} isn't reachable directly, and not through the hub either"
+        else "${e.name} isn't reachable right now")
+
     private fun entry(fp: String): TrustList.Entry = trust.get(fp) ?: throw NoRoute("that peer isn't trusted")
 
     /** input, media, cmd: direct, else through the hub. Returns the route. Blocks. */
@@ -1123,7 +1128,7 @@ class MeshNode(
         maySend(fp, msg, e)
         direct(fp)?.let { if (it.send(msg)) return it.kind }
         if (hubHasItLive(e) && host.hubSend(JSONObject(msg.toString()).put("to", e.id))) return "hub"
-        throw NoRoute("${e.name} isn't reachable directly, and not through the hub either")
+        throw noRoute(e)
     }
 
     fun ring(fp: String, stop: Boolean = false): String {
@@ -1135,7 +1140,7 @@ class MeshNode(
             host.hubRing(e.id, stop)
             return "hub"
         }
-        throw NoRoute("${e.name} isn't reachable directly, and not through the hub either")
+        throw noRoute(e)
     }
 
     fun clip(fp: String, text: String): String {
@@ -1147,7 +1152,7 @@ class MeshNode(
         // the hub has no addressed clipboard message: it goes to all your devices' clipboards,
         // so not while any of them shouldn't have it
         if (hubHasItLive(e) && hubMayShare(msg) && host.hubSend(msg)) return "hub"
-        throw NoRoute("${e.name} isn't reachable directly, and not through the hub either")
+        throw noRoute(e)
     }
 
     // --- sending: chat and files (routes 1–5) --------------------------------------
@@ -1473,7 +1478,8 @@ class MeshNode(
                 host.log("mesh: through the hub failed: $x")
                 "the hub: ${x.message}"
             }
-        } else "not reachable directly, and no hub knows it right now"
+        } else if (host.hubId() != null) "not reachable directly, and no hub knows it right now"
+        else "not reachable right now"
         keepWaiting(job, err, retry = false)
         return "wait"
     }

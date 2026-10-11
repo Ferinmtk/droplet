@@ -52,7 +52,7 @@ names and put the version in the release title.
 ("slim", "Wanjiru's Pixel") are fictitious. The Android ones come from the app's screenshot
 tests (`DROPLET_SHOTS=/tmp/shots ./gradlew :app:testReleaseUnitTest --tests '*ScreensTest*'`),
 the desktop one from Droplet's window, and the iPhone ones from the web app's end-to-end test
-in WebKit. They're WebP, 540 px wide for phones, each well under 50 KB; convert new ones with
+in WebKit (`iphone-start` is the web app's first screen, `app/` rendered in WebKit at 390×844). They're WebP, 540 px wide for phones, each well under 50 KB; convert new ones with
 `magick in.png -resize 540x -quality 82 out.webp`.
 
 `og.png` (1200×630) is the picture WhatsApp, X and the rest show for a link. It's the hero

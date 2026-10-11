@@ -59,19 +59,20 @@ AIORTC='aiortc>=1.9'  # the iPhone link; installed with --no-deps (droplet_agent
 
 say() { printf '%s\n' "$*"; }
 usage() {
-    say "usage: install.sh [--hub URL [--code 123456 | --name NAME] [--pin PIN]]"
-    say "                  [--release TAG | --wheel FILE] [--no-service] [--no-tray] [--no-app]"
-    say "  Without a hub, the agent comes from droplet's latest GitHub release and"
-    say "  pairs with your devices directly."
-    say "  --hub      a droplet hub to link to (optional)"
-    say "  --code     link to this computer's droplet device (browser: Devices, Link an app)"
-    say "  --name     or join as a new device (default: this computer's name)"
-    say "  --pin      join with the hub's PIN instead of waiting to be allowed"
+    say "usage: install.sh [--release TAG | --wheel FILE] [--no-service] [--no-tray] [--no-app]"
+    say "  The agent comes from droplet's latest GitHub release and pairs with your"
+    say "  devices directly."
     say "  --release  install from this GitHub release (a tag like v1.2.0), not the latest"
     say "  --wheel    install this agent wheel (a path or a URL)"
     say "  --no-service   don't install the systemd user service"
     say "  --no-tray      don't put droplet in the system tray"
     say "  --no-app       don't install Droplet's window (PySide6, about 80 MB)"
+    say ""
+    say "advanced: link to an optional droplet hub (a home server; most people don't need one)"
+    say "  --hub URL  a droplet hub to link to"
+    say "  --code     link to this computer's droplet device (browser: Devices, Link an app)"
+    say "  --name     or join as a new device (default: this computer's name)"
+    say "  --pin      join with the hub's PIN instead of waiting to be allowed"
 }
 die() { printf 'droplet-agent install: %s\n' "$*" >&2; exit 1; }
 
@@ -409,7 +410,7 @@ sys.exit(1)
         if [ "$linked" = 1 ]; then
             say "Keeping the existing link ($config/droplet-agent/config.json)"
         else
-            say "No hub: this computer pairs with your devices directly."
+            say "This computer pairs with your devices directly."
         fi
     elif [ -n "$code" ]; then
         "$agent" setup --hub "$hub" --code "$code" </dev/null

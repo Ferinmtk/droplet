@@ -94,7 +94,9 @@ def test_installs_from_the_latest_release_without_a_hub(tmp_path, server, wheel)
     assert r.returncode == 0, out
     assert f"Downloading the agent from {url}/latest/download" in out
     assert "Checked its SHA-256" in out
-    assert "No hub: this computer pairs with your devices directly." in out
+    assert "This computer pairs with your devices directly." in out
+    # a fresh install never mentions the (optional, hidden) hub
+    assert "hub" not in out.lower().replace("github", "")
     assert "Pair with your phone" in out and "droplet-agent pair" in out
     assert "Service not installed" in out
     # offline, aiortc can't come: not fatal, and said

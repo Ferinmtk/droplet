@@ -5,16 +5,15 @@ mouse and keyboard, the presentation remote, media playback and volume,
 locking, screenshots and clipboard sync. The protocol is
 [docs/remote.md](../docs/remote.md).
 
-It doesn't need a hub. It's a **mesh peer** ([docs/mesh.md](../docs/mesh.md)):
-your devices pair with it and talk to it directly, like KDE Connect. Chat,
-files, ringing, clipboard and remote control all go device to device. A
-droplet hub is an optional extra: with one, the agent also keeps a WebSocket
-open to it, and falls back to it when the other device can't be reached
-directly.
+It's a **mesh peer** ([docs/mesh.md](../docs/mesh.md)): your devices pair
+with it with a four-digit code and talk to it directly. Chat, files,
+ringing, clipboard and remote control all go device to device. There's
+nothing else to set up (an optional hub, for advanced setups, is at the end:
+[Optional: a hub](#optional-a-hub)).
 
 ## Install
 
-No hub needed. On the computer, run:
+On the computer, run:
 
 ```sh
 curl -fsSL https://github.com/Ferinmtk/droplet/releases/latest/download/install-agent.sh | sh
@@ -54,76 +53,6 @@ Needs Python 3.9 or newer, with `venv` (on Debian and Ubuntu:
 
 On a Mac it's the same command: see [On a Mac](#on-a-mac).
 
-### With a droplet hub (optional)
-
-A [hub](../README.md) adds a web app, a mailbox for devices that are off,
-and remote access over Tailscale. If you run one, it serves the installer
-and the agent itself, and links the computer to it. On the computer you
-want to control, open droplet in its browser, go to **Devices → Link an
-app**, and run the command it shows, with the hub's address in it. On the
-home Wi-Fi that's its LAN address, and no Tailscale is needed:
-
-```sh
-curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 123456
-```
-
-or, from anywhere on your tailnet:
-
-```sh
-curl -fsSL https://<hub's tailnet name>/agent/install.sh | sh -s -- --code 123456
-```
-
-That installs the agent the hub serves (the same version as the hub), and
-links to the hub: the token and the hub's identity go in
-`~/.config/droplet-agent/config.json` (mode 600). The release's installer
-does the same with `--hub URL`. An agent installed without a hub links to
-one later with `droplet-agent setup`.
-
-**Without a link code** (a computer with no browser, like the hub), leave
-`--code` out. The computer joins as a new device named after itself (or
-`--name NAME`). Over the tailnet it's in straight away. Over the LAN it
-waits: it prints a four-digit code, and one of your devices gets "slim wants
-to join, code 1234: Allow / Deny". Check the codes match and allow it. Or
-give the hub's PIN with `--pin 1234`, if it has one.
-
-## How it finds the hub
-
-Like KDE Connect, the agent talks to the hub directly on the home network,
-and uses Tailscale only when it isn't there ([docs/local-first.md](../docs/local-first.md)).
-Each time it connects it tries, in order:
-
-1. **hub-local**: on the hub machine itself, `http://127.0.0.1:<port>`. The
-   fastest, and no Tailscale at all.
-2. **LAN**: the hub's LAN HTTPS, `https://<address>:8443`. It finds the
-   address over mDNS (`_droplet._tcp`), or uses the one that worked last:
-   the hub's IP changes with DHCP, so an address is only a hint.
-3. **tailnet**: the hub's tailnet URL, with ordinary TLS.
-
-While on the tailnet it keeps looking for the LAN (every few minutes, and at
-once when this computer's network changes) and moves back when it's there.
-`droplet-agent status` shows the route in use.
-
-**The LAN certificate is pinned.** The hub's LAN certificate is
-self-signed, so the agent trusts it by its SHA-256 fingerprint, stored when
-it paired: read over the tailnet (verified TLS) when it has that, or on
-first contact over the LAN, confirmed by you allowing the device with the
-matching code. The check runs right after the TLS handshake, before the
-agent sends anything, so a machine that isn't your hub never sees the token.
-If the certificate ever differs, the agent refuses that address and says:
-
-```
-the hub's identity changed: … Either that isn't your hub, or its certificate
-was regenerated. Nothing was sent to it. If you trust it, re-pair with: droplet-agent setup
-```
-
-It never switches silently. `droplet-agent setup` (with nothing else) reads
-the hub's identity again over a route that proves who it is (the tailnet,
-or loopback on the hub machine) and keeps the link. Without Tailscale, pair
-again: `droplet-agent setup --name NAME` or `--code`.
-
-An agent set up before this (its config holds only a hub URL) reads the
-hub's identity from that URL the first time it runs, and stores it.
-
 ## The mesh: talking to your devices directly
 
 Each agent has its own key and certificate (made the first time it runs,
@@ -133,12 +62,7 @@ over mDNS (`_droplet-peer._tcp`).
 
 **Who it trusts:**
 
-- **Every device on your hub**, automatically. The hub sends the agent its
-  **roster**: the certificates of all the devices you've let in. The agent
-  keeps a copy, so they keep reaching each other when the hub is down,
-  and over Tailscale when you're away. Remove a device on the hub and every
-  agent stops trusting it.
-- **Devices you pair with directly**, for a computer with no hub, or a
+- **Devices you pair with directly**: your phone, your other computers, a
   friend's laptop:
 
   ```sh
@@ -172,11 +96,10 @@ over mDNS (`_droplet-peer._tcp`).
 | `droplet-agent clip beta` | sends this computer's clipboard (`--text '…'` to send some text instead) |
 | `droplet-agent send beta '{"t":"input","ev":[{"k":"key","key":"ArrowRight"}]}'` | one `input`, `media` or `cmd` message (docs/remote.md) |
 
-Each says how it went: directly over the LAN, directly over Tailscale,
-through the hub, or to the hub's mailbox when the other device is off.
-When nothing can reach it (no hub, and the device is off), chat and files
+Each says how it went: directly over the LAN, or directly over Tailscale.
+When the other device can't be reached (it's off, say), chat and files
 wait in the **outbox** (`~/.local/share/droplet-agent/mesh/outbox.json`)
-and go out as soon as the device or the hub is back, in order. A file waits
+and go out as soon as the device is back, in order. A file waits
 where it is, so don't delete or change it before it's sent. Remote
 control, ringing and the clipboard are never queued: an hour late, they'd
 be wrong.
@@ -188,7 +111,7 @@ on from where it stopped the next time.
 notifications (and are kept in `~/.local/share/droplet-agent/mesh/chat.jsonl`),
 files land in `~/Downloads/droplet` (never overwriting anything), a ring
 plays the incoming-call sound, and remote control, media, lock, screenshot
-and clipboard work exactly as they do through the hub. A screenshot goes
+and clipboard all work. A screenshot goes
 back to whoever asked, the way the request came.
 
 **The firewall.** Other devices must be able to reach the mesh port. On
@@ -197,8 +120,6 @@ Fedora (firewalld), `droplet-agent doctor` says so and gives the command:
 ```sh
 sudo firewall-cmd --permanent --add-port=1739-1749/tcp && sudo firewall-cmd --reload
 ```
-
-**Without a hub**, `droplet-agent run` (and the service) runs the mesh alone.
 
 ### Your devices and someone else's
 
@@ -233,7 +154,7 @@ device does: a clipboard from someone else's laptop is refused with a
 reason it can show ("t15 doesn't allow the clipboard from you"), and this
 computer's clipboard never goes to it. The other device is told how it's
 treated, so its app can grey out what won't work and say "Paused by t15".
-Devices paired before this, and every device your hub lists, are your own,
+Devices paired before this (and, with a hub, every device it lists) are your own,
 with everything on, as before. The protocol: docs/mesh.md §9.9.
 
 ### An iPhone (experimental)
@@ -319,7 +240,7 @@ Windows app's:
 - **Received**: the latest files your devices sent, to open or show in the
   folder.
 - **Settings**: this computer's name (**Rename…**: your devices see the
-  new name at once; with a hub, the hub renames it too), id and
+  new name at once), id and
   fingerprint; **Pause
   everything** (at once, no restart; a banner on every page says so, with
   **Resume everything**); clipboard sync, your phone's notifications and
@@ -463,11 +384,9 @@ Then switch Python off under Privacy & Security if you like.
 
 | command | what it does |
 |---|---|
-| `droplet-agent status` | the hub, its pinned fingerprint, the route in use, and what works here and why the rest doesn't. Changes nothing, shows no dialogs |
+| `droplet-agent status` | what works here and why the rest doesn't (with a hub: also the hub, its pinned fingerprint and the route in use). Changes nothing, shows no dialogs |
 | `droplet-agent doctor` | how to fix what's missing, with the exact commands |
-| `droplet-agent setup` | find the hub on this network and join it (lists the hubs it finds; asks when there's more than one). On a linked computer: read the hub's identity again |
-| `droplet-agent setup --hub URL --code 123456` | link to a given hub (`http://<address>:8000`, or its tailnet URL). `--name NAME` joins as a new device, `--pin` uses the hub's PIN instead of waiting to be allowed |
-| `droplet-agent run` | run in the foreground (the service does this). `--dry-run` only logs what it would do; `-v` for more detail. Without a hub, runs the mesh alone |
+| `droplet-agent run` | run in the foreground (the service does this). `--dry-run` only logs what it would do; `-v` for more detail |
 | `droplet-agent peers` | the devices this one talks to directly, who's nearby, who's asking to pair, and what's waiting to be sent |
 | `droplet-agent pair [PEER]` | pair directly with a device; with nothing, answer the devices asking (`--accept`, `--deny`); `--qr` pairs an iPhone (see [an iPhone](#an-iphone-experimental)). Asks whether it's your device or someone else's (`--own`, `--other`) |
 | `droplet-agent unpair PEER` | stop trusting a directly paired device |
@@ -476,7 +395,7 @@ Then switch Python off under Privacy & Security if you like.
 | `droplet-agent text`, `send-file`, `ring`, `clip`, `send` | send to a device: see [the mesh](#the-mesh-talking-to-your-devices-directly). `text`, `send-file` and `clip` take several devices: `pixel,t15`, `--to pixel --to t15`, or `--all` (all your own devices that take it); each gets its own result. `send-file` shows how far it has got in a terminal |
 | `droplet-agent open-link PEER URL` | open a web link on another device: it opens in the browser of your own device, and waits with an Open button on someone else's. Only `http` and `https` |
 | `droplet-agent transfers`, `cancel ID` | files being sent and received, with how far each has got; cancel one (the other device is told, and what came of it is deleted) |
-| `droplet-agent rename NAME` | give this computer a new name: your devices see it at once (with a hub, the hub renames it too, under its rules) |
+| `droplet-agent rename NAME` | give this computer a new name: your devices see it at once |
 | `droplet-agent nickname PEER [NICKNAME]` | call a device something else on this computer only (never sent); with no nickname, back to its own name |
 | `droplet-agent app` | open [Droplet's window](#droplets-window) (`--page` opens it on a page: `devices`, `pair`, `messages`, `received`, `settings`, or `rename`, which asks for this computer's new name), or bring it to the front |
 | `droplet-agent open` | what Droplet in the app menu runs: starts the tray if it isn't running, and opens the window (without PySide6, says where the tray is). `--install` only adds Droplet to the app menu |
@@ -592,15 +511,11 @@ Restart the service after editing: `systemctl --user restart droplet-agent` (on 
 ## Security
 
 Anyone who can open droplet can control a computer whose agent offers input:
-the same trust as the rest of droplet (your tailnet, the PIN, or a device
-you've allowed in). The agent only sends its token to the hub it paired
-with: over the LAN, to the pinned certificate; over the tailnet, with
-verified TLS; on the hub machine, over loopback. Switch off
-what you don't want under `caps`.
+a device you've paired with. Switch off what you don't want under `caps`.
 
-On the mesh, a device is trusted only by its certificate's fingerprint:
-your hub's roster (which lists only devices you've let in, and carries no
-tokens), or a direct pairing you confirmed by comparing codes. Every
+On the mesh, a device is trusted only by its certificate's fingerprint: a
+direct pairing you confirmed by comparing codes (or, with a hub, its
+roster). Every
 connection is mutual TLS. A device whose certificate isn't trusted is
 refused in the TLS handshake; one with no certificate can only ask to
 pair. Pairing commits both sides to random numbers before the code exists,
@@ -612,6 +527,103 @@ can open. The agent never runs anything a message
 supplies: commands are a fixed list, media players must be ones `playerctl`
 lists, and numbers are clamped. Clipboard text that a password manager marks as
 secret (KeePassXC does) is never sent.
+
+## Optional: a hub
+
+Most people don't need this: everything above works without it. A droplet
+**hub** is a home server for advanced setups: a web app, a mailbox for
+devices that are off, and remote access over Tailscale. With one, the agent
+also keeps a WebSocket open to it, and falls back to it when the other
+device can't be reached directly ("through the hub", or "to the hub's
+mailbox" when it's off). Droplet's window shows the hub in Settings only on
+a computer linked to one.
+
+**Who it trusts, with a hub:** every device on your hub, automatically. The
+hub sends the agent its **roster**: the certificates of all the devices
+you've let in. The agent keeps a copy, so they keep reaching each other when
+the hub is down, and over Tailscale when you're away. Remove a device on the
+hub and every agent stops trusting it. Renaming this computer renames it on
+the hub too, under the hub's rules.
+
+**Security, with a hub:** the agent only sends its token to the hub it paired
+with: over the LAN, to the pinned certificate; over the tailnet, with
+verified TLS; on the hub machine, over loopback. The roster lists only
+devices you've let in, and carries no tokens.
+
+| command | what it does |
+|---|---|
+| `droplet-agent setup` | find the hub on this network and join it (lists the hubs it finds; asks when there's more than one). On a linked computer: read the hub's identity again |
+| `droplet-agent setup --hub URL --code 123456` | link to a given hub (`http://<address>:8000`, or its tailnet URL). `--name NAME` joins as a new device, `--pin` uses the hub's PIN instead of waiting to be allowed |
+
+### Linking to a hub
+
+A [hub](../README.md) adds a web app, a mailbox for devices that are off,
+and remote access over Tailscale. If you run one, it serves the installer
+and the agent itself, and links the computer to it. On the computer you
+want to control, open droplet in its browser, go to **Devices → Link an
+app**, and run the command it shows, with the hub's address in it. On the
+home Wi-Fi that's its LAN address, and no Tailscale is needed:
+
+```sh
+curl -fsSL http://<hub's LAN address>:8000/agent/install.sh | sh -s -- --code 123456
+```
+
+or, from anywhere on your tailnet:
+
+```sh
+curl -fsSL https://<hub's tailnet name>/agent/install.sh | sh -s -- --code 123456
+```
+
+That installs the agent the hub serves (the same version as the hub), and
+links to the hub: the token and the hub's identity go in
+`~/.config/droplet-agent/config.json` (mode 600). The release's installer
+does the same with `--hub URL`. An agent installed without a hub links to
+one later with `droplet-agent setup`.
+
+**Without a link code** (a computer with no browser, like the hub), leave
+`--code` out. The computer joins as a new device named after itself (or
+`--name NAME`). Over the tailnet it's in straight away. Over the LAN it
+waits: it prints a four-digit code, and one of your devices gets "slim wants
+to join, code 1234: Allow / Deny". Check the codes match and allow it. Or
+give the hub's PIN with `--pin 1234`, if it has one.
+
+### How it finds the hub
+
+Like KDE Connect, the agent talks to the hub directly on the home network,
+and uses Tailscale only when it isn't there ([docs/local-first.md](../docs/local-first.md)).
+Each time it connects it tries, in order:
+
+1. **hub-local**: on the hub machine itself, `http://127.0.0.1:<port>`. The
+   fastest, and no Tailscale at all.
+2. **LAN**: the hub's LAN HTTPS, `https://<address>:8443`. It finds the
+   address over mDNS (`_droplet._tcp`), or uses the one that worked last:
+   the hub's IP changes with DHCP, so an address is only a hint.
+3. **tailnet**: the hub's tailnet URL, with ordinary TLS.
+
+While on the tailnet it keeps looking for the LAN (every few minutes, and at
+once when this computer's network changes) and moves back when it's there.
+`droplet-agent status` shows the route in use.
+
+**The LAN certificate is pinned.** The hub's LAN certificate is
+self-signed, so the agent trusts it by its SHA-256 fingerprint, stored when
+it paired: read over the tailnet (verified TLS) when it has that, or on
+first contact over the LAN, confirmed by you allowing the device with the
+matching code. The check runs right after the TLS handshake, before the
+agent sends anything, so a machine that isn't your hub never sees the token.
+If the certificate ever differs, the agent refuses that address and says:
+
+```
+the hub's identity changed: … Either that isn't your hub, or its certificate
+was regenerated. Nothing was sent to it. If you trust it, re-pair with: droplet-agent setup
+```
+
+It never switches silently. `droplet-agent setup` (with nothing else) reads
+the hub's identity again over a route that proves who it is (the tailnet,
+or loopback on the hub machine) and keeps the link. Without Tailscale, pair
+again: `droplet-agent setup --name NAME` or `--code`.
+
+An agent set up before this (its config holds only a hub URL) reads the
+hub's identity from that URL the first time it runs, and stores it.
 
 ## Development
 

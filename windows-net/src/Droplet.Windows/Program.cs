@@ -31,7 +31,7 @@ internal static class Program
             {
                 return 0;
             }
-            if (cmd.Kind is CommandKind.Open or CommandKind.Settings or CommandKind.Devices)
+            if (cmd.Kind is CommandKind.Open or CommandKind.Settings or CommandKind.Devices or CommandKind.Hub)
             {
                 Native.MessageBox(0, "droplet is already running, but isn't answering. Look for the drop in the notification area, or restart droplet.",
                     "droplet", 0x40);

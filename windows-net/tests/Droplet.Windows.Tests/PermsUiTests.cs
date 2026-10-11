@@ -265,6 +265,8 @@ public sealed class SharingScreenshotTests
             ask.Loaded += (_, _) => ask.OkButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             made.Add(Shoot(app, ask, "6-a-bad-link-is-caught"));
             Assert.Equal("Only web links (http:// or https://) can be sent and opened.", ask.Problem.Text);
+            // the hub is optional and hidden: Settings and Devices on a fresh install, and Settings with a hub
+            made.AddRange(HubHiddenScreens.Make((w, name, part) => Shoot(app, w, name, part)));
             return made;
         });
         Assert.All(shots, p => Assert.True(new FileInfo(p).Length > 1000, p));

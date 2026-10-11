@@ -273,11 +273,9 @@ class NoHubTest {
 
         SetupActivity.browser = { _, _, _ -> Discovery.Handle { } }
         val setup = Robolectric.buildActivity(SetupActivity::class.java).setup().get()
-        assertTrue("the choice comes first", setup.visible(R.id.panel_choose))
-        assertTrue(setup.visible(R.id.choose_direct) && setup.visible(R.id.choose_hub))
+        assertTrue("naming the phone comes first: no hub, no choice", setup.visible(R.id.panel_direct))
+        assertFalse(setup.visible(R.id.panel_choose))
         assertFalse(setup.visible(R.id.panel_find))
-        setup.findViewById<View>(R.id.choose_direct).performClick()
-        assertTrue(setup.visible(R.id.panel_direct))
         assertTrue("the phone's own name is suggested", setup.text(R.id.direct_name).isNotBlank())
         setup.findViewById<TextView>(R.id.direct_name).text = "  robo   phone "
         setup.findViewById<View>(R.id.direct_go).performClick()

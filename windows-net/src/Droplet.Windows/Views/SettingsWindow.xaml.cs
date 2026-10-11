@@ -10,7 +10,8 @@ using Droplet.Windows.ViewModels;
 namespace Droplet.Windows.Views;
 
 /// <summary>
-/// Settings: this PC's name, the hub and how it's reached (with its pinned identity), what
+/// Settings: this PC's name, the hub and how it's reached (with its pinned identity; only
+/// shown once this PC has a hub, see <see cref="HubUi"/>), what
 /// remote control may do (clipboard sync off until asked for), files, notifications, Start
 /// with Windows and Send To (both off until asked for), and the mesh.
 /// </summary>
@@ -115,6 +116,12 @@ public partial class SettingsWindow : Window
         PausedBanner.Visibility = pausedAll ? Visibility.Visible : Visibility.Collapsed;
         PausedAll.IsChecked = pausedAll;
         var hubName = Core.Polling.HubPoller.HubName(c);
+        // the hub is optional and hidden: a PC without one never sees it (docs/mesh.md)
+        var usesHub = c.UsesHub;
+        HubCard.Visibility = usesHub ? Visibility.Visible : Visibility.Collapsed;
+        AutoDownload.Visibility = usesHub ? Visibility.Visible : Visibility.Collapsed;
+        NameNote.Text = HubUi.NameNote(usesHub);
+        MeshNote.Text = HubUi.MeshNote(usesHub);
         HubDetails.Visibility = c.Hub is null && c.RemoteUrl.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         HubSummary.Text = c switch
         {

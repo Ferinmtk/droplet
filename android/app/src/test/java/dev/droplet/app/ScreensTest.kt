@@ -53,7 +53,10 @@ class ScreensTest {
             onChange(listOf(t15, t15.copy(id = "aaaaaaaaaaaaaaaa", name = "office-pc", host = "192.168.100.31")))
             Discovery.Handle { }
         }
-        val a = Robolectric.buildActivity(SetupActivity::class.java).setup().get()
+        // hub setup is hidden from new installs: this is the way in a hub user (or the hidden long-press) gets
+        val a = Robolectric.buildActivity(SetupActivity::class.java,
+            android.content.Intent(ApplicationProvider.getApplicationContext(), SetupActivity::class.java)
+                .putExtra(SetupActivity.EXTRA_ADD_HUB, true)).setup().get()
         shoot(a, "setup-find")
         // the code screen, as after "Ask to join"
         val show = SetupActivity::class.java.getDeclaredMethod("showCode", Pairing.Standing.Waiting::class.java)
@@ -300,11 +303,23 @@ class ScreensTest {
     fun setupChoice() {
         assumeTrue(out.isNotEmpty())
         SetupActivity.browser = { _, onChange, _ -> onChange(listOf(t15)); Discovery.Handle { } }
+        // a fresh install: straight to naming the phone, no hub anywhere
         val a = Robolectric.buildActivity(SetupActivity::class.java).setup().get()
-        shoot(a, "setup-choose")
-        a.findViewById<android.view.View>(R.id.choose_direct).performClick()
         shoot(a, "setup-direct")
         SetupActivity.browser = null
+    }
+
+    /** A fresh install's Settings, set up without a hub: nothing about a hub on it. */
+    @Test
+    fun settingsNoHub() {
+        assumeTrue(out.isNotEmpty())
+        Router.reset()
+        Prefs.forgetHub()
+        Prefs.noHub = true
+        Prefs.meshDeviceName = "Redmi Note 11E Pro"
+        val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        shoot(a, "settings-nohub")
+        Prefs.noHub = false
     }
 
     /** Another droplet device, in this process: a real peer on 127.0.0.1 to pair with and reach. */
