@@ -654,6 +654,37 @@ public sealed class PermsPauseTests : PermsPeers
     }
 
     [Fact]
+    public async Task Without_a_hub_an_unreachable_device_is_not_said_to_be_missing_from_one()
+    {
+        // the hub is optional and hidden: a device with none never reads about it
+        var a = await StartAsync("a");
+        var b = await StartAsync("b");
+        TrustEachOther(a, b);
+        var fp = Fp(b);
+        await StopAsync(b);
+        var e = await Assert.ThrowsAsync<NoRouteException>(() => a.Node.RingAsync(fp));
+        Assert.Equal("b isn't reachable right now", e.Message);
+        Assert.DoesNotContain("hub", e.Message, StringComparison.OrdinalIgnoreCase);
+        var job = a.Node.SendText(fp, "later");
+        var waiting = await a.Node.Outbox.WaitAsync(job.Id, j => j.Attempts > 0 && j.State == JobState.Queued, TimeSpan.FromSeconds(10));
+        Assert.NotNull(waiting);
+        Assert.DoesNotContain("hub", waiting.Error ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task With_a_hub_an_unreachable_device_is_said_to_be_missing_from_it_too()
+    {
+        var host = new FakeHubHost("a", "abababababababab");
+        var a = await StartAsync("a", host);
+        var b = await StartAsync("b");
+        TrustEachOther(a, b);
+        var fp = Fp(b);
+        await StopAsync(b);
+        var e = await Assert.ThrowsAsync<NoRouteException>(() => a.Node.RingAsync(fp));
+        Assert.Equal("b isn't reachable directly, and not through the hub either", e.Message);
+    }
+
+    [Fact]
     public async Task The_hub_route_follows_the_same_switches()
     {
         const string Hub = "abababababababab";

@@ -11,6 +11,9 @@ namespace Droplet.Windows.Views;
 /// compare the four-digit code, or use its PIN; link with a six-digit code to the device this
 /// PC's browser already is; connect over the tailnet; or skip the hub and pair directly.
 /// With a hub id, it re-joins a hub whose certificate changed, trusting the new one.
+/// The hub is optional and hidden: this window opens only from <c>droplet hub</c>, from
+/// Settings on a PC that has a hub, or on starting with a hub given but not joined (see
+/// <see cref="ViewModels.HubUi"/>). A fresh install starts at pairing instead.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA1001", Justification = "The window disposes it when it closes")]
 public partial class SetupWindow : Window

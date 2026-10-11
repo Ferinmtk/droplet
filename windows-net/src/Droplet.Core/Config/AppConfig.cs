@@ -179,6 +179,13 @@ public sealed class AppConfig
     /// <summary>Whether it's waiting to be let in.</summary>
     [JsonIgnore] public bool Pending => !string.IsNullOrEmpty(DeviceToken) && PairPending;
 
+    /// <summary>
+    /// Whether this PC has a hub at all: let in, waiting to be, or given its address. The hub is
+    /// optional and hidden until then, so the app shows hub things only when this is true.
+    /// </summary>
+    [JsonIgnore]
+    public bool UsesHub => !string.IsNullOrEmpty(DeviceToken) || Hub is not null || !string.IsNullOrEmpty(HubUrl);
+
     /// <summary>The fallback route: the configured URL, else the hub's tailnet URL.</summary>
     [JsonIgnore]
     public string RemoteUrl => !string.IsNullOrEmpty(HubUrl) ? HubUrl : Hub?.Tailnet ?? "";

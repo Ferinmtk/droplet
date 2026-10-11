@@ -1661,6 +1661,14 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     /// <summary>The hub knows the peer and the peer is connected to it now: live messages can go that way.</summary>
     bool HubHasItLive(TrustEntry entry) => HubKnows(entry) && host.HubOnline(entry.Id);
 
+    /// <summary>
+    /// Why a peer can't be reached: a device with no hub isn't told about one; with a hub,
+    /// it says the hub couldn't either.
+    /// </summary>
+    string Unreachable(TrustEntry entry) => host.HubId is null
+        ? $"{entry.Name} isn't reachable right now"
+        : $"{entry.Name} isn't reachable directly, and not through the hub either";
+
     /// <summary>Sends <c>input</c>, <c>media</c> or <c>cmd</c>: directly, else through the hub. Returns the route.</summary>
     public async Task<string> SendLiveAsync(string fp, JsonObject msg)
     {
@@ -1684,7 +1692,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 return "hub";
             }
         }
-        throw new NoRouteException($"{entry.Name} isn't reachable directly, and not through the hub either");
+        throw new NoRouteException(Unreachable(entry));
     }
 
     /// <summary>Rings a peer (or stops): directly, else through the hub's ring API. Returns the route.</summary>
@@ -1702,7 +1710,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             await host.HubRingAsync(entry.Id, stopRing, stop.Token).ConfigureAwait(false);
             return "hub";
         }
-        throw new NoRouteException($"{entry.Name} isn't reachable directly, and not through the hub either");
+        throw new NoRouteException(Unreachable(entry));
     }
 
     /// <summary>
@@ -1728,7 +1736,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         {
             return "hub";
         }
-        throw new NoRouteException($"{entry.Name} isn't reachable directly, and not through the hub either");
+        throw new NoRouteException(Unreachable(entry));
     }
 
     // --- sending: chat and files (routes 1–5) ------------------------------------------------------
@@ -2149,7 +2157,8 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
         else
         {
-            err = "not reachable directly, and no hub knows it right now";
+            // a device with no hub never hears of one (docs/mesh.md: the hub is optional)
+            err = host.HubId is null ? "not reachable right now" : "not reachable directly, and no hub knows it right now";
         }
         WaitJob(job, err, retry: false);
         return "wait";

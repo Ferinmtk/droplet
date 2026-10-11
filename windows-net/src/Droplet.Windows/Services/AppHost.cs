@@ -301,6 +301,7 @@ internal sealed class AppHost : IAsyncDisposable
         Destinations = global::Droplet.Windows.Services.Destinations.Build(peers, poll.Devices, cfg.Hub?.Id, hubName, cfg.Registered, poll.Connected);
         Tray = new TrayState
         {
+            UsesHub = cfg.UsesHub,
             Configured = cfg.Registered,
             PendingCode = cfg.Pending ? cfg.PairCode ?? "…" : null,
             NotAllowed = poll.NotAllowed,

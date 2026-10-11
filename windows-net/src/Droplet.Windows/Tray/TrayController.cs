@@ -11,6 +11,7 @@ namespace Droplet.Windows.Tray;
 /// notifications · Pause remote control · Settings… · Quit. The icon dims when nothing can be
 /// reached, turns amber while another device sends input, and shows a pause sign while
 /// everything is paused; the tooltip says how the hub is reached and who's in control.
+/// "Open droplet" (the hub's web app) shows only on a PC that has a hub.
 /// </summary>
 internal sealed class TrayController
 {
@@ -28,6 +29,7 @@ internal sealed class TrayController
     readonly MenuItem pauseRemote = new() { Header = "Pause remote control", IsCheckable = true };
     readonly MenuItem pauseAll = new();
     readonly MenuItem pauseDevice = new() { Header = "Pause a device" };
+    readonly MenuItem openWeb;
 
     public TrayController(App app, AppHost host, NotifyIcon icon)
     {
@@ -45,7 +47,9 @@ internal sealed class TrayController
         menu.Items.Add(pauseAll);
         menu.Items.Add(pauseDevice);
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item("Open droplet", app.OpenWeb));
+        // the hub's web app: shown only once this PC has a hub (the hub is optional, and hidden until then)
+        openWeb = Item("Open droplet", app.OpenWeb);
+        menu.Items.Add(openWeb);
         menu.Items.Add(sendFiles);
         menu.Items.Add(sendClip);
         menu.Items.Add(sendLink);
@@ -94,6 +98,7 @@ internal sealed class TrayController
         header.Header = Plain(tip);
         stopRing.Visibility = t.RingingFrom is null ? Visibility.Collapsed : Visibility.Visible;
         stopRing.Header = Plain($"Stop ringing ({t.RingingFrom})");
+        openWeb.Visibility = t.UsesHub ? Visibility.Visible : Visibility.Collapsed;
         pauseNotifications.IsChecked = t.NotificationsPaused;
         pauseRemote.IsChecked = t.RemotePaused;
         pauseAll.Header = t.PausedAll ? "Resume everything" : "Pause everything";

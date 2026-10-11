@@ -14,8 +14,8 @@
         <DockPanel Margin="0,0,0,16">
             <Image Source="/Assets/droplet-256.png" Width="44" Height="44" Margin="0,0,14,0" DockPanel.Dock="Left" />
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                <Button Content="Open droplet" Style="{StaticResource PlainButton}" Margin="0,0,8,0" Click="OpenWeb_Click"
-                        ToolTip="The hub's web app, in your browser" />
+                <Button x:Name="WebButton" Content="Open droplet" Style="{StaticResource PlainButton}" Margin="0,0,8,0" Click="OpenWeb_Click"
+                        ToolTip="The hub's web app, in your browser" Visibility="Collapsed" />
                 <Button Content="Settings" Style="{StaticResource PlainButton}" Click="Settings_Click" />
             </StackPanel>
             <StackPanel VerticalAlignment="Center">
@@ -152,7 +152,7 @@
                         <StackPanel>
                             <TextBlock Text="Pair a device" Style="{StaticResource SectionTitle}" />
                             <TextBlock Style="{StaticResource Body}">
-                                Pairing lets a device reach this PC directly, on your Wi-Fi or over Tailscale, with no hub in between.
+                                Pairing lets a device reach this PC directly, on your Wi-Fi or over Tailscale.
                                 Both of you see a four-digit code: say yes only if they match.
                             </TextBlock>
                             <TextBlock Text="On this network" Style="{StaticResource Caption}" Margin="0,8,0,4" />
@@ -191,7 +191,7 @@
                     </Border>
 
                     <TextBlock x:Name="EmptyText" Style="{StaticResource Body}" Visibility="Collapsed">
-                        No devices yet. Set up a hub in Settings, or pair a device directly with "Pair a device…".
+                        No devices yet. Pair your phone or another computer with "Pair a device…".
                     </TextBlock>
                 </StackPanel>
             </ScrollViewer>

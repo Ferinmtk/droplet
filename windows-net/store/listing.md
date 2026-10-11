@@ -19,9 +19,8 @@ another. Ring your phone when it's lost in the sofa. Use your phone as a touchpa
 media remote or presentation clicker for your PC.
 
 Everything goes directly between your own devices, on your Wi-Fi or over Tailscale, with
-each device checking the other's identity. Pair two devices by comparing a four-digit code,
-or run your own droplet hub at home to keep things for devices that are off and to reach
-them from anywhere.
+each device checking the other's identity. Pair two devices by comparing a four-digit code:
+there's no account to make and no server to set up.
 
 droplet for Windows sits in the notification area:
 
@@ -46,7 +45,7 @@ analytics.
 5. Exact volume control and what's playing, from your phone
 6. Chat between your devices
 7. Pair devices by comparing a four-digit code; no account needed
-8. Works without a hub, or with your own droplet hub for devices that are off
+8. No server, no account, no cloud: your devices talk to each other directly
 9. Notifications for files, messages and pairing requests
 10. Pause all remote control from the tray at any time
 11. Follows Windows' light and dark mode
@@ -72,8 +71,8 @@ https://github.com/Ferinmtk/droplet/blob/main/docs/privacy.md
 ## Notes for certification (Partner Center → Submission options)
 
 > droplet talks to the user's own devices on the local network or their Tailscale network.
-> To try it without a second device: open droplet, choose "No hub: pair directly with a
-> device", and pair with a second PC running droplet (same Wi-Fi). Remote control, the
+> To try it: open droplet, which opens at "Pair a device", and pair with a second PC running
+> droplet on the same Wi-Fi (both show the same four-digit code; choose "They match"). Remote control, the
 > clipboard and screenshots are only used by the user's own paired devices, and each can be
 > switched off in Settings. The app declares runFullTrust because it's a desktop app (a tray
 > icon, input injection with SendInput for the user's own remote control, and a local network
@@ -88,7 +87,7 @@ At least one, up to ten; 1920×1080 or 1366×768 PNG; take them on a real PC, li
 - [ ] The Devices window with a phone and a laptop listed, one "on Wi-Fi"
 - [ ] The tray menu open (Send files ▸ expanded)
 - [ ] Pairing: the four-digit code shown on the PC
-- [ ] Setup: "Hubs on this network" with a hub found
+- [ ] Settings: Pause everything
 - [ ] Settings: the Remote control section
 - [ ] A notification: a file received, with Open and Show in folder
 - [ ] The chat window

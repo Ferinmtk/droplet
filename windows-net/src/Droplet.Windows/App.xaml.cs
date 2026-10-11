@@ -9,6 +9,7 @@ using Droplet.Windows.Services;
 using Droplet.Windows.Shell;
 using Droplet.Windows.Themes;
 using Droplet.Windows.Tray;
+using Droplet.Windows.ViewModels;
 using Droplet.Windows.Views;
 using Microsoft.Extensions.Logging;
 
@@ -146,11 +147,8 @@ public partial class App : Application
         }
     }
 
-    bool NeedsSetup()
-    {
-        var cfg = Host.Config;
-        return !cfg.Registered && !cfg.Pending && (Host.Engine?.Mesh?.Trust.All().Count ?? 0) == 0;
-    }
+    /// <summary>What opening droplet shows: pairing on a fresh install (the hub stays hidden), else the devices.</summary>
+    FirstStart OnOpen() => HubUi.OnOpen(Host.Config, Host.Engine?.Mesh?.Trust.All().Count ?? 0);
 
     /// <summary>Carries out a command line: this process's own, or another droplet.exe's.</summary>
     async Task HandleAsync(Command cmd, string cwd)
@@ -163,7 +161,14 @@ public partial class App : Application
         {
             switch (cmd.Kind)
             {
-                case CommandKind.Open when NeedsSetup():
+                case CommandKind.Open when OnOpen() == FirstStart.Pairing:
+                    ShowPairing();
+                    break;
+                case CommandKind.Open when OnOpen() == FirstStart.HubSetup:
+                    ShowSetup();
+                    break;
+                case CommandKind.Hub:
+                    // the hidden way to add a hub (droplet hub): nothing in the app points to it
                     ShowSetup();
                     break;
                 case CommandKind.Open or CommandKind.Devices:
