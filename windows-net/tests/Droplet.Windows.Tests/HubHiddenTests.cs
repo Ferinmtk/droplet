@@ -135,9 +135,17 @@ internal static class LooseXaml
     {
         var doc = XDocument.Load(Source(name));
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XNamespace views = "clr-namespace:Droplet.Windows.Views";
+        XNamespace viewsInApp = "clr-namespace:Droplet.Windows.Views;assembly=droplet";
         doc.Root!.Attribute(x + "Class")?.Remove();
         foreach (var el in doc.Root.DescendantsAndSelf())
         {
+            // the window's own controls (DeviceCard…) live in the app's assembly: say so, in the
+            // element's name as well as the xmlns, or the writer puts the old namespace back
+            if (el.Name.Namespace == views)
+            {
+                el.Name = viewsInApp + el.Name.LocalName;
+            }
             foreach (var a in el.Attributes().ToList())
             {
                 if (a.Name.LocalName is "Click" or "SelectionChanged")
