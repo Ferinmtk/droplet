@@ -65,6 +65,33 @@ def clean_name(v, fallback: str = "") -> str:
     return name or fallback
 
 
+MAX_NAME = 40      # a device's name, as the hub allows it (its clean_name)
+# control and formatting characters that could hide or reorder text in a name
+_HIDDEN = {chr(c) for c in (*range(0x200B, 0x2010), *range(0x202A, 0x202F), *range(0x2066, 0x206A), 0xFEFF, 0x00AD)}
+
+
+def check_name(v, what: str = "a name", limit: int = MAX_NAME, empty_ok: bool = False) -> str:
+    """A name someone typed (this device's, or a nickname), checked: runs of spaces become one,
+    and it's 1 to `limit` characters with no control characters. Raises ValueError saying why."""
+    if not isinstance(v, str):
+        raise ValueError(f"{what} must be text")
+    if any(not ch.isprintable() and ch not in " \t\n" or ch in _HIDDEN for ch in v):
+        raise ValueError(f"{what} can't hold control characters")
+    name = " ".join(v.split())
+    if not name and not empty_ok:
+        raise ValueError(f"{what} can't be empty")
+    if len(name) > limit:
+        raise ValueError(f"{what} can be {limit} characters at most")
+    return name
+
+
+def clean_nickname(v) -> str:
+    try:
+        return check_name(v, empty_ok=True) if isinstance(v, str) else ""
+    except ValueError:
+        return ""
+
+
 def clean_caps(v) -> list[str]:
     if isinstance(v, str):
         v = v.split(",")
@@ -153,6 +180,7 @@ class TrustList:
                                                fp=fp, relation=e.get("relation"), allow=e.get("allow"),
                                                paused=e.get("paused"))
                     entry["added"] = e.get("added") or entry["added"]
+                    entry["nickname"] = clean_nickname(e.get("nickname"))
                     if entry["fp"] != self.own_fp:
                         peers[entry["fp"]] = entry
                     continue
@@ -164,6 +192,7 @@ class TrustList:
             except (ValueError, AttributeError, TypeError):
                 continue  # a damaged entry is dropped, never trusted
             entry["added"] = e.get("added") or entry["added"]
+            entry["nickname"] = clean_nickname(e.get("nickname"))
             if entry["fp"] != self.own_fp:
                 peers[entry["fp"]] = entry
         self._peers = peers
@@ -212,7 +241,8 @@ class TrustList:
         ql = q.lower()
         with self._lock:
             peers = list(self._peers.values())
-        exact = [e for e in peers if e["id"] == ql or e["fp"] == ql or e["name"].casefold() == q.casefold()]
+        exact = [e for e in peers if e["id"] == ql or e["fp"] == ql or e["name"].casefold() == q.casefold()
+                 or (e.get("nickname") or "").casefold() == q.casefold() != ""]
         if exact:
             return [dict(e) for e in exact]
         if len(ql) >= 8:
@@ -233,6 +263,7 @@ class TrustList:
             old = self._peers.get(entry["fp"])
             if old:
                 entry["lan"] = clean_addresses(entry["lan"] + old.get("lan", []))
+                entry.setdefault("nickname", old.get("nickname") or "")
                 entry["tailnet_ip"] = entry.get("tailnet_ip") or old.get("tailnet_ip")
             self._peers[entry["fp"]] = entry
             self._changed(True)
@@ -245,6 +276,8 @@ class TrustList:
             old = self._peers.get(entry["fp"])
             if old is not None and old["source"] != "browser":
                 raise ValueError("that key belongs to another peer")
+            if old is not None:
+                entry.setdefault("nickname", old.get("nickname") or "")
             self._peers[entry["fp"]] = entry
             self._save()
 
@@ -272,6 +305,34 @@ class TrustList:
                     e["allow"][c] = on
             if paused is not None:
                 e["paused"] = bool(paused)
+            self._save()
+            return dict(e, allow=dict(e["allow"]))
+
+    def set_nickname(self, fp: str, nickname: str) -> dict:
+        """What the owner calls a peer here ("Brian's laptop"), shown instead of its own name.
+        Only on this device: it's never sent. Empty clears it."""
+        nick = check_name(nickname or "", "a nickname", empty_ok=True)
+        with self._lock:
+            e = self._peers.get(fp)
+            if e is None:
+                raise ValueError("that peer isn't trusted")
+            e["nickname"] = nick
+            self._save()
+            return dict(e, allow=dict(e["allow"]))
+
+    def rename(self, fp: str, name) -> dict | None:
+        """A peer says it has a new name (`rename`, or the iPhone's auth). A peer paired directly
+        or a browser names itself; the hub names the peers its roster brings, so those are left
+        to the next roster. Returns the entry if the name changed."""
+        try:
+            name = check_name(name)
+        except ValueError:
+            return None
+        with self._lock:
+            e = self._peers.get(fp)
+            if e is None or e["source"] not in ("paired", "browser") or e["name"] == name:
+                return None
+            e["name"] = name
             self._save()
             return dict(e, allow=dict(e["allow"]))
 
@@ -315,7 +376,8 @@ class TrustList:
                     e["added"] = old["added"]
                     e["lan"] = clean_addresses(e["lan"] + old["lan"])
                     # the owner's switches and pause are theirs, not the hub's
-                    e.update(relation=old["relation"], allow=old["allow"], paused=old["paused"])
+                    e.update(relation=old["relation"], allow=old["allow"], paused=old["paused"],
+                             nickname=old.get("nickname") or "")
                     self._peers[fp] = e
             after = {fp: e["cert_pem"] for fp, e in self._peers.items()}
             self._changed(after != before)

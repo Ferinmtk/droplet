@@ -22,6 +22,18 @@ RELATION_CHOICES = [
 ]
 
 
+def display_name(p: dict | None) -> str:
+    """What this computer calls a device: the nickname given here, else its own name."""
+    p = p or {}
+    return str(p.get("nickname") or p.get("name") or p.get("id") or "the device")
+
+
+def own_name_note(p: dict | None) -> str:
+    """Under a nickname, the device's own name, small: "Its own name: maryanne"."""
+    p = p or {}
+    return f"Its own name: {p.get('name')}" if p.get("nickname") and p.get("name") != p.get("nickname") else ""
+
+
 def is_other(p: dict) -> bool:
     return p.get("relation") == "other"
 
@@ -72,7 +84,7 @@ def state_text(p: dict) -> str:
     if is_paused(p):
         return "Paused: nothing is shared with it"
     if paused_by_it(p):
-        return f"Paused by {p.get('name') or 'it'}"
+        return f"Paused by {display_name(p)}"
     link = str(p.get("link") or "")
     if link.startswith("tailnet"):
         return "Connected via Tailscale"
@@ -97,7 +109,7 @@ def peers(status: dict | None) -> list[dict]:
     """Paired devices: connected first, then nearby, then the rest, each by name."""
     order = {CONNECTED: 0, NEARBY: 1, AWAY: 2}
     found = [p for p in (status or {}).get("peers") or [] if isinstance(p, dict) and p.get("fp")]
-    return sorted(found, key=lambda p: (order[device_state(p)], str(p.get("name") or "").casefold()))
+    return sorted(found, key=lambda p: (order[device_state(p)], display_name(p).casefold()))
 
 
 def summary(status: dict | None) -> str:
@@ -165,6 +177,8 @@ class Transfer:
             row[1], row[2] = "done", route_text(job.get("route"))
         elif state == "failed":
             row[1], row[2] = "failed", job.get("why") or "failed"
+        elif state == "cancelled":
+            row[1], row[2] = "cancelled", job.get("why") or "cancelled"
         elif state == "queued" and job.get("attempts") and not job.get("retry"):
             row[1], row[2] = "waiting", job.get("why")
         else:
@@ -187,6 +201,7 @@ class Transfer:
         done = [n for n, st, _ in rows if st == "done"]
         failed = [(n, w) for n, st, w in rows if st == "failed"]
         waiting = [n for n, st, _ in rows if st == "waiting"]
+        cancelled = [n for n, st, _ in rows if st == "cancelled"]
         going = [n for n, st, _ in rows if st in ("queued", "sending")]
         parts = []
         if going:
@@ -198,6 +213,8 @@ class Transfer:
         if waiting:
             parts.append(f"{what(waiting)} {'waits' if len(waiting) == 1 else 'wait'} until "
                          f"{self.name} can be reached.")
+        if cancelled:
+            parts.append(f"Cancelled {what(cancelled)}.")
         if failed:
             if len(failed) == 1:
                 parts.append(f"Couldn't send {failed[0][0]}: {failed[0][1]}")
@@ -215,6 +232,57 @@ class Transfer:
         if "waiting" in states:
             return "warn"
         return "ok"
+
+
+# --- transfers: how far each file has got (the agent's `transfers`) --------------------------------
+
+def transfers_for(transfers: list | None, fp: str) -> list[dict]:
+    """A device's transfers, either way: going ones first, then the ones just finished."""
+    return [t for t in transfers or [] if isinstance(t, dict) and t.get("fp") == fp]
+
+
+def any_active(transfers: list | None) -> bool:
+    return any(isinstance(t, dict) and t.get("state") == "active" for t in transfers or [])
+
+
+def transfer_title(t: dict) -> str:
+    """"↑ video.mp4" (going to it) or "↓ photo.jpg" (coming from it)."""
+    return f"{'↑' if t.get('dir') == 'out' else '↓'} {t.get('name') or 'a file'}"
+
+
+def transfer_detail(t: dict) -> str:
+    """"45% · 12 s left · 3.2 MB/s · 80 MB", or how it ended."""
+    from ..mesh.transfers import progress_text, size_text
+    text = progress_text(t)
+    if t.get("state") == "active" and t.get("size"):
+        text = f"{text} · {size_text(t['size'])}"
+    return text
+
+
+# --- several devices at once ---------------------------------------------------------------
+
+def outcome(answer: dict | None, error: str | None = None) -> tuple[str, str]:
+    """One device's result of a send: ("sent" | "waiting" | "refused", why)."""
+    if error or not answer:
+        return "refused", error or "it wasn't sent"
+    st, why = answer.get("state"), answer.get("why") or ""
+    if answer.get("how") == "link" or st == "done" or (st is None and answer.get("route")):
+        return "sent", route_text(answer.get("route"))
+    if st in ("failed", "cancelled"):
+        return "refused", why or st
+    return "waiting", why[len("waiting: "):] if why.startswith("waiting: ") else (why or "it can't be reached now")
+
+
+def outcomes_text(what: str, results: list) -> str:
+    """"Sent the clipboard to 2 of 3: sheffield: not reachable." `results` is
+    [(device name, "sent" | "waiting" | "refused", why)]."""
+    sent = [n for n, st, _ in results if st == "sent"]
+    others = [(n, st, w) for n, st, w in results if st != "sent"]
+    if not others:
+        return f"Sent {what} to {', '.join(sent)}." if len(sent) <= 3 else f"Sent {what} to all {len(sent)}."
+    head = f"Sent {what} to {len(sent)} of {len(results)}" if sent else f"Didn't send {what}"
+    bits = [f"{n} waits ({w})" if st == "waiting" else f"{n}: {w}" for n, st, w in others]
+    return f"{head}. " + "; ".join(bits) + "."
 
 
 # --- messages -----------------------------------------------------------------------
@@ -236,6 +304,13 @@ def conversations(messages: list[dict], status: dict | None) -> list[dict]:
 
 def for_peer(messages: list[dict], fp: str) -> list[dict]:
     return [m for m in messages if isinstance(m, dict) and m.get("fp") == fp]
+
+
+def message_url(m: dict) -> str | None:
+    """The web link a message is, for its Open button: a link sent as one, or a message that's
+    nothing but a link. Only http and https."""
+    from ..mesh.links import only_url
+    return only_url(m.get("body"))
 
 
 def message_note(m: dict) -> str:
@@ -269,19 +344,14 @@ def preview(m: dict | None, width: int = 48) -> str:
     body = " ".join(str(m.get("body") or "").split())
     if len(body) > width:
         body = body[:width - 1] + "…"
-    return ("You: " if m.get("dir") == "out" else "") + body
+    return ("You: " if m.get("dir") == "out" else "") + ("Link: " if m.get("kind") == "link" else "") + body
 
 
 # --- received files -------------------------------------------------------------------
 
 def size_text(n) -> str:
-    if not isinstance(n, int):
-        return ""
-    for unit in ("bytes", "KB", "MB", "GB"):
-        if n < 1000 or unit == "GB":
-            return f"{n} {unit}" if unit == "bytes" else f"{n:.1f} {unit}".replace(".0 ", " ")
-        n /= 1024
-    return ""
+    from ..mesh.transfers import size_text as text
+    return text(n) if isinstance(n, int) else ""
 
 
 def received_line(f: dict, now: float | None = None) -> str:

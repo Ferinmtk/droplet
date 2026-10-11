@@ -378,8 +378,38 @@ public partial class App : Application
 
     internal void SendClipboard(Destination d) => _ = Host.SendClipboardAsync(d, ReadClipboard());
 
+    /// <summary>
+    /// "Send a link…": asks for the link, filled in from the clipboard when it holds one, and
+    /// sends it (opened there on your own device, an Open button on someone else's).
+    /// </summary>
+    internal void SendLink(Destination d, Window? owner = null)
+    {
+        if (AskLink(owner, $"Send a link to {d.Name}") is { } url)
+        {
+            _ = Host.SendLinkAsync(d, url);
+        }
+    }
+
+    /// <summary>Asks for a web link, the clipboard's to begin with; null when cancelled.</summary>
+    internal static string? AskLink(Window? owner, string heading) =>
+        AskWindow.Ask(owner, heading, "It opens in the browser on your own devices; someone else's gets it with an Open button.", "Send",
+            ClipboardLink() ?? "", Core.Mesh.Links.CheckUrl);
+
+    /// <summary>The clipboard's text when it's nothing but a web link; else null.</summary>
+    internal static string? ClipboardLink()
+    {
+        try
+        {
+            return Clipboard.ContainsText() ? Core.Mesh.Links.OnlyUrl(Clipboard.GetText()) : null;
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>What's on the clipboard: copied files, an image (as PNG), or text.</summary>
-    static AppHost.Clip ReadClipboard()
+    internal static AppHost.Clip ReadClipboard()
     {
         try
         {

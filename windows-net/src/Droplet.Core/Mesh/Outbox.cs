@@ -18,6 +18,12 @@ public static class JobState
 
     /// <summary>Failed for good.</summary>
     public const string Failed = "failed";
+
+    /// <summary>Cancelled, here or by the peer (docs/mesh.md §9.11): never sent again.</summary>
+    public const string Cancelled = "cancelled";
+
+    /// <summary>Whether a job in <paramref name="state"/> is over: done, failed or cancelled.</summary>
+    public static bool IsFinished(string state) => state is Done or Failed or Cancelled;
 }
 
 /// <summary>A text or a file on its way to one peer.</summary>
@@ -187,7 +193,7 @@ public sealed class Outbox
                 return null;
             }
             j = change(j);
-            if (j.State is JobState.Done or JobState.Failed)
+            if (JobState.IsFinished(j.State))
             {
                 jobs.Remove(id);
                 finished[id] = j;
@@ -270,6 +276,16 @@ public sealed record ChatEntry
 
     /// <summary>How a sent message went.</summary>
     [JsonPropertyName("route")] public string? Route { get; init; }
+
+    /// <summary>"link" for a web link (docs/mesh.md §9.11); null for a message.</summary>
+    [JsonPropertyName("kind")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Kind { get; init; }
+
+    /// <summary>A link that was opened here when it arrived (from your own device).</summary>
+    [JsonPropertyName("opened")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Opened { get; init; }
 }
 
 /// <summary>Chat sent and received directly, one JSON line each. Ids make repeats harmless.</summary>

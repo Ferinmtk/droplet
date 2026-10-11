@@ -74,6 +74,8 @@ from ..mesh.files import safe_name, unique_path
 from ..mesh.identity import key_fingerprint, p256_spki, verify_key
 from . import PROTOCOL_VERSION
 
+FEATURES = ["cancel", "link", "rename"]   # as the mesh's hello says (mesh/node.py)
+
 log = logging.getLogger("droplet_agent.webrtc")
 
 CHUNK = 16 * 1024            # data per binary frame (plus the 8-byte id)
@@ -125,6 +127,11 @@ class Host:
     # welcome; and the answer refusing a file it offers (None: take it)
     def perm(self, fp: str) -> dict | None: return None
     def refuse_file(self, conn: "Conn", msg: dict) -> dict | None: return None
+    # files on their way, for the transfer list: transfer(conn, file id, dir="in"|"out", name=, size=,
+    # done=, state="active"|"done"|"failed"|"cancelled", error=)
+    def transfer(self, conn: "Conn", fid: str, **info) -> None: pass
+    # the name the browser says it has now (its auth): None, or the name it's known by here
+    def renamed(self, conn: "Conn", fp: str, name) -> str | None: return None
 
 
 class Conn:
@@ -145,6 +152,7 @@ class Conn:
         self._waiting: dict[str, asyncio.Future] = {}
         self._send_lock = asyncio.Lock()
         self.on_progress = None             # (file id, bytes sent) while sending
+        self.features: list = []            # what the app understands besides v1 (its auth's "features")
 
     # --- sending ------------------------------------------------------------------
     def send(self, msg: dict) -> bool:
@@ -239,7 +247,10 @@ class Conn:
                 why = "paused" if msg.get("why") == "paused" else "denied"
                 fut.set_result((False, f"{why}: {str(msg.get('error') or '')[:200]}"))
             self.host.deliver(self, msg)
-        elif t in ("text", "unpair", "ring", "ring-stop", "perm"):
+        elif t == "cancel":
+            self._cancel(msg)
+            self.host.deliver(self, msg)
+        elif t in ("text", "unpair", "ring", "ring-stop", "perm", "link", "rename"):
             self.host.deliver(self, msg)
         elif t == "clip":
             if isinstance(msg.get("text"), str):
@@ -269,9 +280,12 @@ class Conn:
             self.close()
             return
         self.fp, self.name = fp, entry["name"]
+        self.name = self.host.renamed(self, fp, msg.get("name")) or self.name
+        f = msg.get("features")
+        self.features = [x for x in f if isinstance(x, str)][:20] if isinstance(f, list) else []
         self.pairing = None
         welcome = {"t": "welcome", "v": PROTOCOL_VERSION, "id": info["id"], "name": info["name"], "os": OS_NAME,
-                   "caps": []}
+                   "caps": [], "features": list(FEATURES)}
         perm = self.host.perm(fp)
         if perm is not None:
             welcome["perm"] = perm
@@ -346,6 +360,7 @@ class Conn:
             return
         self._incoming[key] = {"id": fid, "name": safe_name(msg.get("name")), "size": size, "got": 0,
                                "file": f, "part": part}
+        self.host.transfer(self, fid, dir="in", name=safe_name(msg.get("name")), size=size, done=0, state="active")
 
     def _chunk(self, data: bytes):
         f = self._incoming.get(data[:8])
@@ -360,15 +375,49 @@ class Conn:
             f["file"].write(body)
         except OSError as e:
             self._drop(f, f"can't save it: {e.strerror or e}")
+            return
+        self.host.transfer(self, f["id"], done=f["got"])
 
-    def _drop(self, f: dict, why: str):
+    def _drop(self, f: dict, why: str | None, state: str = "failed"):
+        """Stop taking a file and delete what came of it; `why` (if any) goes back as a nack."""
         self._incoming.pop(bytes.fromhex(f["id"][:16]), None)
         try:
             f["file"].close()
         except OSError:
             pass
         f["part"].unlink(missing_ok=True)
-        self.send({"t": "nack", "id": f["id"], "error": why})
+        self.host.transfer(self, f["id"], state=state, error=why)
+        if why is not None:
+            self.send({"t": "nack", "id": f["id"], "error": why})
+
+    def _cancel(self, msg: dict):
+        """The app cancelled a file: one it was sending (drop what came) or one it was being sent."""
+        fid = msg.get("id")
+        if not isinstance(fid, str) or not FILE_ID.fullmatch(fid):
+            return
+        f = self._incoming.get(bytes.fromhex(fid[:16]))
+        if f is not None and f["id"] == fid:
+            self._drop(f, None, "cancelled")
+        fut = self._waiting.get(fid)
+        if fut is not None and not fut.done():
+            fut.set_result((False, f"cancelled: {self.name or 'the iPhone'} cancelled it"))
+
+    def cancel_receive(self, fid: str) -> bool:
+        """Cancelled here: stop taking the file, delete it, and tell the app."""
+        f = self._incoming.get(bytes.fromhex(fid[:16])) if FILE_ID.fullmatch(fid or "") else None
+        if f is None or f["id"] != fid:
+            return False
+        self._drop(f, None, "cancelled")
+        self.send({"t": "cancel", "id": fid})
+        return True
+
+    def cancel_send(self, fid: str, why: str = "cancelled here") -> bool:
+        """Cancelled here: stop sending the file (send_file returns); the caller tells the app."""
+        fut = self._waiting.get(fid)
+        if fut is None or fut.done():
+            return False
+        fut.set_result((False, f"cancelled: {why}"))
+        return True
 
     def _file_end(self, msg: dict):
         fid = msg.get("id")
@@ -390,11 +439,13 @@ class Conn:
             self.send({"t": "nack", "id": fid, "error": f"can't save it: {e.strerror or e}"})
             return
         self.host.received(self, fid, path)
+        self.host.transfer(self, fid, done=f["size"], state="done")
         self.send({"t": "ack", "id": fid})
 
     # --- files leaving -------------------------------------------------------------------
-    async def _drain(self):
-        while not self.closed and getattr(self.channel, "bufferedAmount", 0) > HIGH_WATER:
+    async def _drain(self, fut=None):
+        while not self.closed and getattr(self.channel, "bufferedAmount", 0) > HIGH_WATER \
+                and not (fut is not None and fut.done()):
             await asyncio.sleep(0.005)
 
     async def send_file(self, fid: str, name: str, size: int, mime: str, path: Path) -> tuple[bool, str]:
@@ -413,7 +464,7 @@ class Conn:
                 sent = 0
                 with open(path, "rb") as f:
                     while sent < size:
-                        await self._drain()
+                        await self._drain(fut)
                         if self.closed or fut.done():
                             break
                         body = f.read(min(CHUNK, size - sent))
@@ -425,7 +476,7 @@ class Conn:
                             self.on_progress(fid, sent)
                 if fut.done():
                     ok, why = fut.result()
-                    if not ok and why.startswith("paused:"):
+                    if not ok and (why.startswith("paused:") or why.startswith("cancelled")):
                         return False, why
                     return ok, "" if ok else f"refused: {why}"
                 if self.closed:
@@ -437,7 +488,9 @@ class Conn:
                     return False, "no answer"
                 if ok:
                     return True, ""
-                return False, why if why == "the connection closed" or why.startswith("paused:") else f"refused: {why}"
+                if why == "the connection closed" or why.startswith(("paused:", "cancelled")):
+                    return False, why
+                return False, f"refused: {why}"
             except OSError as e:
                 return False, f"refused: can't read it: {e.strerror or e}"
             finally:

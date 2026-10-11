@@ -290,6 +290,22 @@ def me(hub, token: str) -> dict | None:
     return dev if isinstance(dev, dict) else None
 
 
+def rename(hub, token: str, name: str) -> str:
+    """Rename this device on the hub (POST /api/device with its token): the hub's rules apply
+    (40 characters, and no other device of the hub's may have that name). Returns the name the
+    hub kept. Raises HubError, saying why it refused."""
+    try:
+        _, _, data, _ = _request("POST", hub, "/api/device", body=json.dumps({"name": name}).encode(),
+                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                                 timeout=15)
+    except HubError as e:
+        text = str(e)
+        if text.startswith(("409: ", "400: ")):
+            raise HubError(text[5:] or "the hub refused that name") from None   # "slim is already a device here…"
+        raise
+    return str(_json(data).get("name") or name)
+
+
 def login_pin(hub, token: str, pin: str) -> bool:
     """Enter the hub's PIN for this device (POST /login). True if the hub took it.
 

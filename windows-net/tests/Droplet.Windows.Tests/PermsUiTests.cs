@@ -186,7 +186,11 @@ public sealed class SharingScreenshotTests
         {
             png.Save(f);
         }
-        w.Close();
+        // a dialog's button may have closed it already
+        if (w.IsLoaded && w.IsVisible)
+        {
+            w.Close();
+        }
         return path;
     }
 
@@ -247,6 +251,20 @@ public sealed class SharingScreenshotTests
                 cards.Children.Add(new Border { Style = (Style)app.FindResource("Card"), Child = card });
             }
             made.Add(Shoot(app, new Window { Content = new ScrollViewer { Content = cards }, Width = 720, Height = 600 }, "3-device-cards", _ => cards));
+
+            // docs/mesh.md §9.11: a nickname with its own name small, files on their way with Cancel, and Send a link…
+            var busy = new StackPanel { Margin = new Thickness(24), Width = 640 };
+            var nick = new DeviceCard();
+            nick.Show(Card(new PeerView(SharingTests.Peer("DESKTOP-7Q2", 'e') with { Nickname = "Brian's laptop" }, "lan", true, Features: ["cancel", "link", "rename"])), false);
+            nick.ShowTransfers(FeatureUiTests.SomeTransfers());
+            busy.Children.Add(new Border { Style = (Style)app.FindResource("Card"), Child = nick });
+            made.Add(Shoot(app, new Window { Content = new ScrollViewer { Content = busy }, Width = 720, Height = 700 }, "4-transfers-and-nickname", _ => busy));
+            made.Add(Shoot(app, new AskWindow("Send a link to pixel", "It opens in the browser on your own devices; someone else's gets it with an Open button.", "Send",
+                "https://example.com/slides", Core.Mesh.Links.CheckUrl), "5-send-a-link"));
+            var ask = new AskWindow("Send a link to pixel", "", "Send", "javascript:alert(1)", Core.Mesh.Links.CheckUrl);
+            ask.Loaded += (_, _) => ask.OkButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            made.Add(Shoot(app, ask, "6-a-bad-link-is-caught"));
+            Assert.Equal("Only web links (http:// or https://) can be sent and opened.", ask.Problem.Text);
             return made;
         });
         Assert.All(shots, p => Assert.True(new FileInfo(p).Length > 1000, p));

@@ -19,9 +19,31 @@ public partial class DeviceCard : UserControl
     }
 
     /// <summary>Shows <paramref name="d"/>; <paramref name="pausedAll"/>: Pause everything is on.</summary>
+    /// <summary>Cancel was clicked on a transfer: its id.</summary>
+    internal event Action<string>? CancelRequested;
+
+    /// <summary>Shows the files on their way to or from this device; none hides the section.</summary>
+    internal void ShowTransfers(IReadOnlyList<TransferRow> rows)
+    {
+        Transfers.ItemsSource = rows;
+        TransfersPanel.Visibility = rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    void Cancel_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is string id)
+        {
+            ((Button)sender).IsEnabled = false;
+            CancelRequested?.Invoke(id);
+        }
+    }
+
     internal void Show(Destination d, bool pausedAll)
     {
         DetailName.Text = d.Name;
+        RealName.Text = d.RealName.Length > 0 ? $"its own name: {d.RealName}" : "";
+        RealName.Visibility = d.RealName.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NicknameButton.Visibility = d.Fp is not null ? Visibility.Visible : Visibility.Collapsed;
         DetailRoute.Text = d.IsHub
             ? "Your hub. Files sent here land in its shared storage; open droplet to see them."
             : d.Route switch
@@ -44,6 +66,10 @@ public partial class DeviceCard : UserControl
         PausedBadgeText.Text = state ?? "";
         Gate(SendFilesButton, Destinations.Blocked(d, Perms.Files, pausedAll));
         Gate(MessageButton, Destinations.Blocked(d, Perms.Chat, pausedAll));
+        Gate(LinkButton, Destinations.Blocked(d, Perms.Chat, pausedAll));
+        LinkButton.ToolTip ??= d.IsHub ? "The link goes as a message" : d.Fp is null || !d.TakesLinks
+            ? "It opens on your own devices; to others (and to older ones) it goes as a message with an Open button"
+            : d.Other ? "It's someone else's device: the link waits there with an Open button" : "It opens there in the browser";
         Gate(ClipboardButton, Destinations.Blocked(d, Perms.Clipboard, pausedAll));
         Gate(RingButton, Destinations.Blocked(d, Perms.Ring, pausedAll));
         PauseButton.Visibility = peer ? Visibility.Visible : Visibility.Collapsed;

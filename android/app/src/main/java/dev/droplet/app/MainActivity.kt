@@ -11,9 +11,15 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.text.InputFilter
+import android.text.InputType
 import android.text.format.DateUtils
 import android.view.View
+import android.widget.CompoundButton
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
@@ -33,6 +39,7 @@ import dev.droplet.app.mesh.TrustList
 import dev.droplet.app.tv.Tv
 import dev.droplet.app.tv.TvActivity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -53,7 +60,36 @@ class MainActivity : AppCompatActivity() {
     private var sendToFp: String? = null
     private val onRing: () -> Unit = { runOnUiThread { if (::b.isInitialized) renderRinging() } }
 
+    /** Select: sending to several devices at once (docs/mesh.md §9.11). */
+    private var selecting = false
+    private val ticked = LinkedHashSet<String>()
+    /** "All my devices": your own devices that allow what's sent, worked out when it's sent. */
+    private var allMine = false
+    /** Several devices the file picker is for (kept across a restart), when not [sendTo]. */
+    private var sendToMany: List<String>? = null
+    /** Each device's card, by fingerprint: its transfers are redrawn in place as they move. */
+    private val cards = HashMap<String, View>()
+
     private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val many = sendToMany?.mapNotNull { Mesh.peer(it) }
+        sendToMany = null
+        if (many != null) {
+            if (uris.isEmpty() || many.isEmpty()) return@registerForActivityResult
+            lifecycleScope.launch {
+                val files = withContext(Dispatchers.IO) {
+                    uris.mapNotNull { u ->
+                        runCatching { contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                        describe(u)
+                    }
+                }
+                if (files.isEmpty()) return@launch
+                val targets = many.map { PeersActivity.MESH_PREFIX + it.fp to it.label }
+                UploadService.start(this@MainActivity, files, null, targets[0].first, targets[0].second, more = targets.drop(1))
+                say(resources.getQuantityString(R.plurals.home_sending_several, many.size, files.size, many.size))
+                endSelect()
+            }
+            return@registerForActivityResult
+        }
         val to = sendTo ?: sendToFp?.let { Mesh.peer(it) } ?: return@registerForActivityResult
         sendTo = null
         sendToFp = null
@@ -67,8 +103,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             if (files.isEmpty()) return@launch
-            UploadService.start(this@MainActivity, files, null, PeersActivity.MESH_PREFIX + to.fp, to.name)
-            say(resources.getQuantityString(R.plurals.home_sending_files, files.size, files.size, to.name))
+            UploadService.start(this@MainActivity, files, null, PeersActivity.MESH_PREFIX + to.fp, to.label)
+            say(resources.getQuantityString(R.plurals.home_sending_files, files.size, files.size, to.label))
         }
     }
 
@@ -94,11 +130,30 @@ class MainActivity : AppCompatActivity() {
         b.tileTv.setOnClickListener { startActivity(TvActivity.intent(this)) }
         b.tileBt.setOnClickListener { startActivity(Intent(this, BluetoothActivity::class.java)) }
         b.tileHub.setOnClickListener { openHub(null) }
+        b.select.setOnClickListener { if (selecting) endSelect() else { selecting = true; render() } }
+        b.selectAll.setOnClickListener {
+            val mine = Mesh.peers().filter { it.entry.relation == Perms.OWN_DEVICE }.map { it.entry.fp }
+            allMine = true
+            ticked.clear()
+            ticked += mine
+            render()
+        }
+        b.severalFiles.setOnClickListener { severalFiles() }
+        b.severalMessage.setOnClickListener { askMessage() }
+        b.severalLink.setOnClickListener { severalTargets(Perms.CHAT)?.let { askLink(it) } }
+        b.severalClip.setOnClickListener { severalClipboard() }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { Mesh.state.collect { render() } }
                 launch { Mesh.changes.collect { render() } }
+                // files on their way: their progress, redrawn in place at most 4 times a second
+                launch {
+                    while (true) {
+                        delay(250)
+                        if (Mesh.transfers().any { it.active }) renderAllTransfers()
+                    }
+                }
                 launch { Tv.changes.collect { renderTiles() } }
                 launch { Live.state.collect { renderTiles() } }
                 launch { Router.state.collect { renderTiles() } }
@@ -112,6 +167,7 @@ class MainActivity : AppCompatActivity() {
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         sendToFp = savedInstanceState?.getString(STATE_SEND_TO)
+        sendToMany = savedInstanceState?.getStringArray(STATE_SEND_MANY)?.toList()
         if (savedInstanceState == null) followLink(intent)
     }
 
@@ -123,6 +179,7 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         sendTo?.fp?.let { outState.putString(STATE_SEND_TO, it) }
+        sendToMany?.let { outState.putStringArray(STATE_SEND_MANY, it.toTypedArray()) }
     }
 
     override fun onStart() {
@@ -215,7 +272,11 @@ class MainActivity : AppCompatActivity() {
 
         val peers = Mesh.peers()
         b.devices.removeAllViews()
-        for (p in peers) b.devices.addView(deviceCard(p))
+        cards.clear()
+        ticked.retainAll(peers.map { it.entry.fp }.toSet())
+        if (peers.size < 2 && selecting) selecting = false
+        for (p in peers) b.devices.addView(deviceCard(p).also { cards[p.entry.fp] = it })
+        renderSelect(peers.size)
         // with the mesh still starting, "no devices" would be a lie for a moment
         val known = n != null || s.status == Mesh.Status.FAILED || s.status == Mesh.Status.OFF && !Prefs.meshEnabled
         b.empty.visibility = if (peers.isEmpty() && known) View.VISIBLE else View.GONE
@@ -266,9 +327,15 @@ class MainActivity : AppCompatActivity() {
     private fun deviceCard(p: Mesh.PeerView): View {
         val e = p.entry
         val v = b.devices.inflate(R.layout.item_device)
-        v.findViewById<TextView>(R.id.name).text = e.name
+        v.findViewById<TextView>(R.id.name).text = e.label
+        // a nickname: the device's own name too, small
+        v.findViewById<TextView>(R.id.realname).apply {
+            text = e.name
+            visibility = if (e.nickname.isNotEmpty()) View.VISIBLE else View.GONE
+        }
         v.findViewById<ImageView>(R.id.icon).setImageResource(if (e.os == "android") R.drawable.ic_phone else R.drawable.ic_laptop)
-        val waiting = Mesh.node?.outbox?.forPeer(e.fp)?.size ?: 0
+        // what waits for it (one on its way shows below, with its progress)
+        val waiting = Mesh.node?.outbox?.forPeer(e.fp)?.count { it.optString("state") != dev.droplet.app.mesh.Outbox.SENDING } ?: 0
         val looking = p.route in setOf("seen", "offline") && Mesh.isProbing(e.fp)
         val reached = if (looking) getString(R.string.home_route_looking) else routeText(p.route)
         // paused here, everything paused, or it paused sharing with this phone (docs/mesh.md §9.9)
@@ -327,7 +394,258 @@ class MainActivity : AppCompatActivity() {
             visibility = if ("input" in e.caps) View.VISIBLE else View.GONE
         }
         v.findViewById<View>(R.id.more).setOnClickListener { more(e) }
+        renderTransfers(v, e.fp)
+        // Select: a tick instead of the buttons, and a tap ticks it
+        v.findViewById<CompoundButton>(R.id.tick).apply {
+            visibility = if (selecting) View.VISIBLE else View.GONE
+            isChecked = e.fp in ticked
+        }
+        if (selecting) {
+            for (id in listOf(R.id.actions, R.id.pause, R.id.more)) v.findViewById<View>(id).visibility = View.GONE
+            v.setOnClickListener {
+                allMine = false
+                if (!ticked.remove(e.fp)) ticked += e.fp
+                render()
+            }
+        }
         return v
+    }
+
+    // --- files on their way (docs/mesh.md §9.11) -----------------------------------------
+
+    private fun renderAllTransfers() {
+        if (!::b.isInitialized) return
+        for ((fp, card) in cards) renderTransfers(card, fp)
+    }
+
+    /**
+     * A device's transfers on its card, updated in place (so Cancel stays put
+     * as the numbers move): progress, time left and speed, or how it ended;
+     * and sends still waiting in the outbox, which can be cancelled too.
+     */
+    private fun renderTransfers(card: View, fp: String) {
+        val box = card.findViewById<LinearLayout>(R.id.transfers)
+        val list = Mesh.transfers(fp)
+        val waiting = Mesh.node?.outbox?.forPeer(fp).orEmpty()
+            .filter { it.optString("kind") == "file" && list.none { t -> t.id == it.optString("id") } }
+        val rows = list.map { t ->
+            val line = getString(if (t.dir == "out") R.string.transfer_sending else R.string.transfer_receiving) + " · " +
+                dev.droplet.app.mesh.Transfers.progressText(t)
+            TransferRow(t.id, t.name, line, t.percent, show = t.state in setOf("active", "waiting"),
+                cancellable = t.state in setOf("active", "waiting"))
+        } + waiting.map { j ->
+            val why = j.optString("error").takeIf { it.isNotEmpty() && it != "null" }
+            TransferRow(j.getString("id"), j.optString("name"),
+                if (why != null) getString(R.string.transfer_waiting, why) else getString(R.string.transfer_queued),
+                0, show = false, cancellable = true)
+        }
+        val want = rows.map { it.id }.toSet()
+        for (i in box.childCount - 1 downTo 0) if (box.getChildAt(i).tag !in want) box.removeViewAt(i)
+        for (r in rows) {
+            val row = (0 until box.childCount).map { box.getChildAt(it) }.firstOrNull { it.tag == r.id }
+                ?: box.inflate(R.layout.item_transfer).also { nv ->
+                    nv.tag = r.id
+                    nv.findViewById<View>(R.id.cancel).setOnClickListener { cancelTransfer(r.id, r.name) }
+                    box.addView(nv)
+                }
+            row.findViewById<TextView>(R.id.name).text = r.name
+            row.findViewById<TextView>(R.id.status).text = r.line
+            row.findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.progress).apply {
+                visibility = if (r.show) View.VISIBLE else View.GONE
+                setProgressCompat(r.percent, false)
+            }
+            row.findViewById<View>(R.id.cancel).visibility = if (r.cancellable) View.VISIBLE else View.GONE
+        }
+        box.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private data class TransferRow(val id: String, val name: String, val line: String, val percent: Int,
+                                   val show: Boolean, val cancellable: Boolean)
+
+    private fun cancelTransfer(id: String, name: String) {
+        background({ Mesh.cancelTransfer(id) }) { say(getString(R.string.transfer_cancelled, name)) }
+    }
+
+    // --- several devices at once (docs/mesh.md §9.11) -------------------------------------
+
+    private fun renderSelect(devices: Int) {
+        b.select.visibility = if (devices >= 2) View.VISIBLE else View.GONE
+        b.select.setText(if (selecting) R.string.home_select_done else R.string.home_select)
+        b.selectBar.visibility = if (selecting) View.VISIBLE else View.GONE
+        if (!selecting) return
+        b.selectCount.text = when {
+            allMine -> getString(R.string.home_select_mine)
+            ticked.isEmpty() -> getString(R.string.home_select_none)
+            else -> resources.getQuantityString(R.plurals.home_select_n, ticked.size, ticked.size)
+        }
+        val any = ticked.isNotEmpty()
+        for (v in listOf(b.severalFiles, b.severalMessage, b.severalLink, b.severalClip)) v.alpha = if (any) 1f else PermsUi.DIMMED
+    }
+
+    private fun endSelect() {
+        selecting = false
+        allMine = false
+        ticked.clear()
+        render()
+    }
+
+    /**
+     * The devices ticked; with "All my devices", your own that have [cap] on
+     * here (paused ones included: theirs waits). Null, saying so, if none.
+     */
+    private fun severalTargets(cap: String): List<TrustList.Entry>? {
+        val peers = Mesh.peers().map { it.entry }
+        val out = if (allMine) Perms.ownTargets(peers, cap) else peers.filter { it.fp in ticked }
+        if (out.isEmpty()) {
+            say(getString(R.string.home_select_none))
+            return null
+        }
+        return out
+    }
+
+    private fun severalFiles() {
+        val targets = severalTargets(Perms.FILES) ?: return
+        sendToMany = targets.map { it.fp }
+        try {
+            pickFiles.launch(arrayOf("*/*"))
+        } catch (x: ActivityNotFoundException) {
+            sendToMany = null
+            say(getString(R.string.no_file_picker))
+        }
+    }
+
+    private fun severalClipboard() {
+        val targets = severalTargets(Perms.CLIPBOARD) ?: return
+        val text = getSystemService(ClipboardManager::class.java).primaryClip
+            ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        if (text.isNullOrEmpty()) return say(getString(R.string.clip_empty))
+        if (text.toByteArray().size > 256 * 1024) return say(getString(R.string.clip_too_big))
+        background({
+            val n = Mesh.node ?: error(getString(R.string.mesh_off_now))
+            targets.map { e ->
+                runCatching { n.clip(e.fp, text) }.fold(
+                    { getString(R.string.each_sent, e.label) },
+                    { getString(R.string.each_refused, e.label, it.message ?: it.javaClass.simpleName) })
+            }
+        }) { lines -> results(getString(R.string.home_clip_several), lines) }
+    }
+
+    /** A message to the devices ticked: each its own, and its own result. */
+    private fun askMessage() {
+        val targets = severalTargets(Perms.CHAT) ?: return
+        val input = dialogInput(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE, "")
+        MaterialAlertDialogBuilder(this)
+            .setTitle(resources.getQuantityString(R.plurals.home_message_several, targets.size, targets.size))
+            .setView(input.parent as View)
+            .setPositiveButton(R.string.mesh_chat_send) { _, _ ->
+                val text = input.text.toString().trim()
+                if (text.isEmpty()) return@setPositiveButton
+                background({
+                    val n = Mesh.node ?: error(getString(R.string.mesh_off_now))
+                    n.toEach(targets.map { it.fp }, EACH_WAIT_MS) { fp -> n.sendText(fp, text) }.map { eachLine(it) }
+                }) { lines -> results(getString(R.string.home_message_sent_several), lines) }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun eachLine(r: dev.droplet.app.mesh.MeshNode.Each): String = when (r.outcome) {
+        "sent" -> getString(R.string.each_sent, r.name)
+        "waiting" -> getString(R.string.each_waiting, r.name, r.text)
+        "sending" -> getString(R.string.each_sending, r.name)
+        else -> getString(R.string.each_refused, r.name, r.text)
+    }
+
+    /**
+     * "Send a link…": to one device or several. Filled in from the
+     * clipboard when it holds a web link (this screen has focus, so Android
+     * lets it read the clipboard). It opens on your own devices; to someone
+     * else's it waits with an Open button.
+     */
+    private fun askLink(targets: List<TrustList.Entry>) {
+        val clip = runCatching {
+            getSystemService(ClipboardManager::class.java).primaryClip?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)?.coerceToText(this)?.toString()
+        }.getOrNull()
+        val input = dialogInput(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI,
+            dev.droplet.app.mesh.Links.onlyUrl(clip).orEmpty())
+        input.hint = getString(R.string.link_hint)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(if (targets.size == 1) getString(R.string.link_title, targets[0].label)
+                else resources.getQuantityString(R.plurals.link_title_several, targets.size, targets.size))
+            .setMessage(R.string.link_body)
+            .setView(input.parent as View)
+            .setPositiveButton(R.string.link_send) { _, _ ->
+                val url = input.text.toString().trim()
+                val bad = runCatching { dev.droplet.app.mesh.Links.checkUrl(url) }.exceptionOrNull()
+                if (bad != null) return@setPositiveButton say(getString(R.string.mesh_failed, bad.message))
+                background({
+                    targets.map { e ->
+                        runCatching { Mesh.sendLink(e.fp, url) }.fold({ r ->
+                            when {
+                                r.how == "link" -> getString(R.string.each_sent, e.label)
+                                else -> {
+                                    val j = Mesh.node?.awaitJob(r.job!!.getString("id"), EACH_WAIT_MS)
+                                    when (j?.optString("state")) {
+                                        dev.droplet.app.mesh.Outbox.DONE -> getString(R.string.each_sent_message, e.label)
+                                        dev.droplet.app.mesh.Outbox.FAILED -> getString(R.string.each_refused, e.label, j.optString("error"))
+                                        else -> getString(R.string.each_waiting, e.label,
+                                            j?.optString("error")?.takeIf { it.isNotEmpty() && it != "null" } ?: getString(R.string.transfer_queued))
+                                    }
+                                }
+                            }
+                        }, { getString(R.string.each_refused, e.label, it.message ?: it.javaClass.simpleName) })
+                    }
+                }) { lines -> if (lines.size == 1) say(lines[0]) else results(getString(R.string.link_sent_several), lines) }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** Each device's result, one line each. */
+    private fun results(title: String, lines: List<String>) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(title)
+            .setMessage(lines.joinToString("\n"))
+            .setPositiveButton(R.string.ok) { _, _ -> endSelect() }
+            .show()
+    }
+
+    /** What the owner calls this device here: shown instead of its name, never sent. */
+    private fun askNickname(e: TrustList.Entry) {
+        val input = dialogInput(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS, e.nickname)
+        input.hint = e.name
+        input.filters = arrayOf(InputFilter.LengthFilter(TrustList.MAX_NAME))
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.nick_title, e.name))
+            .setMessage(R.string.nick_body)
+            .setView(input.parent as View)
+            .setPositiveButton(R.string.s_rename_go) { _, _ ->
+                runCatching { Mesh.setNickname(e.fp, input.text.toString()) }
+                    .onFailure { say(getString(R.string.mesh_failed, it.message)) }
+                render()
+            }
+            .setNeutralButton(R.string.nick_clear) { _, _ ->
+                runCatching { Mesh.setNickname(e.fp, "") }
+                render()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** A text box for a dialog, padded as Settings' rename is. Its parent is the view to give the dialog. */
+    private fun dialogInput(type: Int, value: String): EditText {
+        val input = EditText(this).apply {
+            inputType = type
+            setText(value)
+            setSelection(text.length)
+        }
+        FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        return input
     }
 
     private fun routeText(route: String): String = getString(when (route) {
@@ -379,7 +697,7 @@ class MainActivity : AppCompatActivity() {
             val fp = m.optString("fp")
             val v = b.messages.inflate(R.layout.item_home_row)
             v.findViewById<ImageView>(R.id.icon).setImageResource(R.drawable.ic_message)
-            v.findViewById<TextView>(R.id.title).text = n?.trust?.get(fp)?.name ?: m.optString("name")
+            v.findViewById<TextView>(R.id.title).text = n?.trust?.get(fp)?.label ?: m.optString("name")
             v.findViewById<TextView>(R.id.sub).text = getString(R.string.home_message_sub,
                 m.optString("body").replace('\n', ' '), ago((m.optDouble("ts") * 1000).toLong()))
             v.findViewById<View>(R.id.action).visibility = View.GONE
@@ -414,6 +732,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun more(e: TrustList.Entry) {
         val items = mutableListOf<Pair<String, () -> Unit>>(
+            getString(R.string.link_act) to { askLink(listOf(e)) },
+            getString(R.string.nick_act) to { askNickname(e) },
             getString(R.string.perm_act) to { startActivity(PermissionsActivity.intent(this, e.fp)) },
             getString(if (e.paused) R.string.perm_act_resume else R.string.perm_act_pause) to { togglePause(e) },
             getString(R.string.mesh_act_ring_stop) to { background({ Mesh.node?.ring(e.fp, stop = true) }) { } },
@@ -421,7 +741,7 @@ class MainActivity : AppCompatActivity() {
         if (e.source == TrustList.SOURCE_PAIRED) items += getString(R.string.mesh_act_unpair) to { askUnpair(e) }
         items += getString(R.string.home_about_device) to { about(e) }
         MaterialAlertDialogBuilder(this)
-            .setTitle(e.name)
+            .setTitle(e.label)
             .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
             .show()
     }
@@ -445,7 +765,7 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.home_about_roster).takeIf { e.source != TrustList.SOURCE_PAIRED },
         )
         MaterialAlertDialogBuilder(this)
-            .setTitle(e.name)
+            .setTitle(e.label)
             .setMessage(lines.joinToString("\n\n"))
             .setPositiveButton(R.string.ok, null)
             .show()
@@ -532,6 +852,9 @@ class MainActivity : AppCompatActivity() {
         /** A path in the hub's web app ("/#chat-<id>", "/"), from a notification. */
         const val EXTRA_PATH = "path"
         private const val STATE_SEND_TO = "send_to"
+        private const val STATE_SEND_MANY = "send_many"
+        /** How long a message or link to several devices waits for their answers before saying how each went. */
+        private const val EACH_WAIT_MS = 10_000L
         const val RELEASES = "https://github.com/Ferinmtk/droplet/releases/latest"
         private const val MESH_TAG = "home"
         private const val ROUTER_TAG = "home"

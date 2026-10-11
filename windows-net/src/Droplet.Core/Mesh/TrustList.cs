@@ -66,8 +66,17 @@ public sealed record TrustEntry
     /// <summary>Paused: nothing is shared with it, either way, until it's resumed.</summary>
     [JsonPropertyName("paused")] public bool Paused { get; init; }
 
+    /// <summary>
+    /// What the owner calls it here ("Brian's laptop"; "" for none), shown instead of its own
+    /// name (docs/mesh.md §9.11). Only on this device: never sent to anyone.
+    /// </summary>
+    [JsonPropertyName("nickname")] public string Nickname { get; init; } = "";
+
     /// <summary>Someone else's device.</summary>
     [JsonIgnore] public bool IsOther => Relation == Perms.Other;
+
+    /// <summary>What to call it here: its nickname, else its own name.</summary>
+    [JsonIgnore] public string Label => Nickname.Length > 0 ? Nickname : Name;
 
     /// <summary>
     /// A checked entry. Throws <see cref="FormatException"/> when the id, certificate or
@@ -187,7 +196,7 @@ public sealed class TrustList
                 // re-checked, so a damaged entry is dropped, never trusted
                 var entry = TrustEntry.Make(stored.Id, stored.Name, stored.CertPem, stored.Source, stored.Lan, stored.Port,
                     stored.TailnetIp, stored.Os, stored.Caps, fp, stored.Hub, relation, allow, paused) with
-                { Added = stored.Added > 0 ? stored.Added : DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+                { Added = stored.Added > 0 ? stored.Added : DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Nickname = Names.CleanNickname(stored.Nickname) };
                 if (entry.Fp != ownFp)
                 {
                     loaded[entry.Fp] = entry;
@@ -240,7 +249,8 @@ public sealed class TrustList
         {
             all = [.. peers.Values];
         }
-        var exact = all.Where(e => e.Id == ql || e.Fp == ql || string.Equals(e.Name, q, StringComparison.OrdinalIgnoreCase)).ToList();
+        var exact = all.Where(e => e.Id == ql || e.Fp == ql || string.Equals(e.Name, q, StringComparison.OrdinalIgnoreCase) ||
+                                   (e.Nickname.Length > 0 && string.Equals(e.Nickname, q, StringComparison.OrdinalIgnoreCase))).ToList();
         if (exact.Count > 0)
         {
             return exact;
@@ -282,6 +292,7 @@ public sealed class TrustList
                 {
                     Lan = Addresses.Clean(entry.Lan.Concat(old.Lan)),
                     TailnetIp = entry.TailnetIp ?? old.TailnetIp,
+                    Nickname = entry.Nickname.Length > 0 ? entry.Nickname : old.Nickname,
                 };
             }
             peers[entry.Fp] = entry;
@@ -366,6 +377,7 @@ public sealed class TrustList
                     peers[fp] = e with
                     {
                         Added = old.Added, Lan = Addresses.Clean(e.Lan.Concat(old.Lan)), Relation = old.Relation, Allow = old.Allow, Paused = old.Paused,
+                        Nickname = old.Nickname,
                     };
                 }
             }
@@ -417,6 +429,56 @@ public sealed class TrustList
                 }
             }
             e = e with { Relation = rel, Allow = now, Paused = paused ?? e.Paused };
+            peers[fp] = e;
+            Save();
+            return e;
+        }
+    }
+
+    /// <summary>
+    /// What the owner calls a peer here, shown instead of its own name. Only on this device:
+    /// it's never sent. Empty clears it. Throws <see cref="ArgumentException"/> for an unknown
+    /// peer or a nickname that isn't one (docs/mesh.md §9.11).
+    /// </summary>
+    public TrustEntry SetNickname(string fp, string? nickname)
+    {
+        var nick = Names.Check(nickname ?? "", "a nickname", emptyOk: true);
+        lock (gate)
+        {
+            if (fp is null || !peers.TryGetValue(fp, out var e))
+            {
+                throw new ArgumentException("that peer isn't trusted", nameof(fp));
+            }
+            e = e with { Nickname = nick };
+            peers[fp] = e;
+            Save();
+            return e;
+        }
+    }
+
+    /// <summary>
+    /// A peer says it has a new name (<c>rename</c>). A peer paired directly names itself; the
+    /// hub names the peers its roster brings, so those are left to the next roster. An invalid
+    /// name is ignored. Returns the entry if the name changed, else null.
+    /// </summary>
+    public TrustEntry? Rename(string fp, string? name)
+    {
+        string clean;
+        try
+        {
+            clean = Names.Check(name);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        lock (gate)
+        {
+            if (fp is null || !peers.TryGetValue(fp, out var e) || e.Source != TrustSource.Paired || e.Name == clean)
+            {
+                return null;
+            }
+            e = e with { Name = clean };
             peers[fp] = e;
             Save();
             return e;

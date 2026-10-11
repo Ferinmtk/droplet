@@ -704,7 +704,7 @@
     <string name="s_hub_none">droplet works without one. A hub (droplet\'s hub on a computer that stays on) adds the web app for any browser, and keeps things for devices that are off.</string>
     <string name="s_add_hub">Add a hub</string>
     <string name="s_forgot">Forgot the hub. Your directly paired devices are still here.</string>
-    <string name="s_rename">Rename</string>
+    <string name="s_rename">Rename this phone</string>
     <string name="s_rename_title">Name this phone</string>
     <string name="s_rename_go">Save</string>
     <string name="s_named_direct">Your devices see it as %1$s</string>
@@ -765,4 +765,86 @@
     <string name="conn_pause_all">Pause all</string>
     <string name="conn_resume_all">Resume</string>
     <string name="clip_paused">Everything is paused: resume to send the clipboard</string>
+
+    <!-- progress and Cancel, links, rename and nicknames, several devices (docs/mesh.md §9.11) -->
+    <string name="transfer_sending">Sending</string>
+    <string name="transfer_receiving">Receiving</string>
+    <string name="transfer_waiting">Waiting: %1$s</string>
+    <string name="transfer_queued">Waiting to go</string>
+    <string name="transfer_cancelled">Cancelled %1$s</string>
+    <string name="up_cancelled_by">Cancelled: %1$s</string>
+    <plurals name="up_several">
+        <item quantity="one">Sending to %1$d device</item>
+        <item quantity="other">Sending to %1$d devices</item>
+    </plurals>
+    <string name="up_several_going">%1$d of %2$d done</string>
+    <string name="up_several_done">Sent to %1$d of %2$d devices</string>
+    <string name="up_each_sent">%1$s: sent</string>
+    <string name="up_each_waiting">%1$s: %2$s</string>
+    <string name="up_each_refused">%1$s: %2$s</string>
+
+    <string name="link_act">Send a link…</string>
+    <string name="link_title">Send a link to %1$s</string>
+    <plurals name="link_title_several">
+        <item quantity="one">Send a link to %1$d device</item>
+        <item quantity="other">Send a link to %1$d devices</item>
+    </plurals>
+    <string name="link_body">It opens by itself on your own devices. On someone else\'s, it waits in Messages with an Open button.</string>
+    <string name="link_hint">https://…</string>
+    <string name="link_send">Send</string>
+    <string name="link_sent_several">The link</string>
+    <string name="link_open">Open</string>
+    <string name="link_was_opened">opened</string>
+    <string name="link_opened">%1$s opened a link</string>
+    <string name="link_sent">%1$s sent a link</string>
+    <string name="link_tap_to_open">Tap to open %1$s</string>
+    <string name="link_open_from_messages">%1$s\nOpen it from Messages in droplet.</string>
+    <string name="share_link_summary">Link: %1$s</string>
+
+    <string name="rename_body">Your devices see this phone by this name, and the ones connected now are told at once.</string>
+    <string name="rename_body_hub">Your hub names its devices: it takes the new name first, and tells your other devices.</string>
+    <string name="rename_hub_refused">Your hub names this phone, and it didn\'t take the new name: %1$s</string>
+    <plurals name="rename_done">
+        <item quantity="one">This phone is %1$s now; %2$d device was told</item>
+        <item quantity="other">This phone is %1$s now; %2$d devices were told</item>
+    </plurals>
+
+    <string name="nick_act">Nickname…</string>
+    <string name="nick_title">What do you call %1$s?</string>
+    <string name="nick_body">Only on this phone: shown instead of its name here, and never sent to anyone.</string>
+    <string name="nick_clear">No nickname</string>
+
+    <string name="home_select">Select</string>
+    <string name="home_select_done">Done</string>
+    <string name="home_select_all_mine">All my devices</string>
+    <string name="home_select_mine">All my devices</string>
+    <string name="home_select_none">Tick the devices to send to</string>
+    <plurals name="home_select_n">
+        <item quantity="one">%1$d device ticked</item>
+        <item quantity="other">%1$d devices ticked</item>
+    </plurals>
+    <string name="home_act_link">Link</string>
+    <plurals name="home_sending_several">
+        <item quantity="one">Sending to %2$d device</item>
+        <item quantity="other">Sending to %2$d devices</item>
+    </plurals>
+    <plurals name="home_message_several">
+        <item quantity="one">A message to %1$d device</item>
+        <item quantity="other">A message to %1$d devices</item>
+    </plurals>
+    <string name="home_message_sent_several">The message</string>
+    <string name="home_clip_several">The clipboard</string>
+    <string name="each_sent">%1$s: sent</string>
+    <string name="each_sent_message">%1$s: sent as a message</string>
+    <string name="each_sending">%1$s: on its way</string>
+    <string name="each_waiting">%1$s: %2$s</string>
+    <string name="each_refused">%1$s: %2$s</string>
+
+    <string name="share_several">Several</string>
+    <string name="share_one">One</string>
+    <string name="share_send_several_none">Tick the devices to send to</string>
+    <plurals name="share_send_several">
+        <item quantity="one">Send to %1$d device</item>
+        <item quantity="other">Send to %1$d devices</item>
+    </plurals>
 </resources>

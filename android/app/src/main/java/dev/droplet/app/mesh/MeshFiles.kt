@@ -72,6 +72,12 @@ object MeshFiles {
         val check: (() -> String?)? = null,
     ) {
         @Volatile var sent = 0L
+        /** How far into the file it has been served (a resumed fetch starts further on). */
+        @Volatile var position = 0L
+        /** (position) as it's served. */
+        @Volatile var onProgress: ((Long) -> Unit)? = null
+        /** Stopped here: what's being served stops, and it's 404 from now on. */
+        @Volatile var cancelled = false
         @Volatile var lastActivity = System.currentTimeMillis()
         @Volatile var result: Pair<Boolean, String>? = null
         private val done = java.util.concurrent.CountDownLatch(1)
@@ -84,6 +90,11 @@ object MeshFiles {
         }
 
         fun await(ms: Long): Boolean = done.await(ms, java.util.concurrent.TimeUnit.MILLISECONDS)
+
+        fun cancel(error: String = "cancelled") {
+            cancelled = true
+            finish(false, error)
+        }
     }
 
     class Offers {
@@ -103,7 +114,7 @@ object MeshFiles {
         /** Answers GET/HEAD /mesh/files/<id> for peer [fp]. */
         fun serve(out: OutputStream, id: String, fp: String, range: String?, method: String, sendHead: (Int, Map<String, String>) -> Unit) {
             val o = if (OFFER_ID.matches(id)) get(id) else null
-            if (o == null || o.fp != fp) {
+            if (o == null || o.fp != fp || o.cancelled) {
                 // the same answer whether it doesn't exist or isn't for you
                 sendHead(404, mapOf("Content-Length" to "0"))
                 return
@@ -132,12 +143,15 @@ object MeshFiles {
                 var done = 0L
                 val started = System.currentTimeMillis()
                 while (done < length) {
+                    if (o.cancelled) throw IOException("the transfer was cancelled")
                     val n = input.read(buf, 0, minOf(buf.size.toLong(), length - done).toInt())
                     if (n < 0) throw IOException("the file got shorter while it was being sent")
                     out.write(buf, 0, n)
                     done += n
                     o.sent += n
+                    o.position = maxOf(o.position, first + done)
                     o.lastActivity = System.currentTimeMillis()
+                    o.onProgress?.invoke(o.position)
                     val rate = maxRate
                     if (rate > 0) {
                         val ahead = done * 1000 / rate - (System.currentTimeMillis() - started)
@@ -172,7 +186,17 @@ object MeshFiles {
         }
     }
 
-    class DownloadError(message: String, val permanent: Boolean = false) : Exception(message)
+    open class DownloadError(message: String, val permanent: Boolean = false) : Exception(message)
+
+    /** The download was cancelled, here or by the sender: the partial file is gone. */
+    class Cancelled(message: String = "cancelled") : DownloadError(message, true)
+
+    /** Deletes a partial download (the `.part` and its `.json`). */
+    fun dropPartial(dir: File, fp: String, id: String) {
+        val (part, meta) = partFiles(dir, fp, id)
+        part.delete()
+        meta.delete()
+    }
 
     class Checked(val id: String, val name: String, val size: Long, val mime: String)
 
@@ -194,11 +218,27 @@ object MeshFiles {
     /**
      * Fetches an offer into a partial file in [dir], resuming what's there.
      * Returns the complete part file; the caller gives it its final home.
+     *
+     * [cancelled] is asked between chunks: when it says yes, the partial file
+     * is deleted and [Cancelled] is thrown.
      */
     fun download(identity: MeshIdentity, fp: String, hosts: List<Pair<String, Int>>, c: Checked, dir: File,
                  tries: Int = 5, freeSpace: (File) -> Long = { it.usableSpace },
                  sleep: (Long) -> Unit = { Thread.sleep(it) }, onProgress: ((Long, Long) -> Unit)? = null,
-                 log: (String) -> Unit = {}, stopped: () -> Boolean = { false }): File {
+                 log: (String) -> Unit = {}, stopped: () -> Boolean = { false },
+                 cancelled: () -> Boolean = { false }): File {
+        try {
+            return downloadInto(identity, fp, hosts, c, dir, tries, freeSpace, sleep, onProgress, log, stopped, cancelled)
+        } catch (e: Cancelled) {
+            dropPartial(dir, fp, c.id)
+            throw e
+        }
+    }
+
+    private fun downloadInto(identity: MeshIdentity, fp: String, hosts: List<Pair<String, Int>>, c: Checked, dir: File,
+                             tries: Int, freeSpace: (File) -> Long, sleep: (Long) -> Unit,
+                             onProgress: ((Long, Long) -> Unit)?, log: (String) -> Unit, stopped: () -> Boolean,
+                             cancelled: () -> Boolean): File {
         dir.mkdirs()
         val (part, meta) = partFiles(dir, fp, c.id)
         val prev = runCatching { JSONObject(meta.readText()) }.getOrNull()
@@ -213,10 +253,11 @@ object MeshFiles {
         for (attempt in 0 until tries) {
             if (stopped()) throw DownloadError("stopped")
             for ((host, port) in hosts) {
+                if (cancelled()) throw Cancelled()
                 val have = if (part.exists()) part.length() else 0L
                 if (have == c.size) break
                 try {
-                    fetch(identity, fp, host, port, c.id, part, have, c.size, onProgress, log, stopped)
+                    fetch(identity, fp, host, port, c.id, part, have, c.size, onProgress, log, stopped, cancelled)
                     break
                 } catch (e: DownloadError) {
                     if (e.permanent || stopped()) throw e
@@ -230,6 +271,7 @@ object MeshFiles {
             log("download of ${c.name} stopped at ${if (part.exists()) part.length() else 0} of ${c.size} bytes ($lastError); resuming in ${delay / 1000} s")
             sleep(delay)
             delay = minOf(delay * 2, 16_000)
+            if (cancelled()) throw Cancelled()
         }
         if (!part.exists()) part.createNewFile()
         if (part.length() != c.size) throw DownloadError("got ${part.length()} bytes, expected ${c.size}")
@@ -238,7 +280,8 @@ object MeshFiles {
     }
 
     private fun fetch(identity: MeshIdentity, fp: String, host: String, port: Int, id: String, part: File, have0: Long,
-                      size: Long, onProgress: ((Long, Long) -> Unit)?, log: (String) -> Unit, stopped: () -> Boolean) {
+                      size: Long, onProgress: ((Long, Long) -> Unit)?, log: (String) -> Unit, stopped: () -> Boolean,
+                      cancelled: () -> Boolean = { false }) {
         var have = have0
         val client = MeshTls.client(identity, fp)
         val req = Request.Builder().url("https://${hostPort(host, port)}/mesh/files/$id")
@@ -263,9 +306,11 @@ object MeshFiles {
                 f.setLength(have)
                 f.seek(have)
                 var got = have
+                onProgress?.invoke(got, size)
                 val buf = ByteArray(CHUNK)
                 body.byteStream().use { input ->
                     while (true) {
+                        if (cancelled()) throw Cancelled()
                         val n = input.read(buf)
                         if (n < 0) break
                         if (got + n > size) throw DownloadError("the sender sent more than it offered", true)

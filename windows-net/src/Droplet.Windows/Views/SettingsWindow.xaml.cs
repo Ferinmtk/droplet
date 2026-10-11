@@ -199,8 +199,19 @@ public partial class SettingsWindow : Window
         try
         {
             var name = HubSetup.CleanDeviceName(NameBox.Text);
+            try
+            {
+                // no control or invisible characters (docs/mesh.md §9.11)
+                name = Core.Mesh.Names.Check(name, "the name");
+            }
+            catch (ArgumentException ex)
+            {
+                throw new FieldException("name", AskWindow.Sentence(ex.Message));
+            }
+            var before = Host.Config.DeviceName;
             if (Host.Config.Registered || Host.Config.Pending)
             {
+                // the hub names its devices: renamed there first, under its rules (a 409 for a name it has)
                 await Host.Engine!.Setup.SetupAsync(null, name);
             }
             else
@@ -208,6 +219,11 @@ public partial class SettingsWindow : Window
                 Store.Update(c => c.DeviceName = name);
             }
             NameBox.Text = Host.Config.DeviceName;
+            if (Host.Config.DeviceName != before)
+            {
+                // the devices linked now hear it at once; the rest in the next hello
+                await Host.AnnounceNameAsync();
+            }
         }
         catch (FieldException ex)
         {

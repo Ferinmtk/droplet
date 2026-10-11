@@ -43,6 +43,23 @@ class AgentHost(Host):
     def device_name(self) -> str:
         return (self.cfg.get("device") or {}).get("name") or self.agent.host
 
+    def set_device_name(self, name: str) -> None:
+        """Rename this computer. With a hub, the hub names its devices: it's renamed there first
+        (its rules: 40 characters, no name twice), and its roster tells the others. Then it's
+        kept in config.json ("device": {"name"}), read fresh so hand edits survive."""
+        if self.linked():
+            try:
+                name = hub.rename(self._route(), self.cfg["token"], name)
+            except hub.HubError as e:
+                raise ValueError(f"your hub names this computer, and it didn't take the new name: {e}") from None
+        self.cfg.setdefault("device", {})["name"] = name
+        try:
+            fresh = config.load()
+            fresh.setdefault("device", {})["name"] = name
+            config.save(fresh)
+        except (OSError, ValueError) as e:
+            log.warning("mesh: couldn't save the new name in the config (it holds until a restart): %s", e)
+
     def hub_device_id(self) -> str | None:
         return (self.cfg.get("device") or {}).get("id") or None if self.linked() else None
 

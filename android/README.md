@@ -427,6 +427,24 @@ you"), and each side enforces its own settings whatever the other does
 ([docs/mesh.md §9.9](../docs/mesh.md)). Devices on your hub are your own
 until you say otherwise.
 
+**Progress, Cancel, links, names, several at once**
+([docs/mesh.md §9.11](../docs/mesh.md)). A file on its way shows on its
+device's card with how far it's got, the time left and the speed, and a
+**Cancel** (so does a file arriving, in its notification); cancelling from
+either end stops it on both and deletes what had arrived. ⋮ → **Send a
+link…** sends a web page (filled in from the clipboard when it holds a
+link), and sharing a page from the browser to droplet does the same: on
+your own devices it opens by itself, on someone else's it waits in
+Messages with an **Open** button. A link from your own device opens here
+too while droplet is on screen; otherwise Android doesn't let an app in
+the background open the browser, so it's a notification you tap to open
+it. Settings → **Rename this phone** tells your devices at once (with a
+hub, the hub renames it first). ⋮ → **Nickname…** names a device just on
+this phone ("Brian's laptop"); it's never sent. **Select** on the home
+screen, or **Several** in the share sheet, sends files, a message, a link
+or the clipboard to several devices (or **All my devices**), each with its
+own result.
+
 **When it listens.** Other devices can reach the phone while **Stay
 connected** runs (and while a droplet screen that sends is open), on port
 1739 (or the next free one up to 1749), announced on the Wi-Fi as

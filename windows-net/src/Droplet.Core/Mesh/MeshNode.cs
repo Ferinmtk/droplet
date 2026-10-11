@@ -60,16 +60,27 @@ public interface IMeshHost
 
     /// <summary>Pauses (or resumes) everything, and keeps it.</summary>
     void SetPausedEverything(bool on);
+
+    /// <summary>
+    /// Gives this device a new name, already checked, and keeps it (docs/mesh.md §9.11). With a
+    /// hub, the hub names it: the app renames it there first. Throws when it can't.
+    /// </summary>
+    void SetDeviceName(string name) => throw new NotSupportedException("this device is renamed in Settings");
 }
 
 /// <summary>A host with no hub: the mesh alone.</summary>
 public class NoHubHost(string deviceName, IReadOnlyList<string>? caps = null) : IMeshHost
 {
+    string? renamed;
+
     /// <inheritdoc/>
     public virtual IReadOnlyList<string> MeshCaps => caps ?? [];
 
     /// <inheritdoc/>
-    public virtual string DeviceName => deviceName;
+    public virtual string DeviceName => Volatile.Read(ref renamed) ?? deviceName;
+
+    /// <inheritdoc/>
+    public virtual void SetDeviceName(string name) => Volatile.Write(ref renamed, name);
 
     /// <inheritdoc/>
     public virtual string? HubDeviceId => null;
@@ -186,6 +197,15 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     internal static readonly TimeSpan PairRetry = TimeSpan.FromSeconds(2);
     static readonly string[] Live = ["input", "media", "cmd"];
 
+    /// <summary>
+    /// What this peer understands besides v1 (docs/mesh.md §9.11), in its hello as <c>features</c>:
+    /// <c>cancel</c> (stop a transfer), <c>link</c> (a web link, opened on your own devices), <c>rename</c>.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Features = ["cancel", "link", "rename"];
+
+    /// <summary>Links opened at most, from one device, in a minute (the rest wait in Messages).</summary>
+    internal const int OpenLinks = 5;
+
     readonly IMeshHost host;
     readonly MeshOptions options;
     readonly RemoteDispatcher? dispatcher;
@@ -203,6 +223,11 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     readonly ConcurrentDictionary<string, Refusal> refusals = new();        // fp → the last thing it refused from this device, and why
     readonly Dictionary<(string Fp, string T), long> refusedAt = [];        // when this device last told a peer no, per type; under gate
     readonly HashSet<(string, string)> downloading = [];
+    readonly ConcurrentDictionary<(string Fp, string Id), CancellationTokenSource> downloadStops = new();
+    readonly ConcurrentDictionary<(string Fp, string Id), string> downloadCancel = new(); // who cancelled it: "here" or "sender"
+    readonly ConcurrentDictionary<(string Fp, string Id), byte> cancelledIn = new();     // cancelled here: a re-offer is refused
+    readonly ConcurrentDictionary<string, string> cancelJobs = new();                    // outbox jobs cancelled while on their way → why
+    readonly Dictionary<string, List<long>> opened = [];                                 // fp → when links from it were opened; under gate
     readonly HashSet<string> workers = [];
     readonly HashSet<(string Gateway, string Fp)> gatewayMisses = []; // a gateway that wasn't that peer; under gate
     readonly Lock workersGate = new();
@@ -253,6 +278,9 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
 
     /// <summary>Chat sent and received directly.</summary>
     public ChatLog Chat { get; }
+
+    /// <summary>Files on their way, either way, with progress (docs/mesh.md §9.11).</summary>
+    public Transfers Transfers { get; } = new();
 
     /// <summary>The mesh port, once started.</summary>
     public int Port { get; private set; }
@@ -386,6 +414,10 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             ["t"] = t, ["id"] = PeerId, ["name"] = Name, ["caps"] = Json.Array(host.MeshCaps), ["os"] = MeshProtocol.Os,
             ["v"] = MeshProtocol.Version, ["port"] = Port,
         };
+        if (SendsFeatures)
+        {
+            hello["features"] = Json.Array(Features);
+        }
         if (fp is not null)
         {
             hello["caps"] = Json.Array(CapsFor(fp));
@@ -455,8 +487,17 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     /// <summary>For tests: false leaves <c>perm</c> out of hello and welcome, as an older peer does.</summary>
     internal bool SendsPerm { get; set; } = true;
 
+    /// <summary>For tests: false leaves <c>features</c> out of hello and welcome, and ignores <c>cancel</c>, as an older peer does.</summary>
+    internal bool SendsFeatures { get; set; } = true;
+
+    /// <summary>What a peer said it understands besides v1, on its open link; none for an older peer, or with no link open.</summary>
+    public IReadOnlyList<string> FeaturesOf(string fp) => OpenLink(fp)?.Hello.Strings("features") ?? [];
+
     /// <summary>For tests: a remote-control message (input, media, cmd, clip, rpc) from a peer, as it's handed to the dispatcher.</summary>
     internal event Action<JsonObject>? Dispatched;
+
+    /// <summary>For tests: every message that arrives over a link, (sender, message), before anything is done with it.</summary>
+    internal event Action<string, JsonObject>? Received;
 
     bool Permits(string fp, JsonObject msg)
     {
@@ -540,7 +581,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         var t = msg.Str("t") ?? "";
         var text = Perms.RefusalText(Name, why, cap);
         var mid = msg.Str("id") is { Length: <= 64 } id ? id : null;
-        if (mid is not null && t is "text" or "offer" or "clip" or "file")
+        if (mid is not null && t is "text" or "offer" or "clip" or "file" or "link")
         {
             log.LogInformation("mesh: refused {T} from {Who}: {Why}", t, entry.Name, why == Perms.WhyPaused ? "paused" : $"{cap} is off");
             await link.SendAsync(why == Perms.WhyDenied
@@ -1120,6 +1161,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             return;
         }
         var t = msg.Str("t");
+        Received?.Invoke(link.Fp, msg);
         if (!link.IsReady)
         {
             if ((t == "hello" && !link.Outbound) || (t == "welcome" && link.Outbound))
@@ -1175,6 +1217,20 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             case "text":
                 await ReceiveTextAsync(link, entry, msg).ConfigureAwait(false);
                 break;
+            case "link":
+                await ReceiveLinkAsync(link, entry, msg).ConfigureAwait(false);
+                break;
+            case "cancel" when SendsFeatures:
+                await GotCancelAsync(link, entry, msg).ConfigureAwait(false);
+                break;
+            case "rename":
+                if (Trust.Rename(link.Fp, msg.Str("name")) is { } renamed)
+                {
+                    log.LogInformation("mesh: {Who} is called {Name} now", entry.Name, renamed.Name);
+                    link.Hello["name"] = renamed.Name;
+                    SharingChanged?.Invoke(link.Fp);
+                }
+                break;
             case "ack" or "nack":
                 if (msg.Str("id") is { } id)
                 {
@@ -1197,12 +1253,12 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 log.LogInformation("mesh: {Who} is ringing this device", entry.Name);
                 services.Notifications?.Show(new Notification
                 {
-                    Title = $"{entry.Name} is looking for this PC", Body = "droplet is ringing it.", Tag = "droplet-ring", Urgent = true,
+                    Title = $"{entry.Label} is looking for this PC", Body = "droplet is ringing it.", Tag = "droplet-ring", Urgent = true,
                     Click = new NotificationAction("Stop", NotificationActionKind.StopRing),
                     Buttons = [new NotificationAction("Stop", NotificationActionKind.StopRing)],
                 });
                 services.Sound?.StartRing();
-                Rung?.Invoke(entry.Name);
+                Rung?.Invoke(entry.Label);
                 break;
             case "ring-stop":
                 services.Sound?.StopRing();
@@ -1212,7 +1268,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             case "notify":
                 // a phone's notification: a toast, replaced by the next with the same key
                 // (the settings' switch and Pause decide whether it shows)
-                services.Notifications?.Show(PhoneNotifications.Toast(msg, entry.Name, link.Fp));
+                services.Notifications?.Show(PhoneNotifications.Toast(msg, entry.Label, link.Fp));
                 break;
             case "notify-removed":
                 if (PhoneNotifications.RemovedTag(msg, link.Fp) is { } removed)
@@ -1285,8 +1341,80 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         if (fresh)
         {
             log.LogInformation("mesh: message from {Who}", entry.Name);
-            services.Notifications?.Show(new Notification { Title = entry.Name, Body = body, Tag = $"chat-{link.Fp[..16]}" });
+            // a message that's nothing but a link gets an Open button; it's never opened by itself
+            var url = Links.OnlyUrl(body);
+            services.Notifications?.Show(new Notification
+            {
+                Title = entry.Label, Body = body, Tag = $"chat-{link.Fp[..16]}",
+                Buttons = url is null ? [] : [new NotificationAction("Open link", NotificationActionKind.OpenUrl, url)],
+            });
             TextReceived?.Invoke(chat);
+        }
+    }
+
+    /// <summary>
+    /// A web link (docs/mesh.md §9.11). From your own device it opens in the browser here (at
+    /// most <see cref="OpenLinks"/> a minute); from someone else's it waits in Messages with an
+    /// Open button. Never anything but http(s).
+    /// </summary>
+    async Task ReceiveLinkAsync(MeshLink link, TrustEntry entry, JsonObject msg)
+    {
+        var mid = msg.Str("id");
+        if (mid is null || !TextIdPattern().IsMatch(mid))
+        {
+            return;
+        }
+        string url;
+        try
+        {
+            url = Links.CheckUrl(msg.Str("url"));
+        }
+        catch (ArgumentException e)
+        {
+            await link.SendAsync(new JsonObject { ["t"] = "nack", ["id"] = mid, ["error"] = e.Message }).ConfigureAwait(false);
+            return;
+        }
+        var ts = msg.Num("ts") ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+        var open = !entry.IsOther && MayOpen(link.Fp);
+        var chat = new ChatEntry
+        {
+            Id = $"{link.Fp[..16]}:{mid}", Dir = "in", Fp = link.Fp, Peer = entry.Id, Name = entry.Name, Body = url, Ts = ts, Kind = "link", Opened = open,
+        };
+        var fresh = Chat.Add(chat);
+        await link.SendAsync(new JsonObject { ["t"] = "ack", ["id"] = mid }).ConfigureAwait(false);
+        if (!fresh)
+        {
+            return;
+        }
+        log.LogInformation("mesh: link from {Who}{How}", entry.Name, open ? " (opening it)" : "");
+        var openAction = new NotificationAction("Open link", NotificationActionKind.OpenUrl, url);
+        if (open && services.Browser?.Open(url) == true)
+        {
+            services.Notifications?.Show(new Notification { Title = $"{entry.Label} opened a link", Body = url, Tag = $"chat-{link.Fp[..16]}" });
+        }
+        else
+        {
+            services.Notifications?.Show(new Notification
+            {
+                Title = $"{entry.Label} sent a link", Body = url, Tag = $"chat-{link.Fp[..16]}", Click = openAction, Buttons = [openAction],
+            });
+        }
+        TextReceived?.Invoke(chat);
+    }
+
+    bool MayOpen(string fp)
+    {
+        var now = Environment.TickCount64;
+        lock (gate)
+        {
+            var recent = opened.GetValueOrDefault(fp, []).Where(t => now - t < 60_000).ToList();
+            var ok = recent.Count < OpenLinks;
+            if (ok)
+            {
+                recent.Add(now);
+            }
+            opened[fp] = recent;
+            return ok;
         }
     }
 
@@ -1308,6 +1436,15 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             await link.SendAsync(new JsonObject { ["t"] = "ack", ["id"] = offer.Id }).ConfigureAwait(false);
             return;
         }
+        if (cancelledIn.ContainsKey((link.Fp, offer.Id)))
+        {
+            // cancelled here, and offered again by a sender that didn't understand cancel
+            await link.SendAsync(new JsonObject
+            {
+                ["t"] = "nack", ["id"] = offer.Id, ["error"] = $"{Name} cancelled it", ["why"] = "cancelled",
+            }).ConfigureAwait(false);
+            return;
+        }
         lock (gate)
         {
             if (!downloading.Add((link.Fp, offer.Id)))
@@ -1326,36 +1463,64 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     async Task DownloadAsync(TrustEntry entry, OfferInfo offer, List<(string, int)> hosts)
     {
         JsonObject? reply = null;
+        var key = (entry.Fp, offer.Id);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+        downloadStops[key] = cts;
+        Transfers.Start(offer.Id, "in", entry.Fp, entry.Name, offer.Name, offer.Size);
         try
         {
             log.LogInformation("mesh: receiving {Name} ({Size} bytes) from {Who}", offer.Name, offer.Size, entry.Name);
             var path = await FileReceiver.DownloadAsync(Identity, entry.Fp, hosts, offer, options.Downloads,
-                m => log.LogInformation("mesh: {Message}", m), ct: stop.Token).ConfigureAwait(false);
+                m => log.LogInformation("mesh: {Message}", m), (got, _) => Transfers.Progress(offer.Id, got), ct: cts.Token).ConfigureAwait(false);
             Completed.Add(entry.Fp, offer.Id, path);
+            Transfers.Finish(offer.Id, TransferState.Done);
             log.LogInformation("mesh: saved {Path} from {Who}", path, entry.Name);
             services.Notifications?.Show(new Notification
             {
-                Title = $"{entry.Name} sent a file", Body = Path.GetFileName(path), Tag = $"file-{offer.Id}",
+                Title = $"{entry.Label} sent a file", Body = Path.GetFileName(path), Tag = $"file-{offer.Id}",
                 Click = new NotificationAction("Open", NotificationActionKind.OpenFile, path),
                 Buttons = [new NotificationAction("Show in folder", NotificationActionKind.ShowInFolder, path)],
             });
             FileReceived?.Invoke(entry, path);
             reply = new JsonObject { ["t"] = "ack", ["id"] = offer.Id };
         }
-        catch (DownloadException e)
+        catch (Exception e) when (e is OperationCanceledException or DownloadException)
         {
-            log.LogWarning("mesh: receiving {Name} from {Who} failed: {Error}", offer.Name, entry.Name, e.Message);
-            reply = e.Permanent ? new JsonObject { ["t"] = "nack", ["id"] = offer.Id, ["error"] = e.Message } : null;
-        }
-        catch (OperationCanceledException)
-        {
+            if (await CancelledAsync(key, e).ConfigureAwait(false))
+            {
+                // cancelled, here or by the sender: what came is deleted
+                FileReceiver.DropPartial(options.Downloads, entry.Fp, offer.Id);
+                var here = downloadCancel.GetValueOrDefault(key) == "here";
+                Transfers.Finish(offer.Id, TransferState.Cancelled, here ? "cancelled here" : $"{entry.Label} cancelled it");
+                log.LogInformation("mesh: receiving {Name} from {Who} cancelled {How}", offer.Name, entry.Name, here ? "here" : "by the sender");
+                // the sender cancelled: it knows. Cancelled here: tell it (an older sender ignores
+                // that, and is refused when it offers it again)
+                if (here)
+                {
+                    cancelledIn[key] = 0;
+                    reply = new JsonObject { ["t"] = "cancel", ["id"] = offer.Id };
+                }
+            }
+            else if (e is DownloadException de)
+            {
+                log.LogWarning("mesh: receiving {Name} from {Who} failed: {Error}", offer.Name, entry.Name, de.Message);
+                Transfers.Finish(offer.Id, de.Permanent ? TransferState.Failed : TransferState.Waiting, de.Message);
+                reply = de.Permanent ? new JsonObject { ["t"] = "nack", ["id"] = offer.Id, ["error"] = de.Message } : null;
+            }
+            else
+            {
+                Transfers.Finish(offer.Id, TransferState.Waiting, "stopped");
+            }
         }
         catch (Exception e)
         {
             log.LogWarning(e, "mesh: receiving {Name} failed", offer.Name);
+            Transfers.Finish(offer.Id, TransferState.Failed, e.Message);
         }
         finally
         {
+            downloadStops.TryRemove(key, out _);
+            downloadCancel.TryRemove(key, out _);
             lock (gate)
             {
                 downloading.Remove((entry.Fp, offer.Id));
@@ -1369,6 +1534,122 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 log.LogInformation("mesh: couldn't tell {Who} about {Name}; it will offer it again", entry.Name, offer.Name);
             }
         }
+    }
+
+    /// <summary>
+    /// Whether a download that stopped was cancelled. The sender stops serving as it says so, so
+    /// "it doesn't offer it any more" may arrive a moment before its <c>cancel</c>: wait for that briefly.
+    /// </summary>
+    async Task<bool> CancelledAsync((string Fp, string Id) key, Exception e)
+    {
+        if (downloadCancel.ContainsKey(key))
+        {
+            return true;
+        }
+        if (e is DownloadException { Permanent: true } && !stop.IsCancellationRequested)
+        {
+            for (var i = 0; i < 20 && !downloadCancel.ContainsKey(key); i++)
+            {
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+        }
+        return downloadCancel.ContainsKey(key);
+    }
+
+    // --- cancelling (docs/mesh.md §9.11) ---------------------------------------------------------
+
+    /// <summary>
+    /// The peer cancelled a transfer: one it was sending here (stop fetching it, and drop what
+    /// came), or one this device was sending it (it doesn't want it). Only the other end of a
+    /// transfer can cancel it.
+    /// </summary>
+    async Task GotCancelAsync(MeshLink link, TrustEntry entry, JsonObject msg)
+    {
+        if (msg.Str("id") is not { Length: <= 64 } id)
+        {
+            return;
+        }
+        var key = (link.Fp, id);
+        if (downloadStops.TryGetValue(key, out var cts))
+        {
+            downloadCancel.TryAdd(key, "sender");
+            await StopAsync(cts).ConfigureAwait(false);
+            return;
+        }
+        if (Outbox.Get(id) is { } job && job.Fp == link.Fp && !JobState.IsFinished(job.State))
+        {
+            await CancelOutAsync(job, $"{entry.Label} cancelled it", tell: false).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Stops a transfer, or a send still waiting in the outbox, by its id (or the start of it, 6
+    /// characters or more). The other device is told. Throws <see cref="ArgumentException"/>
+    /// when nothing (or more than one thing) matches.
+    /// </summary>
+    public async Task<CancelResult> CancelAsync(string id)
+    {
+        var tid = (id ?? "").Trim().ToLowerInvariant();
+        if (tid.Length == 0)
+        {
+            throw new ArgumentException("say which transfer: its id");
+        }
+        bool Match(string i) => i == tid || (tid.Length >= 6 && i.StartsWith(tid, StringComparison.Ordinal));
+        var downloads = downloadStops.Keys.Where(k => Match(k.Id)).ToList();
+        var jobs = Outbox.Queued().Where(j => Match(j.Id)).ToList();
+        if (downloads.Count + jobs.Count > 1)
+        {
+            throw new ArgumentException($"\"{tid}\" matches more than one transfer: give more of its id");
+        }
+        if (downloads.Count == 1 && downloadStops.TryGetValue(downloads[0], out var cts))
+        {
+            var key = downloads[0];
+            downloadCancel[key] = "here";
+            await StopAsync(cts).ConfigureAwait(false);
+            var t = Transfers.Get(key.Id);
+            log.LogInformation("mesh: cancelling {Name} from {Who}", t?.Name ?? key.Id, t?.Peer ?? Fingerprint.Short(key.Fp));
+            return new CancelResult(key.Id, "in", t?.Name, t?.Peer);
+        }
+        if (jobs.Count == 1)
+        {
+            await CancelOutAsync(jobs[0], "cancelled here", tell: true).ConfigureAwait(false);
+            return new CancelResult(jobs[0].Id, "out", jobs[0].Name, jobs[0].Peer);
+        }
+        throw new ArgumentException("no transfer with that id is going on (it may have finished already)");
+    }
+
+    static async Task StopAsync(CancellationTokenSource cts)
+    {
+        try
+        {
+            await cts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // it finished meanwhile
+        }
+    }
+
+    /// <summary>Cancels something this device sends: tells the peer, stops serving it, and marks it cancelled.</summary>
+    async Task CancelOutAsync(OutboxJob job, string why, bool tell)
+    {
+        cancelJobs[job.Id] = why;
+        var offer = offers.GetValueOrDefault(job.Id);
+        // told first: the receiver then knows why the file stops coming
+        if (tell && OpenLink(job.Fp) is { } link && (offer is not null || job.Attempts > 0))
+        {
+            await link.SendAsync(new JsonObject { ["t"] = "cancel", ["id"] = job.Id }).ConfigureAwait(false);
+        }
+        if (offer is not null)
+        {
+            offer.Cancel($"cancelled: {why}"); // the delivery finishes it
+        }
+        else
+        {
+            // not on its way right now: it just leaves the outbox (a delivery about to start it sees it was cancelled)
+            Finish(job, JobState.Cancelled, error: why);
+        }
+        log.LogInformation("mesh: {What} to {Peer} cancelled ({Why})", job.Name ?? "a message", job.Peer, why);
     }
 
     // --- sending: live messages (routes 1–3) -----------------------------------------------------
@@ -1496,11 +1777,135 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     }
 
     /// <summary>
+    /// A web link for the peer to open (docs/mesh.md §9.11): it opens on your own device, and
+    /// waits with an Open button on someone else's. Over an open link to a peer that
+    /// understands <c>link</c>; otherwise (not reachable, an older peer, or paused) it goes as a
+    /// chat message, which waits in the outbox like any other. Throws
+    /// <see cref="ArgumentException"/> for a link that isn't a web link, and
+    /// <see cref="RefusedException"/> when messages are switched off, here or there.
+    /// </summary>
+    public async Task<LinkSent> SendLinkAsync(string fp, string url)
+    {
+        var entry = EntryOf(fp);
+        url = Links.CheckUrl(url);
+        try
+        {
+            MaySend(fp, Perms.Message("link"), entry);
+        }
+        catch (RefusedException e) when (e.Why == Perms.WhyPaused)
+        {
+            // paused, here or there: it waits as a message, and goes on resume
+            return new LinkSent("message", null, SendText(fp, url));
+        }
+        var link = await DirectAsync(fp).ConfigureAwait(false);
+        if (link is null || !FeaturesOf(fp).Contains("link"))
+        {
+            return new LinkSent("message", null, SendText(fp, url));
+        }
+        var mid = Hex.Random(16);
+        var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+        var waiter = new TaskCompletionSource<(bool Ok, string Error)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        acks[mid] = (waiter, link.Fp);
+        (bool Ok, string Error) got;
+        try
+        {
+            if (!await link.SendAsync(new JsonObject { ["t"] = "link", ["id"] = mid, ["url"] = url, ["ts"] = ts }).ConfigureAwait(false))
+            {
+                return new LinkSent("message", null, SendText(fp, url));
+            }
+            try
+            {
+                got = await waiter.Task.WaitAsync(AckTimeout, stop.Token).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                return new LinkSent("message", null, SendText(fp, url));
+            }
+        }
+        finally
+        {
+            acks.TryRemove(mid, out _);
+        }
+        if (!got.Ok)
+        {
+            if (got.Error.StartsWith("paused:", StringComparison.Ordinal))
+            {
+                return new LinkSent("message", null, SendText(fp, url));
+            }
+            var why = got.Error.StartsWith("denied:", StringComparison.Ordinal) ? got.Error["denied:".Length..].Trim() : got.Error;
+            throw new RefusedException(why.Length > 0 ? why : "refused", Perms.WhyDenied, Perms.Chat, local: false);
+        }
+        Chat.Add(new ChatEntry { Id = mid, Dir = "out", Fp = fp, Peer = entry.Id, Name = entry.Name, Body = url, Ts = ts, Route = link.Kind, Kind = "link" });
+        log.LogInformation("mesh: link to {Who} delivered ({Route})", entry.Name, link.Kind);
+        return new LinkSent("link", link.Kind, null);
+    }
+
+    // --- names (docs/mesh.md §9.11) ----------------------------------------------------------------
+
+    /// <summary>
+    /// Gives this device a new name: kept by the host, announced over mDNS, and told to every
+    /// linked peer at once (<c>rename</c>); peers not linked now hear it in the next hello.
+    /// Throws <see cref="ArgumentException"/> for a name that isn't one. Returns how many were told.
+    /// </summary>
+    public async Task<int> RenameAsync(string name)
+    {
+        var clean = Names.Check(name);
+        if (clean == Name)
+        {
+            return 0;
+        }
+        var old = Name;
+        host.SetDeviceName(clean);
+        var told = await AnnounceNameAsync().ConfigureAwait(false);
+        log.LogInformation("mesh: this device is called {Name} now (was {Old}); told {Told} linked device(s)", clean, old, told);
+        return told;
+    }
+
+    /// <summary>
+    /// Tells everyone this device's name now (after the app renamed it, through the hub when it
+    /// has one): mDNS, and <c>rename</c> on every open link. Returns how many links were told.
+    /// </summary>
+    public async Task<int> AnnounceNameAsync()
+    {
+        try
+        {
+            await RefreshAnnouncementAsync().ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            log.LogWarning(e, "mesh: announcing the new name");
+        }
+        List<string> fps;
+        lock (gate)
+        {
+            fps = [.. links.Keys];
+        }
+        var told = 0;
+        foreach (var fp in fps)
+        {
+            if (OpenLink(fp) is { } link && await link.SendAsync(new JsonObject { ["t"] = "rename", ["name"] = Name }).ConfigureAwait(false))
+            {
+                told++;
+            }
+        }
+        return told;
+    }
+
+    /// <summary>What the owner calls a peer here (empty clears it). Only on this device: it's never sent.</summary>
+    public TrustEntry SetNickname(string fp, string? nickname)
+    {
+        var e = Trust.SetNickname(fp, nickname);
+        log.LogInformation("mesh: {Who} {What}", e.Name, e.Nickname.Length > 0 ? "has a nickname here now" : "has no nickname");
+        SharingChanged?.Invoke(fp);
+        return e;
+    }
+
+    /// <summary>
     /// The job once it's delivered, failed, or found no route (or the time is up). A
     /// transfer that stopped part-way and is being retried isn't an answer yet.
     /// </summary>
     public Task<OutboxJob?> WaitJobAsync(string id, TimeSpan timeout, CancellationToken ct = default) =>
-        Outbox.WaitAsync(id, j => j.State is JobState.Done or JobState.Failed || (j.State == JobState.Queued && j.Attempts > 0 && !j.Retry),
+        Outbox.WaitAsync(id, j => JobState.IsFinished(j.State) || (j.State == JobState.Queued && j.Attempts > 0 && !j.Retry),
             timeout, ct);
 
     async Task DeliverLoopAsync()
@@ -1548,6 +1953,15 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 }
                 if (await AttemptAsync(jobs[0]).ConfigureAwait(false) == "wait")
                 {
+                    // the ones behind it wait too, for the same reason: say so, so whoever sent
+                    // them hears "waiting" rather than nothing
+                    if (Outbox.Get(jobs[0].Id) is { Error: { } why })
+                    {
+                        foreach (var j in Outbox.ForPeer(fp).Skip(1).Where(j => j.Attempts == 0))
+                        {
+                            Outbox.Update(j.Id, x => x with { Attempts = 1, Retry = false, Error = why });
+                        }
+                    }
                     break;
                 }
             }
@@ -1567,8 +1981,29 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
 
     void Finish(OutboxJob job, string state, string? route = null, string? error = null)
     {
-        var done = Outbox.Update(job.Id, j => j with { State = state, Route = route, Error = error }) ?? job;
-        if (state is JobState.Done or JobState.Failed && job.Cleanup && job.Path is not null)
+        if (Outbox.Update(job.Id, j => j with { State = state, Route = route, Error = error }) is not { } done)
+        {
+            return; // finished already (cancelled meanwhile, say)
+        }
+        if (job.Kind == "file" && (Transfers.Get(job.Id) is not null || state == JobState.Cancelled))
+        {
+            if (Transfers.Get(job.Id) is null)
+            {
+                Transfers.Start(job.Id, "out", job.Fp, job.Peer, job.Name ?? "", job.Size);
+            }
+            Transfers.Finish(job.Id, state switch
+            {
+                JobState.Done => TransferState.Done,
+                JobState.Failed => TransferState.Failed,
+                JobState.Cancelled => TransferState.Cancelled,
+                _ => TransferState.Waiting,
+            }, error);
+        }
+        if (JobState.IsFinished(state))
+        {
+            cancelJobs.TryRemove(job.Id, out _);
+        }
+        if (JobState.IsFinished(state) && job.Cleanup && job.Path is not null)
         {
             try
             {
@@ -1632,10 +2067,15 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             if (e.Why == Perms.WhyPaused)
             {
                 // paused, here or there: it waits, and goes on resume (its perm, or Resume here)
-                Outbox.Update(job.Id, j => j with { State = JobState.Queued, Attempts = j.Attempts + 1, Retry = false, Error = $"waiting: {e.Message}" });
+                WaitJob(job, $"waiting: {e.Message}", retry: false, attempted: true);
                 return "wait";
             }
             Finish(job, JobState.Failed, error: e.Message);
+            return "done";
+        }
+        if (cancelJobs.TryGetValue(job.Id, out var cancelled) || Outbox.Get(job.Id) is not { State: JobState.Queued or JobState.Sending })
+        {
+            Finish(job, JobState.Cancelled, error: cancelled ?? "cancelled");
             return "done";
         }
         Outbox.Update(job.Id, j => j with { State = JobState.Sending, Attempts = j.Attempts + 1 });
@@ -1647,7 +2087,18 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         }
         if (direct is { } link)
         {
+            if (job.Kind == "file")
+            {
+                Transfers.Start(job.Id, "out", job.Fp, job.Peer, job.Name ?? "", job.Size, link.Kind);
+            }
             var got = job.Kind == "text" ? await DirectTextAsync(link, job).ConfigureAwait(false) : await DirectFileAsync(link, job).ConfigureAwait(false);
+            if (got.StartsWith("cancelled", StringComparison.Ordinal) || cancelJobs.ContainsKey(job.Id))
+            {
+                var who = got.StartsWith("cancelled: ", StringComparison.Ordinal) ? got["cancelled: ".Length..]
+                    : cancelJobs.GetValueOrDefault(job.Id) ?? "cancelled";
+                Finish(job, JobState.Cancelled, error: who);
+                return "done";
+            }
             if (got == "ok")
             {
                 Finish(job, JobState.Done, route: link.Kind);
@@ -1656,7 +2107,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             if (got.StartsWith("paused:", StringComparison.Ordinal))
             {
                 // the peer paused sharing with this device: wait for its perm saying it resumed
-                Outbox.Update(job.Id, j => j with { State = JobState.Queued, Error = $"waiting: {got["paused:".Length..].Trim()}", Retry = false });
+                WaitJob(job, $"waiting: {got["paused:".Length..].Trim()}", retry: false);
                 remotePerm.AddOrUpdate(job.Fp, _ => new RemotePerm(true, new Dictionary<string, bool>()), (_, old) => old with { Paused = true });
                 SharingChanged?.Invoke(job.Fp);
                 return "wait";
@@ -1668,7 +2119,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 return "done";
             }
             // the peer is there but it didn't finish: try again soon, directly
-            Outbox.Update(job.Id, j => j with { State = JobState.Queued, Error = got, Retry = true });
+            WaitJob(job, got, retry: true);
             _ = Task.Delay(TimeSpan.FromSeconds(3), stop.Token).ContinueWith(_ => Kick(), TaskScheduler.Default);
             return "wait";
         }
@@ -1683,6 +2134,8 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 }
                 else
                 {
+                    // through the hub there are no byte counts: it shows as going, then sent
+                    Transfers.Start(job.Id, "out", job.Fp, job.Peer, job.Name ?? "", job.Size, "hub");
                     await host.HubUploadAsync(entry.Id, job.Path!, job.Name!, job.Mime!, stop.Token).ConfigureAwait(false);
                 }
                 Finish(job, JobState.Done, route: host.HubOnline(entry.Id) ? "hub" : "hub-mailbox");
@@ -1698,13 +2151,23 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
         {
             err = "not reachable directly, and no hub knows it right now";
         }
-        Outbox.Update(job.Id, j => j with { State = JobState.Queued, Error = err, Retry = false });
+        WaitJob(job, err, retry: false);
         return "wait";
     }
 
-    /// <summary>"ok"; "paused: …" when the peer paused sharing with this device (it waits); else "refused: …" for good.</summary>
+    /// <summary>The job goes back to the queue; a transfer that had started says it's waiting.</summary>
+    void WaitJob(OutboxJob job, string error, bool retry, bool attempted = false)
+    {
+        Outbox.Update(job.Id, j => j with { State = JobState.Queued, Error = error, Retry = retry, Attempts = j.Attempts + (attempted ? 1 : 0) });
+        if (job.Kind == "file" && Transfers.Get(job.Id) is not null)
+        {
+            Transfers.Finish(job.Id, TransferState.Waiting, error);
+        }
+    }
+
+    /// <summary>"ok"; "paused: …" when the peer paused sharing with this device (it waits); "cancelled…"; else "refused: …" for good.</summary>
     static string Outcome(bool ok, string error) =>
-        ok ? "ok" : error.StartsWith("paused:", StringComparison.Ordinal) ? error : $"refused: {error}";
+        ok ? "ok" : error.StartsWith("paused:", StringComparison.Ordinal) || error.StartsWith("cancelled", StringComparison.Ordinal) ? error : $"refused: {error}";
 
     async Task<string> DirectTextAsync(MeshLink link, OutboxJob job)
     {
@@ -1736,10 +2199,17 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
     {
         var offer = new Offer(job.Id, link.Fp, job.Name!, job.Size, job.Mime!,
             () => new FileStream(job.Path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, true),
-            () => FileChanged(job));
+            () => FileChanged(job))
+        {
+            OnProgress = n => Transfers.Progress(job.Id, n),
+        };
         offers[job.Id] = offer;
         try
         {
+            if (cancelJobs.ContainsKey(job.Id))
+            {
+                return "cancelled";
+            }
             if (!await link.SendAsync(offer.Message()).ConfigureAwait(false))
             {
                 return "the link dropped";
@@ -2069,6 +2539,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             o["on_lan"] = seen.Any(s => s.Fp == e.Fp);
             // what it said about how it treats this device (a hint), and its last no
             o["remote"] = RemotePermOf(e.Fp) is { } rp ? RemoteJson(rp) : null;
+            o["features"] = Json.Array(link is null ? [] : FeaturesOf(e.Fp));
             o["refused"] = LastRefusal(e.Fp) is { } r
                 ? new JsonObject { ["re"] = r.Re, ["cap"] = r.Cap, ["why"] = r.Why, ["text"] = r.Text, ["ts"] = r.At.ToUnixTimeMilliseconds() / 1000.0 }
                 : null;
@@ -2085,6 +2556,7 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
             }).ToArray()),
             ["incoming"] = JsonSerializer.SerializeToNode(Incoming.Waiting()),
             ["outbox"] = JsonSerializer.SerializeToNode(Outbox.Queued()),
+            ["transfers"] = JsonSerializer.SerializeToNode(Transfers.List()),
             ["refused"] = Refused,
         };
     }

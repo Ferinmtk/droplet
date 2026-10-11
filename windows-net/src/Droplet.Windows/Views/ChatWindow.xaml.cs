@@ -62,8 +62,7 @@ public partial class ChatWindow : Window
         {
             var lines = await app.Host.ChatAsync(dest);
             var atEnd = Scroller.VerticalOffset >= Scroller.ScrollableHeight - 4;
-            Messages.ItemsSource = lines.Select(l => new ChatRow(l.Text,
-                l.At.ToLocalTime().ToString("g", CultureInfo.CurrentCulture) + (l.Waiting ? " · waiting to be sent" : ""), l.Mine)).ToList();
+            Messages.ItemsSource = lines.Select(Row).ToList();
             if (atEnd)
             {
                 Scroller.ScrollToEnd();
@@ -76,6 +75,40 @@ public partial class ChatWindow : Window
         finally
         {
             loading = false;
+        }
+    }
+
+    /// <summary>One message as the window shows it: a link has an Open button, and says if it opened here.</summary>
+    internal static ChatRow Row(ChatLine l)
+    {
+        ArgumentNullException.ThrowIfNull(l);
+        var meta = l.At.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
+        if (l.IsLink)
+        {
+            meta += l.Mine ? " · link" : l.Opened ? " · link, opened here" : " · link";
+        }
+        if (l.Waiting)
+        {
+            meta += " · waiting to be sent";
+        }
+        return new ChatRow(l.Text, meta, l.Mine, l.Url);
+    }
+
+    void Open_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is string url)
+        {
+            app.Host.OpenLink(url);
+        }
+    }
+
+    async void Link_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.AskLink(this, $"Send a link to {dest.Name}") is { } url)
+        {
+            await app.Host.SendLinkAsync(dest, url);
+            await LoadAsync();
+            Scroller.ScrollToEnd();
         }
     }
 
