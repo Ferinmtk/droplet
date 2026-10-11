@@ -74,8 +74,31 @@ picture without the flight.
 touchpad and keyboard, slides, find your phone, and the TV. The pictures are hand-drawn inline
 SVG (no images to load), decorative and hidden from screen readers; the words are in the HTML.
 Their small loops (notes floating, the pointer gliding, the phone wiggling, the slide changing)
-are CSS animations that only run when the visitor hasn't asked for reduced motion. Each row's
+are CSS animations that only run when the visitor hasn't asked for reduced motion, and only
+while the picture is on screen (the `on` class, set by an IntersectionObserver). Each row's
 chips say which devices it works with; keep them true to `android/README.md`.
+
+## The motion
+
+Everything that moves is plain CSS plus a little of the inline script, no libraries. The rules:
+
+- **It's all optional.** Every animation sits under `prefers-reduced-motion: no-preference`, and
+  anything that starts hidden also needs the `js` class on `<html>`. With reduced motion, or
+  without JavaScript, the page is complete and still: the switches are on, the code is shown.
+- **Only `transform` and `opacity` move**, so nothing shifts the layout and it stays at 60 fps.
+- **Reveals** (`.rv`): an element fades and rises in when it scrolls into view; things that
+  arrive together are staggered by `--d`. Once done, the `rv` class is removed so the hover
+  effects take over. Some sections do more than fade: the remote pictures slide in from their
+  side, the pairing code types itself onto both screens and gets its tick, the "someone else's"
+  cards land and their switches flip on, the laptop's lid opens.
+- **The hero** rises in word by word (the script wraps the visible headline's words; the
+  screen-reader copy is separate), the devices float in over slowly drifting pastel blobs, and
+  on a desktop the layers lean a little towards the pointer (`data-depth`). A pass now kicks the
+  phone, trails two smaller drops and splashes onto the laptop.
+- **Small touches:** buttons lift and press, the primary one shines; feature cards lift with a
+  soft light following the pointer; the download tabs have a sliding pill; FAQ answers open and
+  close smoothly; the header gets a shadow, a reading-progress line and an underline under the
+  section you're in.
 
 ## Editing it
 

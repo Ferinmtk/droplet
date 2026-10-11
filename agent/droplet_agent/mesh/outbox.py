@@ -19,7 +19,8 @@ import threading
 import time
 from pathlib import Path
 
-QUEUED, SENDING, DONE, FAILED = "queued", "sending", "done", "failed"
+QUEUED, SENDING, DONE, FAILED, CANCELLED = "queued", "sending", "done", "failed", "cancelled"
+FINISHED = (DONE, FAILED, CANCELLED)
 KEEP_FINISHED = 200     # finished jobs remembered (in memory) so the CLI can ask how they went
 
 
@@ -87,7 +88,7 @@ class Outbox:
             if j is None:
                 return
             j.update(fields)
-            if j["state"] in (DONE, FAILED):
+            if j["state"] in FINISHED:
                 self._finished[jid] = self._jobs.pop(jid)
                 while len(self._finished) > KEEP_FINISHED:
                     self._finished.pop(next(iter(self._finished)))

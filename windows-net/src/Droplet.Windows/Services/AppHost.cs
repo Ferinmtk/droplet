@@ -9,6 +9,7 @@ using Droplet.Core.Remote;
 using Droplet.Windows.Platform;
 using Droplet.Windows.Shell;
 using Droplet.Windows.Tray;
+using Droplet.Windows.Views;
 using Microsoft.Extensions.Logging;
 
 namespace Droplet.Windows.Services;
@@ -52,10 +53,45 @@ internal sealed class AppHost : IAsyncDisposable
             Screenshot = new ScreenshotService(),
             Lock = new LockService(),
             Sound = Ring,
+            Browser = new BrowserService(log),
         };
         Ring.RingingChanged += _ => Refresh();
         tick = new DispatcherTimer(TimeSpan.FromSeconds(2), DispatcherPriority.Background, (_, _) => Refresh(), ui);
+        // progress: at most 4 updates a second, and none while nothing moves
+        transferTick = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => TransferTick(), ui);
     }
+
+    readonly DispatcherTimer transferTick;
+    int transfersMoved;
+
+    void OnTransfer()
+    {
+        if (Interlocked.Exchange(ref transfersMoved, 1) == 0)
+        {
+            ui.BeginInvoke(() =>
+            {
+                if (!transferTick.IsEnabled)
+                {
+                    transferTick.Start();
+                }
+            });
+        }
+    }
+
+    void TransferTick()
+    {
+        if (Interlocked.Exchange(ref transfersMoved, 0) == 1)
+        {
+            TransfersChanged?.Invoke();
+        }
+        else
+        {
+            transferTick.Stop();
+        }
+    }
+
+    /// <summary>Raised on the UI thread (at most 4 times a second) while files are on their way.</summary>
+    public event Action? TransfersChanged;
 
     /// <summary>Where droplet keeps its files.</summary>
     public AppPaths Paths { get; }
@@ -177,6 +213,7 @@ internal sealed class AppHost : IAsyncDisposable
                 Refresh();
             };
             m.Trust.CertificatesChanged += Refresh;
+            m.Transfers.Changed += _ => OnTransfer();
         }
     }
 
@@ -254,7 +291,7 @@ internal sealed class AppHost : IAsyncDisposable
             {
                 var link = m.OpenLink(t.Fp);
                 linked += link is null ? 0 : 1;
-                peers.Add(new PeerView(t, link?.Kind, nearby.Contains(t.Fp), m.RemotePermOf(t.Fp), m.LastRefusal(t.Fp)));
+                peers.Add(new PeerView(t, link?.Kind, nearby.Contains(t.Fp), m.RemotePermOf(t.Fp), m.LastRefusal(t.Fp), m.FeaturesOf(t.Fp)));
             }
         }
         if (!Ring.Ringing)
@@ -659,6 +696,260 @@ internal sealed class AppHost : IAsyncDisposable
         }
     }
 
+    // --- progress and Cancel, links, names, several devices (docs/mesh.md §9.11) ---------------------
+
+    /// <summary>
+    /// Files on their way to or from a device (every device with null), the moving ones first,
+    /// then files still waiting in the outbox, then the ones that ended in the last two minutes.
+    /// </summary>
+    public List<TransferRow> TransferRows(string? fp = null)
+    {
+        if (Engine?.Mesh is not { } m)
+        {
+            return [];
+        }
+        var list = m.Transfers.List().Where(t => fp is null || t.Fp == fp).ToList();
+        var known = list.Select(t => t.Id).ToHashSet();
+        var rows = list.Select(t => TransferRow.Of(t, Label(m, t.Fp, t.Peer))).ToList();
+        // queued and not started: it waits for the device (or a resume)
+        var waiting = m.Outbox.Queued().Where(j => j.Kind == "file" && (fp is null || j.Fp == fp) && !known.Contains(j.Id))
+            .Select(j => TransferRow.Queued(j, Label(m, j.Fp, j.Peer)));
+        var active = rows.Where(r => r.Active).ToList();
+        return [.. active, .. waiting, .. rows.Where(r => !r.Active)];
+    }
+
+    static string Label(MeshNode m, string fp, string fallback) => m.Trust.Get(fp)?.Label ?? fallback;
+
+    /// <summary>Cancels a transfer (or a file still waiting): the other device is told.</summary>
+    public async Task CancelTransferAsync(string id)
+    {
+        if (Engine?.Mesh is not { } m)
+        {
+            return;
+        }
+        try
+        {
+            await m.CancelAsync(id);
+        }
+        catch (ArgumentException ex)
+        {
+            Notify("Couldn't cancel it", AskSentence(ex.Message), "cancel");
+        }
+        Refresh();
+        TransfersChanged?.Invoke();
+    }
+
+    static string AskSentence(string s) => Views.AskWindow.Sentence(s);
+
+    /// <summary>Sends a web link: opened there if it's your own device, an Open button if not; as a message to an older device.</summary>
+    public async Task SendLinkAsync(Destination d, string url)
+    {
+        ArgumentNullException.ThrowIfNull(d);
+        var r = await LinkToAsync(d, url);
+        Notify(r.Result switch
+        {
+            SendResult.Sent => $"Sent the link to {d.Name}",
+            SendResult.Waiting => $"The link will go to {d.Name}",
+            _ => $"Couldn't send the link to {d.Name}",
+        }, r.Result == SendResult.Sent ? url : AskSentence(r.Detail ?? ""), "link");
+    }
+
+    /// <summary>One device's result for a link.</summary>
+    async Task<DeviceResult> LinkToAsync(Destination d, string url)
+    {
+        var e = Running;
+        try
+        {
+            url = Links.CheckUrl(url);
+            if (d.Fp is { } fp && e.Mesh is { } m)
+            {
+                var sent = await m.SendLinkAsync(fp, url);
+                if (sent.How == "link")
+                {
+                    ChatChanged?.Invoke(fp);
+                    return new DeviceResult(fp, d.Name, SendResult.Sent, sent.Route);
+                }
+                ChatChanged?.Invoke(fp);
+                return await JobResultAsync(m, d, sent.Job!, TimeSpan.FromMinutes(1));
+            }
+            // a device only the hub knows: a message with the link, which gets an Open button there
+            await e.Bridge.HubTextAsync(d.IsHub ? "hub" : d.HubDeviceId ?? throw new InvalidOperationException($"{d.Name} can't be reached"), url,
+                CancellationToken.None);
+            return new DeviceResult(d.Key, d.Name, SendResult.Sent, "hub");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new DeviceResult(d.Fp ?? d.Key, d.Name, SendResult.Refused, ex.Message);
+        }
+    }
+
+    static async Task<DeviceResult> JobResultAsync(MeshNode m, Destination d, OutboxJob job, TimeSpan wait) =>
+        Several.Of(d.Fp ?? d.Key, d.Name, await m.WaitJobAsync(job.Id, wait) ?? job);
+
+    /// <summary>Opens a web link from a message (its Open button). Only http and https.</summary>
+    public void OpenLink(string url)
+    {
+        if (!Services.Browser!.Open(url))
+        {
+            Notify("Couldn't open the link", url, "link");
+        }
+    }
+
+    /// <summary>
+    /// After this PC was renamed (in Settings: through the hub when it has one): tells the
+    /// devices linked now, and mDNS; the others hear it in the next hello.
+    /// </summary>
+    public async Task AnnounceNameAsync()
+    {
+        if (Engine?.Mesh is { } m)
+        {
+            await m.AnnounceNameAsync();
+        }
+        Refresh();
+    }
+
+    /// <summary>What this PC calls a device (empty clears it). Only here: never sent.</summary>
+    public void SetNickname(Destination d, string nickname)
+    {
+        ArgumentNullException.ThrowIfNull(d);
+        if (d.Fp is { } fp && Running.Mesh is { } m)
+        {
+            m.SetNickname(fp, nickname);
+            Refresh();
+        }
+    }
+
+    /// <summary>
+    /// Sends to several devices at once: each gets its own send and its own result, exactly as
+    /// if it were sent to it alone. One notification sums it up; the results come back for the window.
+    /// </summary>
+    public async Task<List<DeviceResult>> SendToSeveralAsync(IReadOnlyList<Destination> dests, string what, Func<Destination, Task<DeviceResult>> one)
+    {
+        ArgumentNullException.ThrowIfNull(dests);
+        ArgumentNullException.ThrowIfNull(one);
+        var results = (await Task.WhenAll(dests.Select(one))).ToList();
+        Notify($"{what}: {Several.Summary(results)}", string.Join("\n", results.Select(Several.Line)), "several");
+        Refresh();
+        return results;
+    }
+
+    /// <summary>Files to one of several devices.</summary>
+    public async Task<DeviceResult> FilesToAsync(Destination d, IReadOnlyList<string> paths)
+    {
+        var e = Running;
+        var files = paths.Where(File.Exists).Select(Path.GetFullPath).ToList();
+        try
+        {
+            if (files.Count == 0)
+            {
+                throw new InvalidOperationException("only files can be sent, not folders");
+            }
+            if (d.Fp is { } fp && e.Mesh is { } m)
+            {
+                // every file queued at once (they go in order), then each one's result
+                var jobs = new List<OutboxJob>();
+                foreach (var f in files)
+                {
+                    jobs.Add(m.SendFile(fp, f));
+                }
+                DeviceResult? worst = null;
+                foreach (var job in jobs)
+                {
+                    var r = await JobResultAsync(m, d, job, TimeSpan.FromMinutes(30));
+                    worst = worst is null ? r : Worse(worst, r);
+                }
+                return worst!;
+            }
+            foreach (var f in files)
+            {
+                await e.Bridge.HubUploadAsync(d.IsHub ? "hub" : d.HubDeviceId ?? throw new InvalidOperationException($"{d.Name} can't be reached"), f,
+                    Path.GetFileName(f), MimeTypes.Of(f), CancellationToken.None);
+            }
+            return new DeviceResult(d.Key, d.Name, SendResult.Sent, "hub");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new DeviceResult(d.Fp ?? d.Key, d.Name, SendResult.Refused, ex.Message);
+        }
+    }
+
+    static DeviceResult Worse(DeviceResult a, DeviceResult b) =>
+        a.Result == SendResult.Refused || (a.Result == SendResult.Waiting && b.Result == SendResult.Sent) ? a : b;
+
+    /// <summary>A message to one of several devices.</summary>
+    public async Task<DeviceResult> TextToAsync(Destination d, string text)
+    {
+        var e = Running;
+        try
+        {
+            if (d.Fp is { } fp && e.Mesh is { } m)
+            {
+                var job = m.SendText(fp, text);
+                ChatChanged?.Invoke(fp);
+                return await JobResultAsync(m, d, job, TimeSpan.FromMinutes(1));
+            }
+            await e.Bridge.HubTextAsync(d.IsHub ? "hub" : d.HubDeviceId ?? throw new InvalidOperationException($"{d.Name} can't be reached"), text,
+                CancellationToken.None);
+            return new DeviceResult(d.Key, d.Name, SendResult.Sent, "hub");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new DeviceResult(d.Fp ?? d.Key, d.Name, SendResult.Refused, ex.Message);
+        }
+    }
+
+    /// <summary>A link to one of several devices.</summary>
+    public Task<DeviceResult> LinkToOneAsync(Destination d, string url) => LinkToAsync(d, url);
+
+    /// <summary>The clipboard to one of several devices: copied files, an image, or text (onto their clipboard when that works, else as a message).</summary>
+    public async Task<DeviceResult> ClipToAsync(Destination d, Clip clip)
+    {
+        ArgumentNullException.ThrowIfNull(clip);
+        if (clip.Files.Count > 0)
+        {
+            return await FilesToAsync(d, clip.Files);
+        }
+        var e = Running;
+        try
+        {
+            if (clip.Png is { } png)
+            {
+                if (d.Fp is { } fp && e.Mesh is { } m)
+                {
+                    return await JobResultAsync(m, d, m.SendBytes(fp, $"clipboard-{DateTime.Now:yyyyMMdd-HHmmss}.png", png, "image/png"),
+                        TimeSpan.FromMinutes(5));
+                }
+                await SendClipboardAsync(d, clip);
+                return new DeviceResult(d.Key, d.Name, SendResult.Sent, "hub");
+            }
+            if (string.IsNullOrEmpty(clip.Text))
+            {
+                throw new InvalidOperationException("the clipboard has no text, image or files");
+            }
+            if (d.Fp is { } to && e.Mesh is { } mesh)
+            {
+                // text from the clipboard is the clipboard: not to a device it's switched off for
+                mesh.MaySend(to, new System.Text.Json.Nodes.JsonObject { ["t"] = "clip" });
+                if (d.Caps.Contains(Caps.Clipboard))
+                {
+                    try
+                    {
+                        return new DeviceResult(to, d.Name, SendResult.Sent, await mesh.ClipAsync(to, clip.Text));
+                    }
+                    catch (NoRouteException)
+                    {
+                        // not reachable live: a message waits for it instead
+                    }
+                }
+            }
+            return await TextToAsync(d, clip.Text);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new DeviceResult(d.Fp ?? d.Key, d.Name, SendResult.Refused, ex.Message);
+        }
+    }
+
     /// <summary>A chat thread, oldest first: the mesh's log for a peer, or the hub's thread for a hub device.</summary>
     public async Task<List<ChatLine>> ChatAsync(Destination d)
     {
@@ -667,9 +958,11 @@ internal sealed class AppHost : IAsyncDisposable
         if (d.Fp is { } fp && e.Mesh is { } m)
         {
             var lines = m.Chat.Recent(200).Where(c => c.Fp == fp)
-                .Select(c => new ChatLine(c.Dir == "out", c.Body, DateTimeOffset.FromUnixTimeMilliseconds((long)(c.Ts * 1000)), c.Route)).ToList();
+                .Select(c => new ChatLine(c.Dir == "out", c.Body, DateTimeOffset.FromUnixTimeMilliseconds((long)(c.Ts * 1000)), c.Route,
+                    Url: c.Kind == "link" && Links.IsUrl(c.Body) ? c.Body.Trim() : Links.OnlyUrl(c.Body), IsLink: c.Kind == "link", Opened: c.Opened)).ToList();
             lines.AddRange(m.Outbox.ForPeer(fp).Where(j => j.Kind == "text")
-                .Select(j => new ChatLine(true, j.Body ?? "", DateTimeOffset.FromUnixTimeMilliseconds((long)(j.Created * 1000)), null, true)));
+                .Select(j => new ChatLine(true, j.Body ?? "", DateTimeOffset.FromUnixTimeMilliseconds((long)(j.Created * 1000)), null, true,
+                    Links.OnlyUrl(j.Body))));
             return lines.OrderBy(l => l.At).ToList();
         }
         if (d.HubDeviceId is { } id && e.Store.Get() is { Registered: true } cfg)
@@ -677,7 +970,8 @@ internal sealed class AppHost : IAsyncDisposable
             var r = await e.Routes.EnsureAsync();
             using var c = r.Client(cfg.DeviceToken, cfg.Session);
             var thread = await c.ChatAsync(id);
-            return thread.Select(msg => new ChatLine(msg.From == cfg.DeviceId, msg.Text, DateTimeOffset.FromUnixTimeMilliseconds((long)(msg.Ts * 1000)), "hub"))
+            return thread.Select(msg => new ChatLine(msg.From == cfg.DeviceId, msg.Text, DateTimeOffset.FromUnixTimeMilliseconds((long)(msg.Ts * 1000)), "hub",
+                    Url: Links.OnlyUrl(msg.Text)))
                 .OrderBy(l => l.At).ToList();
         }
         return [];
@@ -792,4 +1086,8 @@ internal sealed class AppHost : IAsyncDisposable
 /// <param name="At">When.</param>
 /// <param name="Route">How it went ("lan", "hub"...), when known.</param>
 /// <param name="Waiting">Still in the outbox.</param>
-internal sealed record ChatLine(bool Mine, string Text, DateTimeOffset At, string? Route, bool Waiting = false);
+/// <param name="Url">A web link it is (or is nothing but), for an Open button; never opened by itself.</param>
+/// <param name="IsLink">Sent as a link (docs/mesh.md §9.11), not a message.</param>
+/// <param name="Opened">A link from your own device that opened here when it came.</param>
+internal sealed record ChatLine(bool Mine, string Text, DateTimeOffset At, string? Route, bool Waiting = false, string? Url = null,
+    bool IsLink = false, bool Opened = false);

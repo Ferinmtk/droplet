@@ -36,6 +36,31 @@ class Desktop:
         self._ring_thread: threading.Thread | None = None
         self._proc: subprocess.Popen | None = None
 
+    # --- links ------------------------------------------------------------------
+
+    def open_url(self, url: str) -> bool:
+        """Open a web link in the default browser (checked again here: http and https only)."""
+        from .links import check_url
+        try:
+            url = check_url(url)
+        except ValueError:
+            return False
+        if self.dry_run:
+            log.info("would open (dry run): %s", url[:200])
+            return True
+        opener = shutil.which("open" if sys.platform == "darwin" else "xdg-open")
+        if opener is None:
+            log.warning("can't open links: no %s", "open" if sys.platform == "darwin" else "xdg-open")
+            return False
+        try:
+            # check_url made sure it starts with http(s)://, so it can't be read as an option
+            subprocess.Popen([opener, url],env=self.session_env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+            return True
+        except OSError as e:
+            log.warning("couldn't open the link: %s", e)
+            return False
+
     # --- notifications ---------------------------------------------------------
 
     def notify(self, title: str, body: str, key: str | None = None, app: str = "droplet") -> None:

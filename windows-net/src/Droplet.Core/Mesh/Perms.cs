@@ -99,6 +99,8 @@ public static class Perms
     public static readonly IReadOnlySet<string> Always = new HashSet<string>(StringComparer.Ordinal)
     {
         "hello", "welcome", "ping", "pong", "perm", "unpair", "ack", "nack", "refused", "error", "rpc-result",
+        // cancel only stops a transfer, and rename only says what the sender is called now, as hello does (§9.11)
+        "cancel", "rename",
     };
 
     /// <summary>
@@ -167,7 +169,7 @@ public static class Perms
         ArgumentNullException.ThrowIfNull(msg);
         return msg.Str("t") switch
         {
-            "text" => Chat,
+            "text" or "link" => Chat,
             "offer" or "file" or "file-end" => Files,
             "clip" => Clipboard,
             "notify" or "notify-removed" => Notify,
@@ -178,6 +180,16 @@ public static class Perms
             "state" => msg.Str("kind") == "media" ? Control : null,
             _ => null,
         };
+    }
+
+    /// <summary>
+    /// "All my devices", for sending to several at once (docs/mesh.md §9.11): the peers that are
+    /// your own and have <paramref name="cap"/> on here. A paused one stays in: what it's sent waits for it.
+    /// </summary>
+    public static List<TrustEntry> OwnTargets(IEnumerable<TrustEntry> peers, string cap)
+    {
+        ArgumentNullException.ThrowIfNull(peers);
+        return peers.Where(p => !p.IsOther && Allowed(p, cap)).ToList();
     }
 
     /// <summary>A message of type <paramref name="t"/> (for checks that need only the type).</summary>

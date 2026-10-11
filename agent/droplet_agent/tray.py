@@ -54,6 +54,7 @@ WATCHER = "org.kde.StatusNotifierWatcher"
 WATCHER_PATH = "/StatusNotifierWatcher"
 
 POLL = 3.0        # seconds between status checks while the agent runs
+POLL_BUSY = 1.0   # and while a file is on its way, so its progress moves
 RETRY = 5.0       # and while it doesn't
 ICON_FILE = Path(__file__).with_name("tray_icon.bin")
 
@@ -112,9 +113,40 @@ OS_ICONS = {"android": "smartphone", "ios": "smartphone", "windows": "computer",
             "macos": "computer"}
 
 
-def build_view(status: dict | None, app: bool = True) -> View:
+def _display(p: dict) -> str:
+    """What this computer calls a device: its nickname here, else its own name."""
+    return str(p.get("nickname") or p.get("name") or p.get("id"))
+
+
+def _short_url(url: str, n: int = 40) -> str:
+    u = url.split("://", 1)[-1]
+    return u if len(u) <= n else u[:n - 1] + "…"
+
+
+def transfer_items(status: dict) -> list:
+    """"Transfers (2)": each file on its way, how far it has got, and Cancel."""
+    from .mesh.transfers import progress_text
+    going = [t for t in status.get("transfers") or [] if isinstance(t, dict) and t.get("state") == "active"]
+    if not going:
+        return []
+    names = {p.get("fp"): _display(p) for p in status.get("peers") or []}
+    children = []
+    for t in going:
+        who = names.get(t.get("fp")) or t.get("peer") or "?"
+        arrow = f"{t.get('name')} → {who}" if t.get("dir") == "out" else f"{t.get('name')} ← {who}"
+        children.append(Item(f"tr:{t['id']}", f"{arrow}: {progress_text(t)}",
+                             icon="go-up" if t.get("dir") == "out" else "go-down", children=[
+                                 Item(f"tr:{t['id']}:cancel", "Cancel", icon="process-stop",
+                                      action=("cancel", t["id"], str(t.get("name") or "it"))),
+                             ]))
+    return [Item("transfers", f"Transfers ({len(going)})", icon="folder-download", children=children),
+            Item("sep-transfers", separator=True)]
+
+
+def build_view(status: dict | None, app: bool = True, clip_url: str | None = None) -> View:
     """The menu, tooltip and status for an answer to the agent's `status` (None: it isn't running).
-    `app`: Droplet's window can be opened (PySide6 is installed)."""
+    `app`: Droplet's window can be opened (PySide6 is installed). `clip_url`: the web link on the
+    clipboard, if it holds one (each device then has Send link from clipboard)."""
     downloads = Item("open-downloads", "Open received files", icon="folder-download", action=("open-downloads",))
     top = [Item("open-app", "Open Droplet", icon=LAUNCHER_ID, action=("open-app",))] if app else []
     if status is None:
@@ -128,10 +160,12 @@ def build_view(status: dict | None, app: bool = True) -> View:
 
     paused_all = bool(status.get("paused_all"))
     items = [*top, Item("header", status.get("name") or "this computer", enabled=False, icon="computer"),
+             Item("rename", "Rename this computer…", icon="edit-rename", action=("rename",)),
              Item("pause-all", "Resume everything" if paused_all else "Pause everything",
                   icon="media-playback-start" if paused_all else "media-playback-pause",
                   action=("pause-all", not paused_all)),
              Item("sep-top", separator=True)]
+    items += transfer_items(status)
     incoming = [r for r in status.get("incoming") or [] if r.get("request")]
     for r in incoming:
         rid, name = str(r["request"]), str(r.get("name") or "a device")
@@ -150,8 +184,13 @@ def build_view(status: dict | None, app: bool = True) -> View:
     peers = [p for p in status.get("peers") or [] if p.get("id")]
     if not peers:
         items.append(Item("no-peers", "No paired devices yet", enabled=False))
+    from .mesh.perms import own_targets
+    mine = [p for p in own_targets(peers, "files") if not p.get("paused")]
+    if len(mine) > 1 and not paused_all:
+        items.append(Item("send-all", "Send files to all my devices…", icon="document-send",
+                          action=("send-files-all",)))
     for p in peers:
-        pid, name = str(p["id"]), str(p.get("name") or p["id"])
+        pid, name = str(p["id"]), _display(p)
         paused = bool(p.get("paused"))
         allow = p.get("allow") or {}
         sharing = not paused and not paused_all
@@ -165,6 +204,9 @@ def build_view(status: dict | None, app: bool = True) -> View:
                               Item(f"peer:{pid}:clip", "Send clipboard", icon="edit-paste",
                                    enabled=sharing and allow.get("clipboard", True),
                                    action=("send-clipboard", pid, name)),
+                              *([Item(f"peer:{pid}:link", f"Send link from clipboard ({_short_url(clip_url)})",
+                                      icon="internet-web-browser", enabled=sharing and allow.get("chat", True),
+                                      action=("send-link", pid, name, clip_url))] if clip_url else []),
                               Item(f"peer:{pid}:ring", "Ring", icon="preferences-desktop-notification-bell",
                                    enabled=sharing, action=("ring", pid, name)),
                               Item(f"peer:{pid}:sep", separator=True),
@@ -741,6 +783,72 @@ class Actions:
                 waiting.append(fname)
         self.notify(*summarise(name, done, waiting, failed))
 
+    def send_files_all(self, paths: list | None = None):
+        """Files to all your own devices that take them: picked once, and each device gets its own
+        copy. One notification says how it went for each."""
+        status = self._ask({"cmd": "status"})
+        from .mesh.perms import own_targets
+        mine = [p for p in own_targets(status.get("peers"), "files") if not p.get("paused")]
+        if not mine:
+            self.notify("No devices to send to", "None of your own devices takes files right now.")
+            return
+        paths = self.pick_files("all my devices") if paths is None else paths
+        if not paths:
+            return
+        threads = [threading.Thread(target=self.send_files, args=(p["id"], _display(p), paths), daemon=True)
+                   for p in mine]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    def send_link(self, peer: str, name: str, url: str):
+        try:
+            out = self._ask({"cmd": "link", "peer": peer, "url": url, "wait": 5})
+        except RuntimeError as e:
+            self.notify(f"Couldn't send the link to {name}", str(e))
+            return
+        if out.get("how") == "link":
+            self.notify(f"Sent the link to {name}", "It opens there if it's your own device; on someone "
+                        "else's it waits in Messages with an Open button.")
+        elif out.get("state") == "done":
+            self.notify(f"Sent the link to {name}", "As a message, with an Open button there.")
+        else:
+            self.notify(f"The link waits for {name}", (out.get("why") or "It can't be reached right now.")
+                        .removeprefix("waiting: ").capitalize())
+
+    def cancel(self, tid: str, name: str):
+        try:
+            out = self._ask({"cmd": "cancel", "id": tid})
+        except RuntimeError as e:
+            self.notify(f"Couldn't cancel {name}", str(e))
+        else:
+            self.notify(f"Cancelled {out.get('name') or name}",
+                        f"{out.get('peer')} was told." if out.get("peer") else "")
+        self.refresh()
+
+    def rename(self):
+        """Rename this computer: in Droplet's window (Settings asks for the name), or a desktop
+        dialog (kdialog or zenity), or the command to run."""
+        from . import app
+        if app.available():
+            self.open_app("rename")
+            return
+        if not (shutil.which("kdialog") or shutil.which("zenity")):
+            self.notify("Rename this computer", "In a terminal: droplet-agent rename <new name>")
+            return
+        current = (self._ask({"cmd": "status"}) or {}).get("name") or ""
+        name = ask_text("Rename this computer", "Your devices show this name:", current)
+        if name is None:
+            return     # cancelled
+        try:
+            out = self._ask({"cmd": "rename", "name": name}, timeout=40)
+        except RuntimeError as e:
+            self.notify("Couldn't rename this computer", str(e))
+        else:
+            self.notify(f"This computer is called {out['name']} now", "Your devices see the new name.")
+        self.refresh()
+
     def send_clipboard(self, peer: str, name: str):
         from . import clip
         mode, why = clip.detect()
@@ -829,6 +937,37 @@ class Actions:
                          stderr=subprocess.DEVNULL, start_new_session=True)
 
 
+def ask_text(title: str, text: str, value: str = "") -> str | None:
+    """A line of text from a desktop dialog (kdialog, then zenity). None if there's neither, or
+    it was cancelled."""
+    for tool, args in (("kdialog", ["--title", title, "--inputbox", text, value]),
+                       ("zenity", ["--entry", f"--title={title}", f"--text={text}", f"--entry-text={value}"])):
+        exe = shutil.which(tool)
+        if exe is None:
+            continue
+        try:
+            r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+    return None
+
+
+def clipboard_url() -> str | None:
+    """The web link on the clipboard, if that's what it holds (never anything a password manager
+    marked secret: the reader leaves those out)."""
+    from . import clip
+    from .mesh.links import only_url
+    mode, _why = clip.detect()
+    if mode is None:
+        return None
+    try:
+        text = clip.ClipboardSync(mode, lambda _t: True).reader()
+    except Exception:
+        return None
+    return only_url(text) if text and len(text) < 4096 else None
+
+
 # --- the bus ---------------------------------------------------------------------
 
 class Tray:
@@ -844,6 +983,7 @@ class Tray:
         self._kick = threading.Event()
         self.router = None
         self.name = f"org.kde.StatusNotifierItem-{os.getpid()}-1"
+        self.clip_url: str | None = None      # read when the menu is about to open
 
     def kick(self):
         self._kick.set()
@@ -857,7 +997,9 @@ class Tray:
         return None if st.get("error") else st
 
     def refresh(self):
-        for path, iface, member, sig, body in self.objects.show(build_view(self.status(), self.has_app)):
+        st = self.status()
+        self.busy = bool(st and any(t.get("state") == "active" for t in st.get("transfers") or []))
+        for path, iface, member, sig, body in self.objects.show(build_view(st, self.has_app, self.clip_url)):
             self.emit(path, iface, member, sig, body)
 
     def emit(self, path, iface, member, sig, body):
@@ -872,7 +1014,8 @@ class Tray:
 
     def _poll(self):
         while not self.stop.is_set():
-            self._kick.wait(POLL if self.objects.view.running else RETRY)
+            self._kick.wait((POLL_BUSY if getattr(self, "busy", False) else POLL) if self.objects.view.running
+                            else RETRY)
             self._kick.clear()
             if self.stop.is_set():
                 return
@@ -884,6 +1027,12 @@ class Tray:
     def _bus(self, msg):
         from jeepney.wrappers import unwrap_msg
         return unwrap_msg(self.router.send_and_get_reply(msg, timeout=5))
+
+    def _read_clipboard(self):
+        url = clipboard_url()
+        if url != self.clip_url:
+            self.clip_url = url
+            self.kick()
 
     def register(self):
         """Tell the tray host we're here (it may not be up yet; then it's done when it appears)."""
@@ -911,6 +1060,8 @@ class Tray:
         if not msg.header.flags & MessageFlag.no_reply_expected:
             self.router.send(reply)
         if action == ("refresh",):
+            # the menu is opening: look at the clipboard (for Send link from clipboard), then again
+            threading.Thread(target=self._read_clipboard, name="tray-clip", daemon=True).start()
             self.kick()
         elif action:
             log.info("tray: %s", action[0])

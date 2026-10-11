@@ -246,6 +246,11 @@
             android:name=".StopRingReceiver"
             android:exported="false" />
 
+        <!-- Cancel on a file's progress notification -->
+        <receiver
+            android:name=".TransferCancelReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

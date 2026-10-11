@@ -35,7 +35,8 @@
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="This PC" Style="{StaticResource SectionTitle}" />
-                    <TextBlock Text="Its name on your devices" Style="{StaticResource Caption}" Margin="0,0,0,4" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,4"
+                               Text="Rename this PC: its name on your devices, told to the ones connected now. With a hub, the hub renames it first." />
                     <DockPanel>
                         <Button x:Name="SaveName" Content="Rename" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="SaveName_Click" />
                         <TextBox x:Name="NameBox" MaxLength="40" AutomationProperties.Name="Name" />

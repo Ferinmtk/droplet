@@ -57,16 +57,24 @@
             <DockPanel>
                 <Button Content="Pair a device…" Style="{StaticResource PlainButton}" DockPanel.Dock="Bottom" HorizontalAlignment="Stretch"
                         Margin="0,12,0,0" Click="ShowPairing_Click" />
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <Button x:Name="SelectButton" Content="Select" Style="{StaticResource PlainButton}" MinWidth="0" DockPanel.Dock="Right"
+                            Click="Select_Click" ToolTip="Pick several devices, to send them the same thing" />
+                    <TextBlock x:Name="ListTitle" Text="Your devices" Style="{StaticResource Caption}" VerticalAlignment="Center" />
+                </DockPanel>
                 <ListBox x:Name="List" SelectionChanged="List_SelectionChanged" AutomationProperties.Name="Devices">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid Margin="2,6">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="18" />
+                                    <ColumnDefinition Width="Auto" MinWidth="18" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <Ellipse Width="8" Height="8" Fill="{DynamicResource DropletAccentBrush}" Opacity="{Binding DotOpacity}"
-                                         VerticalAlignment="Top" Margin="0,6,0,0" />
+                                         VerticalAlignment="Top" Margin="0,6,10,0" Visibility="{Binding DotVisibility}" />
+                                <CheckBox IsChecked="{Binding Checked, Mode=OneWay}" Visibility="{Binding CheckVisibility}" Tag="{Binding Item}"
+                                          VerticalAlignment="Top" Margin="0,1,4,0" MinWidth="0" Click="Check_Click"
+                                          AutomationProperties.Name="{Binding Name}" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{Binding Detail}" Style="{StaticResource Caption}" />
@@ -99,6 +107,37 @@
                                                 </TextBlock>
                                             </StackPanel>
                                         </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Select mode: send the same thing to several devices; each gets its own result -->
+                    <Border x:Name="SeveralCard" Style="{StaticResource Card}" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <Button Content="Done" Style="{StaticResource PlainButton}" DockPanel.Dock="Right" Click="Select_Click" />
+                                <TextBlock x:Name="SeveralTitle" Style="{StaticResource SectionTitle}" FontSize="20" VerticalAlignment="Center" />
+                            </DockPanel>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,10" TextWrapping="Wrap"
+                                       Text="Each device gets its own copy, as if you sent it to it alone: one that's paused or away gets it later, and one that doesn't take it says so." />
+                            <WrapPanel Margin="0,0,0,4">
+                                <Button Content="All my devices" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="AllMine_Click"
+                                        ToolTip="Your own devices (not someone else's), paused ones too: theirs waits" />
+                                <Button Content="None" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="None_Click" />
+                            </WrapPanel>
+                            <WrapPanel>
+                                <Button x:Name="SeveralFiles" Content="Send files…" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" Click="SeveralFiles_Click" />
+                                <Button x:Name="SeveralMessage" Content="Message…" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="SeveralMessage_Click" />
+                                <Button x:Name="SeveralLink" Content="Send a link…" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="SeveralLink_Click" />
+                                <Button x:Name="SeveralClip" Content="Send clipboard" Style="{StaticResource PlainButton}" Margin="0,0,8,8" Click="SeveralClip_Click" />
+                            </WrapPanel>
+                            <TextBlock x:Name="SeveralSummary" Style="{StaticResource Body}" FontWeight="SemiBold" Margin="0,8,0,4" Visibility="Collapsed" />
+                            <ItemsControl x:Name="SeveralResults">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Style="{StaticResource Caption}" Margin="0,1" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

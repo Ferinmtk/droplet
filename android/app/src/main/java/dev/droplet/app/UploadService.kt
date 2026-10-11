@@ -37,7 +37,15 @@ import kotlin.coroutines.cancellation.CancellationException
  * going after the share sheet closes.
  */
 class UploadService : Service() {
-    private data class Share(val files: List<Outgoing>, val text: String?, val to: String, val toName: String)
+    /**
+     * One share: files and/or text, to [to] (and, sending to several devices
+     * at once, to each of [more] as well: each gets its own job and result).
+     * [link]: the text is a web link, sent as one (docs/mesh.md §9.11).
+     */
+    private data class Share(val files: List<Outgoing>, val text: String?, val to: String, val toName: String,
+                             val link: Boolean = false, val more: List<Pair<String, String>> = emptyList()) {
+        val targets: List<Pair<String, String>> get() = listOf(to to toName) + more
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val queue = Channel<Share>(Channel.UNLIMITED)
@@ -101,7 +109,11 @@ class UploadService : Service() {
         val text = intent.getStringExtra(EXTRA_TEXT)
         val to = intent.getStringExtra(EXTRA_TO) ?: return null
         if (files.isEmpty() && text == null) return null
-        return Share(files, text, to, intent.getStringExtra(EXTRA_TO_NAME) ?: to)
+        val moreTo = intent.getStringArrayExtra(EXTRA_MORE_TO) ?: emptyArray()
+        val moreNames = intent.getStringArrayExtra(EXTRA_MORE_NAMES) ?: emptyArray()
+        val more = moreTo.mapIndexed { i, t -> t to (moreNames.getOrNull(i) ?: t) }.filter { it.first != to }
+        return Share(files, text, to, intent.getStringExtra(EXTRA_TO_NAME) ?: to,
+            link = intent.getBooleanExtra(EXTRA_LINK, false) && dev.droplet.app.mesh.Links.isUrl(text), more = more)
     }
 
     /** The mesh peer a share goes to: a "mesh:<fp>" target, or a hub device the mesh also knows. */
@@ -132,12 +144,22 @@ class UploadService : Service() {
         val jobs = mutableListOf<Pair<String, Outgoing?>>()
         try {
             for (f in files) jobs += n.sendFile(fp, if (f.uri.scheme == "file") f.uri.path!! else f.uri.toString(), f.name, f.mime ?: "application/octet-stream", f.size).getString("id") to f
-            share.text?.let { jobs += n.sendText(fp, it).getString("id") to null }
+            share.text?.let { text ->
+                if (share.link) {
+                    // a link opens on your own device; to an older one, or one that's away, it goes as a message
+                    val sent = withContext(Dispatchers.IO) { n.sendLink(fp, text) }
+                    sent.job?.let { jobs += it.getString("id") to null } ?: run { routes += sent.route.orEmpty() }
+                } else jobs += n.sendText(fp, text).getString("id") to null
+            }
             val title = getString(R.string.up_sending, where)
             for ((id, f) in jobs) {
                 while (true) {
                     val j = withContext(Dispatchers.IO) { n.awaitJob(id, 500) } ?: throw HubException("The transfer was lost")
-                    if (f != null && f.size > 0) {
+                    val t = n.transfers.get(id)
+                    if (f != null && t != null && t.active) {
+                        // real byte counts, with the speed and the time left
+                        notifyProgress(title, "${f.name} · ${dev.droplet.app.mesh.Transfers.progressText(t)}", t.percent, 100)
+                    } else if (f != null && f.size > 0) {
                         val done = n.jobSent(id).coerceAtMost(f.size)
                         val pct = (done * 100 / f.size).toInt()
                         notifyProgress(title, getString(R.string.up_progress, pct, Formatter.formatShortFileSize(this, done),
@@ -146,6 +168,8 @@ class UploadService : Service() {
                     when (j.optString("state")) {
                         dev.droplet.app.mesh.Outbox.DONE -> { routes += j.optString("route"); break }
                         dev.droplet.app.mesh.Outbox.FAILED -> throw HubException(j.optString("error").ifEmpty { "failed" })
+                        dev.droplet.app.mesh.Outbox.CANCELLED -> throw HubException(getString(R.string.up_cancelled_by,
+                            j.optString("error").ifEmpty { "cancelled" }))
                         dev.droplet.app.mesh.Outbox.QUEUED -> if (j.optInt("attempts") > 0 && !j.optBoolean("retry")) { kept = true; break }
                     }
                 }
@@ -153,7 +177,8 @@ class UploadService : Service() {
                 if (kept) break
             }
         } catch (e: CancellationException) {
-            for ((id, _) in jobs) n.outbox.update(id, "state" to dev.droplet.app.mesh.Outbox.FAILED, "error" to "cancelled")
+            // Cancel on the notification: each stops, the receiver deletes what it had, and is told
+            for ((id, _) in jobs) runCatching { n.cancel(id) }
             throw e
         }
         val what = when {
@@ -174,7 +199,93 @@ class UploadService : Service() {
         }
     }
 
+    /**
+     * Several devices at once (docs/mesh.md §9.11): each gets its own jobs,
+     * exactly as if sent to it alone, and its own result (sent; waiting,
+     * paused or away, in the outbox; or refused), all in one notification.
+     */
+    private suspend fun runSeveral(share: Share) {
+        val temp = mutableListOf<File>()
+        class Dev(val name: String, val fp: String?, val to: String) {
+            val jobs = mutableListOf<String>()
+            var result: String? = null
+            var ok = false
+        }
+        val devs = share.targets.map { (to, name) ->
+            Dev(name, runCatching { meshTarget(to) }.getOrNull(), to)
+        }
+        val title = resources.getQuantityString(R.plurals.up_several, devs.size, devs.size)
+        try {
+            val files = share.files.map { f -> if (f.size >= 0) f else spool(f).also { temp += File(it.uri.path!!) } }
+            val n = Mesh.node
+            for (d in devs) {
+                try {
+                    if (d.fp == null || n == null) {
+                        // a device only the hub knows: through the hub, one at a time
+                        if (files.isNotEmpty()) Hub.upload(this, files, d.to) { _, _ -> }
+                        share.text?.let { Hub.sendText(it, d.to) }
+                        d.result = getString(R.string.up_each_sent, d.name)
+                        d.ok = true
+                        continue
+                    }
+                    for (f in files) d.jobs += n.sendFile(d.fp, if (f.uri.scheme == "file") f.uri.path!! else f.uri.toString(),
+                        f.name, f.mime ?: "application/octet-stream", f.size).getString("id")
+                    share.text?.let { text ->
+                        if (share.link) withContext(Dispatchers.IO) { n.sendLink(d.fp, text) }.job?.let { d.jobs += it.getString("id") }
+                        else d.jobs += n.sendText(d.fp, text).getString("id")
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    d.result = getString(R.string.up_each_refused, d.name, e.message ?: e.javaClass.simpleName)
+                }
+            }
+            // each device's jobs, until every one has an answer
+            while (true) {
+                val node = Mesh.node
+                var going = 0
+                var done = 0L
+                var size = 0L
+                for (d in devs) {
+                    if (d.result != null) continue
+                    val jobs = d.jobs.mapNotNull { node?.outbox?.get(it) }
+                    val bad = jobs.firstOrNull { it.optString("state") in setOf(dev.droplet.app.mesh.Outbox.FAILED, dev.droplet.app.mesh.Outbox.CANCELLED) }
+                    val held = jobs.firstOrNull { it.optString("state") == dev.droplet.app.mesh.Outbox.QUEUED && it.optInt("attempts") > 0 && !it.optBoolean("retry") }
+                    when {
+                        bad != null -> d.result = getString(R.string.up_each_refused, d.name, bad.optString("error").ifEmpty { "failed" })
+                        jobs.isNotEmpty() && jobs.all { it.optString("state") == dev.droplet.app.mesh.Outbox.DONE } || d.jobs.isEmpty() -> {
+                            d.result = getString(R.string.up_each_sent, d.name)
+                            d.ok = true
+                        }
+                        held != null -> {
+                            d.result = getString(R.string.up_each_waiting, d.name, held.optString("error").ifEmpty { "waiting" })
+                            d.ok = true
+                        }
+                        else -> {
+                            going++
+                            d.jobs.mapNotNull { node?.transfers?.get(it) }.forEach { t -> done += t.done; size += t.size }
+                        }
+                    }
+                }
+                if (going == 0) break
+                val pct = if (size > 0) (done * 100 / size).toInt() else 0
+                notifyProgress(title, getString(R.string.up_several_going, devs.count { it.result != null }, devs.size), pct, if (size > 0) 100 else 0)
+                kotlinx.coroutines.delay(400)
+            }
+        } catch (e: CancellationException) {
+            val node = Mesh.node
+            for (d in devs) for (id in d.jobs) runCatching { node?.cancel(id) }
+            done(getString(R.string.up_cancelled), devs.joinToString(", ") { it.name }, ok = false)
+            throw e
+        } finally {
+            temp.forEach { it.delete() }
+        }
+        val ok = devs.count { it.ok }
+        done(getString(R.string.up_several_done, ok, devs.size), devs.joinToString("\n") { it.result.orEmpty() }, ok = ok == devs.size)
+    }
+
     private suspend fun runShare(share: Share) {
+        if (share.more.isNotEmpty()) return runSeveral(share)
         val where = if (share.to == "hub") getString(R.string.up_the_hub) else share.toName
         val temp = mutableListOf<File>()
         try {
@@ -289,9 +400,22 @@ class UploadService : Service() {
         private const val EXTRA_TEXT = "text"
         private const val EXTRA_TO = "to"
         private const val EXTRA_TO_NAME = "to_name"
+        private const val EXTRA_LINK = "link"
+        private const val EXTRA_MORE_TO = "more_to"
+        private const val EXTRA_MORE_NAMES = "more_names"
 
-        fun start(context: Context, files: List<Outgoing>, text: String?, to: String, toName: String) {
+        /**
+         * Sends [files] and/or [text] to [to] (and to each of [more] too, each
+         * its own job). [link]: [text] is a web link, sent as one.
+         */
+        fun start(context: Context, files: List<Outgoing>, text: String?, to: String, toName: String,
+                  link: Boolean = false, more: List<Pair<String, String>> = emptyList()) {
             val intent = Intent(context, UploadService::class.java).apply {
+                putExtra(EXTRA_LINK, link)
+                if (more.isNotEmpty()) {
+                    putExtra(EXTRA_MORE_TO, more.map { it.first }.toTypedArray())
+                    putExtra(EXTRA_MORE_NAMES, more.map { it.second }.toTypedArray())
+                }
                 putParcelableArrayListExtra(EXTRA_URIS, ArrayList(files.map { it.uri }))
                 putExtra(EXTRA_NAMES, files.map { it.name }.toTypedArray())
                 putExtra(EXTRA_SIZES, files.map { it.size }.toLongArray())

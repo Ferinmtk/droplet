@@ -16,7 +16,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QCheckBox, QFormLayout, QGroupBox, QScrollArea, QSizePolicy, QWidget
 
 from . import GITHUB, model
-from .widgets import hbox, label, primary, title, vbox
+from .widgets import button, hbox, label, primary, title, vbox
 
 # (where in config.json, label): what the switches change
 SWITCHES = [
@@ -82,13 +82,16 @@ class SettingsPage(QWidget):
         me = QGroupBox("This computer")
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        form.addRow("Name", self.name)
+        self.rename_button = button("Rename…", ("edit-rename", "document-edit"))
+        self.rename_button.setToolTip("Give this computer a new name, which your devices see")
+        self.rename_button.clicked.connect(lambda: self.rename())
+        form.addRow("Name", hbox(self.name, None, self.rename_button))
         form.addRow("Id", self.ident)
         form.addRow("Fingerprint", self.fp)
         form.addRow("Hub", self.hub)
         form.addRow("Received files", self.folder)
-        note = label("Its name comes from this computer's name. Paired devices check the fingerprint.",
-                     muted=True, wrap=True)
+        note = label("Your devices show this name; renaming tells the connected ones at once. Paired "
+                     "devices check the fingerprint.", muted=True, wrap=True)
         me.setLayout(vbox(form, note, spacing=8, margins=(12, 12, 12, 12)))
 
         # what devices may do
@@ -205,6 +208,29 @@ class SettingsPage(QWidget):
         ok, text = result if isinstance(result, tuple) else (False, str(getattr(result, "error", result)))
         self.win.say(text)
         self.win.refresh_soon()
+
+    def rename(self, dialog=None):
+        """Rename this computer: kept by the agent, told to your devices (and the hub, if any)."""
+        from .. import config
+        from .dialogs import rename_dialog
+        try:
+            linked = config.is_set_up(config.load())
+        except (OSError, ValueError):
+            linked = False
+        dlg = dialog or rename_dialog(self, self.name.text(), linked)
+        if not dlg.exec():
+            return
+
+        def done(r):
+            if r.ok:
+                told = r.data.get("told") or 0
+                self.name.setText(str(r.data.get("name")))
+                self.win.say(f"This computer is called {r.data.get('name')} now." + (
+                    f" {told} connected device{'s' if told != 1 else ''} saw it at once." if told else ""))
+            else:
+                self.win.say(f"Couldn't rename it: {r.error}")
+            self.win.refresh()
+        self.win.agent.ask({"cmd": "rename", "name": dlg.value}, done, timeout=30)
 
     def _pause_all(self, on: bool):
         self.win.pause_everything(on)

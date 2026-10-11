@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import android.text.format.Formatter
 import android.view.View
 import android.webkit.MimeTypeMap
+import android.widget.CompoundButton
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -16,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import dev.droplet.app.databinding.SheetShareBinding
+import dev.droplet.app.mesh.Links
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +41,11 @@ class ShareActivity : AppCompatActivity() {
     private var devices: List<Device> = emptyList()
     private var named = false
     private var unreadable = 0
+    /** The shared text is nothing but a web link: it goes as a link (opened on your own devices). */
+    private var link = false
+    /** Picking several devices: ticked ones, by target, with their names. */
+    private var selecting = false
+    private val chosen = LinkedHashMap<String, String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,10 +64,18 @@ class ShareActivity : AppCompatActivity() {
             setOnDismissListener { finish() }
         }
         b.retry.setOnClickListener { loadDevices() }
+        b.several.setOnClickListener {
+            selecting = !selecting
+            chosen.clear()
+            renderTargets()
+        }
+        b.sendSeveral.setOnClickListener { sendSeveral() }
         lifecycleScope.launch {
             val uris = sharedUris(intent)
             text = sharedText(intent)
             files = withContext(Dispatchers.IO) { uris.mapNotNull { describe(it) } }
+            // a shared web page: its link goes as a link, which opens on your own devices
+            if (files.isEmpty()) Links.onlyUrl(text)?.let { text = it; link = true }
             if (files.isEmpty() && text == null) {
                 Toast.makeText(this@ShareActivity, if (unreadable > 0) R.string.share_unreadable else R.string.share_nothing,
                     Toast.LENGTH_LONG).show()
@@ -126,7 +141,8 @@ class ShareActivity : AppCompatActivity() {
         if (!::b.isInitialized) return
         b.targets.removeAllViews()
         val last = Prefs.lastTarget
-        val hubRow = if (Prefs.hasHub) row(getString(R.string.share_hub), getString(R.string.share_hub_sub) + " · " + Hub.hostLabel(),
+        // the hub itself isn't a device to send to among several
+        val hubRow = if (Prefs.hasHub && !selecting) row(getString(R.string.share_hub), getString(R.string.share_hub_sub) + " · " + Hub.hostLabel(),
             R.drawable.ic_hub, online = null, lastUsed = last == "hub" || last == null) { send("hub", getString(R.string.share_hub)) } else null
         val mesh = Mesh.peers()
         val rows = devices.map { d ->
@@ -135,13 +151,21 @@ class ShareActivity : AppCompatActivity() {
             val usable = named || text == null || peer != null
             val sub = getString(if (d.online) R.string.share_online else R.string.share_offline) +
                 (peer?.let { " · " + Mesh.describeRoute(this, it.route) } ?: "")
-            d.id to row(d.name, sub, R.drawable.ic_device, online = d.online || peer?.route in DIRECT,
-                lastUsed = last == d.id, enabled = usable) { send(d.id, d.name) }
+            val name = peer?.entry?.label ?: d.name
+            d.id to row(name, sub, R.drawable.ic_device, online = d.online || peer?.route in DIRECT,
+                lastUsed = last == d.id, enabled = usable, target = d.id) { send(d.id, name) }
         } + mesh.filter { p -> devices.none { it.id == p.entry.id } }.map { p ->
             val id = PeersActivity.MESH_PREFIX + p.entry.fp
-            id to row(p.entry.name, Mesh.describeRoute(this, p.route), R.drawable.ic_device, online = p.route in DIRECT,
-                lastUsed = last == id) { send(id, p.entry.name) }
+            val sub = Mesh.describeRoute(this, p.route) + (p.entry.nickname.takeIf { it.isNotEmpty() }?.let { " · " + p.entry.name } ?: "")
+            id to row(p.entry.label, sub, R.drawable.ic_device, online = p.route in DIRECT,
+                lastUsed = last == id, target = id) { send(id, p.entry.label) }
         }
+        b.several.visibility = if (rows.size >= 2) View.VISIBLE else View.GONE
+        b.several.setText(if (selecting) R.string.share_one else R.string.share_several)
+        b.sendSeveral.visibility = if (selecting) View.VISIBLE else View.GONE
+        b.sendSeveral.isEnabled = chosen.isNotEmpty()
+        b.sendSeveral.text = if (chosen.isEmpty()) getString(R.string.share_send_several_none)
+            else resources.getQuantityString(R.plurals.share_send_several, chosen.size, chosen.size)
         // the last destination goes first: sharing tends to repeat
         val ordered = listOfNotNull(hubRow?.let { "hub" to it }) + rows
         ordered.sortedByDescending { it.first == last }.forEach { b.targets.addView(it.second) }
@@ -163,23 +187,46 @@ class ShareActivity : AppCompatActivity() {
     }
 
     private fun row(name: String, sub: String, icon: Int, online: Boolean?, lastUsed: Boolean,
-                    enabled: Boolean = true, onClick: () -> Unit): View {
+                    enabled: Boolean = true, target: String? = null, onClick: () -> Unit): View {
         val v = b.targets.inflate(R.layout.item_target)
         v.findViewById<TextView>(R.id.name).text = name
         v.findViewById<TextView>(R.id.sub).text = sub
         v.findViewById<ImageView>(R.id.icon).setImageResource(icon)
         v.findViewById<View>(R.id.dot).visibility = if (online == true) View.VISIBLE else View.GONE
-        v.findViewById<View>(R.id.last).visibility = if (lastUsed && (devices.isNotEmpty() || Mesh.peers().isNotEmpty())) View.VISIBLE else View.GONE
+        v.findViewById<View>(R.id.last).visibility =
+            if (!selecting && lastUsed && (devices.isNotEmpty() || Mesh.peers().isNotEmpty())) View.VISIBLE else View.GONE
+        val check = v.findViewById<CompoundButton>(R.id.check)
+        check.visibility = if (selecting && target != null) View.VISIBLE else View.GONE
+        check.isChecked = target != null && target in chosen
         v.isEnabled = enabled
         v.alpha = if (enabled) 1f else 0.45f
-        v.setOnClickListener { onClick() }
+        v.setOnClickListener {
+            if (selecting && target != null) {
+                if (chosen.remove(target) == null) chosen[target] = name
+                renderTargets()
+            } else onClick()
+        }
         return v
+    }
+
+    /** Each ticked device gets its own transfer and its own result, in one notification. */
+    private fun sendSeveral() {
+        val all = chosen.entries.map { it.key to it.value }
+        if (all.isEmpty()) return
+        try {
+            UploadService.start(this, files, text, all[0].first, all[0].second, link = link, more = all.drop(1))
+        } catch (e: SecurityException) {
+            Toast.makeText(this, R.string.share_unreadable, Toast.LENGTH_LONG).show()
+        }
+        sheet.setOnDismissListener(null)
+        sheet.dismiss()
+        finish()
     }
 
     private fun send(to: String, toName: String) {
         Prefs.lastTarget = to
         try {
-            UploadService.start(this, files, text, to, toName)
+            UploadService.start(this, files, text, to, toName, link = link)
         } catch (e: SecurityException) {
             Toast.makeText(this, R.string.share_unreadable, Toast.LENGTH_LONG).show()
         }
@@ -196,7 +243,7 @@ class ShareActivity : AppCompatActivity() {
             val total = files.sumOf { maxOf(it.size, 0) }
             parts += if (total > 0) "$names · ${Formatter.formatShortFileSize(this, total)}" else names
         }
-        text?.let { parts += "“" + it.replace('\n', ' ').take(120) + "”" }
+        text?.let { parts += if (link) getString(R.string.share_link_summary, it.take(120)) else "“" + it.replace('\n', ' ').take(120) + "”" }
         return parts.joinToString("\n")
     }
 

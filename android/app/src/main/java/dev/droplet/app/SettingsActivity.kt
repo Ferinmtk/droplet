@@ -303,7 +303,8 @@ class SettingsActivity : AppCompatActivity() {
         }
         b.hubNone.visibility = if (hub) View.GONE else View.VISIBLE
         b.addHub.visibility = b.hubNone.visibility
-        b.rename.visibility = b.hubNone.visibility
+        // with a hub too: the hub takes the new name first, and your devices are told
+        b.rename.visibility = View.VISIBLE
         if (!hub) {
             b.hubName.setText(R.string.s_hub_none_title)
             b.routeState.setText(R.string.s_hub_none_state)
@@ -363,11 +364,16 @@ class SettingsActivity : AppCompatActivity() {
         showBluetooth(BtHid.state.value)
     }
 
-    /** Without a hub, the phone's name is droplet's own: what paired devices see. */
+    /**
+     * Rename this phone (docs/mesh.md §9.11): what paired devices see, told
+     * to the linked ones at once. With a hub, the hub names it: it's renamed
+     * there first, and a name the hub refuses (one another device has) isn't
+     * changed here either.
+     */
     private fun askRename() {
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
-            filters = arrayOf(InputFilter.LengthFilter(40))
+            filters = arrayOf(InputFilter.LengthFilter(dev.droplet.app.mesh.TrustList.MAX_NAME))
             setText(Prefs.meshDeviceName ?: SetupActivity.suggestedName(this@SettingsActivity))
             setSelection(text.length)
         }
@@ -378,13 +384,21 @@ class SettingsActivity : AppCompatActivity() {
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.s_rename_title)
+            .setMessage(if (Prefs.hasHub) R.string.rename_body_hub else R.string.rename_body)
             .setView(box)
             .setPositiveButton(R.string.s_rename_go) { _, _ ->
-                val name = input.text.toString().trim().split(Regex("\\s+")).joinToString(" ")
-                if (name.isEmpty()) return@setPositiveButton
-                Prefs.meshDeviceName = name
-                Mesh.capsChanged()
-                loadDevice()
+                val typed = input.text.toString()
+                lifecycleScope.launch {
+                    val r = withContext(Dispatchers.IO) { runCatching { Mesh.renamePhone(typed) } }
+                    r.onSuccess { told ->
+                        Toast.makeText(this@SettingsActivity, resources.getQuantityString(R.plurals.rename_done, told,
+                            Prefs.meshDeviceName.orEmpty(), told), Toast.LENGTH_LONG).show()
+                    }.onFailure {
+                        Toast.makeText(this@SettingsActivity, getString(R.string.mesh_failed, it.message ?: it.javaClass.simpleName),
+                            Toast.LENGTH_LONG).show()
+                    }
+                    loadDevice()
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

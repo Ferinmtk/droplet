@@ -37,15 +37,25 @@ class TrustList(private val file: File, private val ownFp: String) {
         val allow: Map<String, Boolean> = Perms.OWN,
         /** Nothing goes to it, and nothing from it is taken, until it's resumed. */
         val paused: Boolean = false,
+        /**
+         * What the owner calls it here ("Brian's laptop"), shown instead of its own name.
+         * Only on this phone: never sent (docs/mesh.md §9.11). Empty for none.
+         */
+        val nickname: String = "",
     ) {
         fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("fp", fp).put("cert_pem", certPem)
             .put("source", source).put("lan", JSONArray(lan)).put("port", port ?: JSONObject.NULL)
             .put("tailnet_ip", tailnetIp ?: JSONObject.NULL).put("os", os).put("caps", JSONArray(caps))
             .put("hub", hub).put("added", added)
             .put("relation", relation).put("allow", Perms.allowJson(allow)).put("paused", paused)
+            .put("nickname", nickname)
 
         /** The owner's choices about [other], kept over what the hub says. */
-        fun withPermsOf(other: Entry): Entry = copy(relation = other.relation, allow = other.allow, paused = other.paused)
+        fun withPermsOf(other: Entry): Entry = copy(relation = other.relation, allow = other.allow, paused = other.paused,
+            nickname = other.nickname)
+
+        /** What the owner here calls it: its nickname, else its own name. Never sent. */
+        val label: String get() = nickname.ifEmpty { name }
 
         val isOther: Boolean get() = relation == Perms.OTHER_DEVICE
     }
@@ -72,7 +82,8 @@ class TrustList(private val file: File, private val ownFp: String) {
                     caps = strings(e.optJSONArray("caps")), fp = fp, hub = e.optString("hub"),
                     relation = e.opt("relation") as? String, allow = e.optJSONObject("allow"),
                     paused = e.opt("paused") == true,
-                ).copy(added = e.optLong("added").takeIf { it > 0 } ?: (System.currentTimeMillis() / 1000))
+                ).copy(added = e.optLong("added").takeIf { it > 0 } ?: (System.currentTimeMillis() / 1000),
+                    nickname = cleanNickname(e.opt("nickname")))
                 if (entry.fp != ownFp) peers[entry.fp] = entry
             } catch (x: IllegalArgumentException) {
                 // a damaged entry is dropped, never trusted
@@ -105,7 +116,8 @@ class TrustList(private val file: File, private val ownFp: String) {
         val q = query.trim()
         val ql = q.lowercase().replace(":", "")
         val list = all()
-        val exact = list.filter { it.id == ql || it.fp == ql || it.name.equals(q, ignoreCase = true) }
+        val exact = list.filter { it.id == ql || it.fp == ql || it.name.equals(q, ignoreCase = true) ||
+            (it.nickname.isNotEmpty() && it.nickname.equals(q, ignoreCase = true)) }
         if (exact.isNotEmpty()) return exact
         return if (ql.length >= 8) list.filter { it.fp.startsWith(ql) } else emptyList()
     }
@@ -121,7 +133,7 @@ class TrustList(private val file: File, private val ownFp: String) {
             val old = peers[entry.fp]
             peers[entry.fp] = if (old == null) entry else entry.copy(
                 lan = cleanAddresses(entry.lan + old.lan), tailnetIp = entry.tailnetIp ?: old.tailnetIp,
-                port = entry.port ?: old.port)
+                port = entry.port ?: old.port, nickname = entry.nickname.ifEmpty { old.nickname })
             changed(true)
         }
     }
@@ -149,6 +161,42 @@ class TrustList(private val file: File, private val ownFp: String) {
             save()
             e
         }
+
+    /**
+     * What the owner calls a peer here ("Brian's laptop"), shown instead of
+     * its own name. Only on this phone: it's never sent. Empty clears it.
+     * Throws IllegalArgumentException saying why (too long, control characters).
+     */
+    fun setNickname(fp: String, nickname: String?): Entry = synchronized(lock) {
+        val nick = checkName(nickname ?: "", "a nickname", emptyOk = true)
+        val e = peers[fp] ?: throw IllegalArgumentException("that peer isn't trusted")
+        val n = e.copy(nickname = nick)
+        peers[fp] = n
+        save()
+        n
+    }
+
+    /**
+     * A peer says it has a new name (`rename`). A peer paired directly names
+     * itself; the hub names the peers its roster brings, so those are left to
+     * the next roster. An invalid name is ignored. Returns the entry if the
+     * name changed.
+     */
+    fun rename(fp: String, name: Any?): Entry? {
+        val clean = try {
+            checkName(name)
+        } catch (e: IllegalArgumentException) {
+            return null
+        }
+        return synchronized(lock) {
+            val e = peers[fp]
+            if (e == null || e.source != SOURCE_PAIRED || e.name == clean) return@synchronized null
+            val n = e.copy(name = clean)
+            peers[fp] = n
+            save()
+            n
+        }
+    }
 
     fun remove(fp: String): Entry? = synchronized(lock) {
         peers.remove(fp)?.also { changed(true) }
@@ -238,6 +286,29 @@ class TrustList(private val file: File, private val ownFp: String) {
                 paused = paused,
             )
         }
+
+        /** A device's name, as the hub allows it (its clean_name). */
+        const val MAX_NAME = 40
+
+        /**
+         * A name someone typed (this phone's, or a nickname), checked as the
+         * reference's check_name: runs of white space become one space, and
+         * it's 1 to [limit] characters with no control characters (nor the
+         * invisible formatting ones). Throws IllegalArgumentException saying why.
+         */
+        fun checkName(v: Any?, what: String = "a name", limit: Int = MAX_NAME, emptyOk: Boolean = false): String {
+            if (v !is String) throw IllegalArgumentException("$what must be text")
+            val bad = v.codePoints().anyMatch { cp ->
+                (!Links.printable(cp) && cp != ' '.code && cp != '\t'.code && cp != '\n'.code) || Links.hidden(cp)
+            }
+            if (bad) throw IllegalArgumentException("$what can't hold control characters")
+            val name = v.split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
+            if (name.isEmpty() && !emptyOk) throw IllegalArgumentException("$what can't be empty")
+            if (name.codePointCount(0, name.length) > limit) throw IllegalArgumentException("$what can be $limit characters at most")
+            return name
+        }
+
+        fun cleanNickname(v: Any?): String = runCatching { checkName(v as? String ?: "", emptyOk = true) }.getOrDefault("")
 
         fun cleanName(v: String?, fallback: String = ""): String {
             val name = (v ?: "").split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")

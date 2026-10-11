@@ -77,6 +77,19 @@ public sealed class HubMeshBridge : IMeshHost, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Keeps a new name with no hub. With one, the hub names this device and the app renames it
+    /// there first (<c>HubSetup.SetupAsync</c>), so this refuses.
+    /// </summary>
+    public void SetDeviceName(string name)
+    {
+        if (store.Get() is { Registered: true } or { Pending: true })
+        {
+            throw new InvalidOperationException("your hub names this PC: rename it in Settings");
+        }
+        store.Update(c => c.DeviceName = name);
+    }
+
     /// <inheritdoc/>
     public string? HubDeviceId => store.Get() is { Registered: true } c ? c.DeviceId : null;
 

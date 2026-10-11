@@ -128,9 +128,22 @@ public sealed class FakeSound : ISound
     public void StopRing() => Interlocked.Increment(ref Stops);
 }
 
+/// <summary>A browser that remembers what it was asked to open.</summary>
+public sealed class FakeBrowser : IBrowser
+{
+    public ConcurrentQueue<string> Opened { get; } = new();
+
+    public bool Open(string url)
+    {
+        Opened.Enqueue(url);
+        return true;
+    }
+}
+
 /// <summary>Every platform service, faked.</summary>
 public sealed class FakePlatform
 {
+    public FakeBrowser Browser { get; } = new();
     public FakeInput Input { get; } = new();
     public FakeMedia Media { get; } = new();
     public FakeClipboard Clipboard { get; } = new();
@@ -141,7 +154,7 @@ public sealed class FakePlatform
 
     public PlatformServices Services => new()
     {
-        Input = Input, Media = Media, Clipboard = Clipboard, Notifications = Notifications, Screenshot = Screenshot, Lock = Lock, Sound = Sound,
+        Input = Input, Media = Media, Clipboard = Clipboard, Notifications = Notifications, Screenshot = Screenshot, Lock = Lock, Sound = Sound, Browser = Browser,
     };
 }
 
