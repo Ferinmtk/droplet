@@ -2,7 +2,7 @@
 
 Backends, tried in this order when the config says "auto":
 
-- portal: the xdg-desktop-portal RemoteDesktop interface (KDE, GNOME). The
+- portal: the xdg-desktop-portal RemoteDesktop interface (Plasma, GNOME). The
   desktop asks the user once; a restore token saves asking again.
 - uinput: a virtual mouse and keyboard in the kernel. Works under any
   compositor (niri, sway, Hyprland…) but needs /dev/uinput to be writable,

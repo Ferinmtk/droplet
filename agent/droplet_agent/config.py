@@ -44,7 +44,7 @@ DEFAULTS: dict = {
     # how the uinput backend types characters a US keyboard can't:
     # "auto" uses wtype when it's installed, "ascii" drops accents and skips the rest
     "uinput_text": "auto",
-    # null: loginctl on KDE/GNOME, else the first locker found (gtklock,
+    # null: loginctl on Plasma/GNOME, else the first locker found (gtklock,
     # swaylock, hyprlock…). Or a command as a list: ["swaylock", "-f"]
     "lock_command": None,
     # null: portal, then spectacle, gnome-screenshot, grim, niri, import

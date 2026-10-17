@@ -1,6 +1,6 @@
 """Preset hub commands: the hub's owner lists them in a JSON file, any device runs them.
 
-Like KDE Connect's "Run command". Clients only ever send a command's id; what
+Clients only ever send a command's id; what
 runs is decided entirely by the config file on the hub.
 """
 

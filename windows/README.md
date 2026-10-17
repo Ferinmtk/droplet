@@ -24,7 +24,7 @@ The tray icon dims when the hub can't be reached. Hover over it to see why,
 and to see how the hub is reached: "droplet — t15 on Wi-Fi" or "droplet —
 t15 via Tailscale".
 
-**Local-first.** Like KDE Connect, the app talks to the hub directly on your
+**Local-first.** The app talks to the hub directly on your
 home network, with no Tailscale needed. Tailscale is the extra that makes it
 work away from home. See [How it finds and trusts the hub](#how-it-finds-and-trusts-the-hub).
 

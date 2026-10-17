@@ -17,9 +17,9 @@ from pathlib import Path
 # process names of compositors and desktops, as /proc/<pid>/comm shows them
 # (comm is cut to 15 characters)
 COMPOSITORS = {
-    "kwin_wayland": "kde",
-    "kwin_x11": "kde",
-    "plasmashell": "kde",
+    "kwin_wayland": "plasma",
+    "kwin_x11": "plasma",
+    "plasmashell": "plasma",
     "gnome-shell": "gnome",
     "niri": "niri",
     "sway": "sway",
@@ -112,14 +112,14 @@ def _running_compositors() -> set[str]:
 
 
 def desktops() -> set[str]:
-    """Lower-case desktop names: {"kde"}, {"gnome"}, {"niri"}, … (may be empty). A Mac: {"macos"}."""
+    """Lower-case desktop names: {"plasma"}, {"gnome"}, {"niri"}, … (may be empty). A Mac: {"macos"}."""
     if sys.platform == "darwin":
         return {"macos"}
     names = set()
     for part in (os.environ.get("XDG_CURRENT_DESKTOP") or "").split(":"):
         part = part.strip().lower()
         if part:
-            names.add({"plasma": "kde", "ubuntu": "gnome", "unity": "gnome"}.get(part, part))
+            names.add({"kde": "plasma", "ubuntu": "gnome", "unity": "gnome"}.get(part, part))
     if os.environ.get("NIRI_SOCKET"):
         names.add("niri")
     if os.environ.get("SWAYSOCK"):
