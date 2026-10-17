@@ -1491,13 +1491,16 @@ public sealed partial class MeshNode : IMeshServerHandler, IAsyncDisposable
                 // cancelled, here or by the sender: what came is deleted
                 FileReceiver.DropPartial(options.Downloads, entry.Fp, offer.Id);
                 var here = downloadCancel.GetValueOrDefault(key) == "here";
+                if (here)
+                {
+                    cancelledIn[key] = 0; // before it shows as cancelled, so a re-offer that follows is refused
+                }
                 Transfers.Finish(offer.Id, TransferState.Cancelled, here ? "cancelled here" : $"{entry.Label} cancelled it");
                 log.LogInformation("mesh: receiving {Name} from {Who} cancelled {How}", offer.Name, entry.Name, here ? "here" : "by the sender");
                 // the sender cancelled: it knows. Cancelled here: tell it (an older sender ignores
                 // that, and is refused when it offers it again)
                 if (here)
                 {
-                    cancelledIn[key] = 0;
                     reply = new JsonObject { ["t"] = "cancel", ["id"] = offer.Id };
                 }
             }

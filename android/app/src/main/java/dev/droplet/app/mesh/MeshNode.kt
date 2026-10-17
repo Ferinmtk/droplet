@@ -1014,12 +1014,12 @@ class MeshNode(
             if (e is MeshFiles.Cancelled || by != null) {
                 MeshFiles.dropPartial(incomingDir, entry.fp, c.id)
                 val here = by == "here"
+                if (here) cancelledIn += key // before it shows as cancelled, so a re-offer that follows is refused
                 transfers.finish(c.id, Transfers.CANCELLED, if (here) Transfers.CANCELLED_HERE else "${entry.label} cancelled it")
                 host.log("mesh: receiving ${c.name} from ${entry.name} cancelled ${if (here) "here" else "by the sender"}")
                 // the sender cancelled: it knows. Cancelled here: tell it (an older sender ignores
                 // that, and is refused when it offers it again)
                 if (here) {
-                    cancelledIn += key
                     reply = JSONObject().put("t", "cancel").put("id", c.id)
                 }
             } else {
