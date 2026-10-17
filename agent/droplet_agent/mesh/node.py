@@ -976,12 +976,12 @@ class MeshNode:
             reply = {"t": "ack", "id": oid}
         except Cancelled:
             here = self._dl_cancel.get(key) == "here"
+            if here:
+                self._cancelled_in.add(key)   # before it shows as cancelled, so a re-offer that follows is refused
             self.transfers.finish(oid, tx.CANCELLED, "cancelled here" if here else f"{self.label(entry)} cancelled it")
             log.info("mesh: receiving %s from %s cancelled %s", name, entry["name"], "here" if here else "by the sender")
             # the sender cancelled: it knows. Cancelled here: tell it (an older sender ignores that,
             # and is refused when it offers it again)
-            if here:
-                self._cancelled_in.add(key)
             reply = {"t": "cancel", "id": oid} if here else None
         except DownloadError as e:
             self.transfers.finish(oid, tx.FAILED if e.permanent else tx.WAITING, str(e))
