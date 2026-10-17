@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- the Droplet mark in colour (screen headers): the leaning drop and its
+     signal; made by branding/make-icons.py -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -6,8 +8,18 @@
     android:viewportHeight="24">
     <path
         android:fillColor="@color/drop"
-        android:pathData="M12,2.2C12,2.2 4.8,10.1 4.8,15C4.8,19 8,21.8 12,21.8C16,21.8 19.2,19 19.2,15C19.2,10.1 12,2.2 12,2.2Z" />
+        android:strokeColor="@color/drop"
+        android:strokeWidth="0.67"
+        android:strokeLineJoin="round"
+        android:pathData="M13.05,8.01 Q14.52,12.06 14.83,16.36 A4.93 4.93 0 1 1 6.71,13.73 Q9.48,10.43 13.05,8.01Z" />
     <path
-        android:fillColor="#FFBAE6FD"
-        android:pathData="M8,15.1a1.35,1.35 0,1 0,2.7 0a1.35,1.35 0,1 0,-2.7 0Z" />
+        android:strokeColor="@color/drop"
+        android:strokeWidth="1.46"
+        android:strokeLineCap="round"
+        android:pathData="M11.51,5.54 A2.91 2.91 0 0 1 15.76,6.92" />
+    <path
+        android:strokeColor="@color/drop"
+        android:strokeWidth="1.46"
+        android:strokeLineCap="round"
+        android:pathData="M10.08,3.26 A5.60 5.60 0 0 1 18.25,5.91" />
 </vector>
