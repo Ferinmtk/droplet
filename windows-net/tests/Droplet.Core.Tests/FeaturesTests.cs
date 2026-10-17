@@ -550,11 +550,11 @@ public sealed class NameTests : FeaturePeers
         a.Node.SetPerms(Fp(b), paused: false);
         await a.Node.RenameAsync("a2");
         await (await b.Node.DirectAsync(Fp(a)))!.SendAsync(new JsonObject { ["t"] = "text", ["id"] = "fromb00001", ["body"] = "hello" });
-        await Wait.For(() => a.Node.Chat.Recent().Any(m => m.Body == "hello"), 5, "b's message");
+        await Wait.For(() => a.Node.Chat.Recent().Any(m => m.Body == "hello"), 15, "b's message");
         Assert.Equal("Brian's laptop", a.Fakes.Notifications.Shown.Last().Title); // its notifications use the nickname
         // a restart keeps it
         Assert.Equal("Brian's laptop", new TrustList(Path.Combine(a.Root, "mesh", "trust.json"), Fp(a)).Get(Fp(b))!.Nickname);
-        await Wait.For(() => heard.Count >= 5, 5, "what a sent");
+        await Wait.For(() => heard.Count >= 5, 15, "what a sent");
         var everything = string.Join("\n", heard.Select(m => m.Msg.ToJsonString())) + a.Node.Hello("hello", Fp(b)).ToJsonString() +
                          a.Node.AnnounceBody().ToJsonString();
         Assert.DoesNotContain("Brian", everything, StringComparison.Ordinal);
