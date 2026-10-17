@@ -215,7 +215,8 @@ def test_nicknames_show_here_and_are_never_sent(nodes):
         a.rename("a2")
         b.direct(a.identity.fp).send({"t": "text", "id": "fromb00001", "body": "hello"})
         assert wait_for(lambda: any(m["body"] == "hello" for m in a.chat_history()))
-        assert a.desktop.shown[-1][0] == "Brian's laptop"   # its notifications use the nickname
+        # its notifications use the nickname (shown just after the message is saved)
+        assert wait_for(lambda: a.desktop.shown and a.desktop.shown[-1][0] == "Brian's laptop")
         # a restart keeps it; a roster update doesn't take it away
         from droplet_agent.mesh.trust import TrustList
         assert TrustList(a.trust.path, a.identity.fp).get(b.identity.fp)["nickname"] == "Brian's laptop"

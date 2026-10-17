@@ -551,7 +551,8 @@ public sealed class NameTests : FeaturePeers
         await a.Node.RenameAsync("a2");
         await (await b.Node.DirectAsync(Fp(a)))!.SendAsync(new JsonObject { ["t"] = "text", ["id"] = "fromb00001", ["body"] = "hello" });
         await Wait.For(() => a.Node.Chat.Recent().Any(m => m.Body == "hello"), 15, "b's message");
-        Assert.Equal("Brian's laptop", a.Fakes.Notifications.Shown.Last().Title); // its notifications use the nickname
+        // its notifications use the nickname (shown just after the message is saved)
+        await Wait.For(() => a.Fakes.Notifications.Shown.Any(n => n.Title == "Brian's laptop"), 15, "the notification");
         // a restart keeps it
         Assert.Equal("Brian's laptop", new TrustList(Path.Combine(a.Root, "mesh", "trust.json"), Fp(a)).Get(Fp(b))!.Nickname);
         await Wait.For(() => heard.Count >= 5, 15, "what a sent");
