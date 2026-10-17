@@ -76,7 +76,7 @@ _identities: dict[str, str | None] = {}
 
 
 def _identity(player: str) -> str | None:
-    """The player's own display name, e.g. "Chrome - fedora" for a KDE Connect proxy.
+    """The player's own display name, e.g. "Chrome - fedora" for a player relayed from a phone.
 
     playerctl can't read it, so ask D-Bus directly. It never changes for a
     given bus name, so it's cached.
@@ -110,15 +110,18 @@ def _caps(player: str) -> dict[str, bool]:
     return out
 
 
+RELAY = "kdeconnect"  # the MPRIS name of a phone-relay app's players
+
+
 def friendly_name(player: str) -> str:
     base = player.split(".")[0]  # "chromium.instance56633" -> "chromium"
     ident = _identity(player)
-    if base == "kdeconnect":
-        # KDE Connect relays a paired device's player as "<player> - <device>"
+    if base == RELAY:
+        # a phone-relay app shows a paired device's player as "<player> - <device>"
         if ident and " - " in ident:
             what, _, where = ident.rpartition(" - ")
             return f"{what} on {where}"
-        return ident or "KDE Connect"
+        return ident or "Phone"
     return ident or base.replace("_", " ").replace("-", " ").title()
 
 
@@ -135,7 +138,7 @@ def read_player(player: str) -> dict:
                     position=_micros(position), length=_micros(length))
         info["art"], info["_art_file"] = _art(art_url)
     else:
-        # a player with no track (e.g. KDE Connect's proxy while the phone is
+        # a player with no track (e.g. a relayed phone player while the phone is
         # idle) fails `metadata` with "No player could handle this command"
         s = _run("playerctl", "-p", player, "status")
         if _ok(s) and s.stdout.strip():

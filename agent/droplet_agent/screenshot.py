@@ -1,8 +1,8 @@
 """Screenshots: capture the screen as PNG.
 
 Tried in order: the xdg-desktop-portal Screenshot interface (non-interactive;
-KDE and GNOME may still ask once), then the desktop's own tool (spectacle on
-KDE, gnome-screenshot on GNOME, niri's on niri, grim on wlroots), then the
+Plasma and GNOME may still ask once), then the desktop's own tool (spectacle on
+Plasma, gnome-screenshot on GNOME, niri's on niri, grim on wlroots), then the
 other tools found, and ImageMagick's import on X11. The first that gives a
 PNG wins, and a method that failed isn't tried again until the agent restarts.
 
@@ -67,7 +67,7 @@ def methods(configured=None) -> list[str]:
     if env.is_wayland() and xdp.read_property(PORTAL_IFACE, "version") is not None:
         out.append("portal")
     desks = env.desktops()
-    native = {"kde": "spectacle", "gnome": "gnome-screenshot", "niri": "niri", "sway": "grim",
+    native = {"plasma": "spectacle", "gnome": "gnome-screenshot", "niri": "niri", "sway": "grim",
               "hyprland": "grim", "river": "grim", "labwc": "grim", "wayfire": "grim"}
     mine = {native[d] for d in desks if d in native}
     tools = [name for name, argv in _tool_commands("x.png")

@@ -1717,7 +1717,7 @@ def main(argv=None) -> int:
     op.set_defaults(func=cmd_open)
     ty = sub.add_parser("tray", help="show droplet in the menu bar" if MAC else "show droplet in the system tray",
                         description=("Show droplet in the menu bar" if MAC else
-                                     "Show droplet in the system tray (KDE Plasma, and other desktops that show "
+                                     "Show droplet in the system tray (Plasma, and other desktops that show "
                                      "StatusNotifierItem icons)")
                                     + ": send files, the clipboard or a ring to your "
                                     "devices, and answer pairing requests. Starting it again replaces the one "

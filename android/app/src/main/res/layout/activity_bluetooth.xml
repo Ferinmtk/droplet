@@ -194,7 +194,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
-                        android:text="@string/bt_pair_kde_title"
+                        android:text="@string/bt_pair_linux_title"
                         android:textColor="@color/r_text"
                         android:textSize="15sp"
                         android:textStyle="bold" />
@@ -203,7 +203,7 @@
                         style="@style/Droplet.Teal.Body"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/bt_pair_kde" />
+                        android:text="@string/bt_pair_linux" />
 
                     <TextView
                         android:layout_width="match_parent"
