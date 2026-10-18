@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- the web app's palette (templates/index.html), light scheme -->
-    <color name="ic_launcher_background">#0F172A</color>
+    <color name="ic_launcher_background">#0E1A33</color>
     <color name="bg">#F1F5F9</color>
     <color name="card">#FFFFFF</color>
     <color name="line">#CBD5E1</color>
