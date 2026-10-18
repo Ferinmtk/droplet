@@ -7,7 +7,7 @@ pointer" and "droplet virtual keyboard", which works under any compositor.
 uinput sends key positions, not characters, so text is typed as on a US
 keyboard. Characters a US keyboard can't type go through wtype when it's
 installed (wlroots compositors and niri), otherwise accents are dropped and
-the rest skipped. On KDE and GNOME the portal backend types any text instead.
+the rest skipped. On Plasma and GNOME the portal backend types any text instead.
 """
 
 from __future__ import annotations
@@ -220,7 +220,7 @@ class UinputBackend(Backend):
         typeable, skipped = keys.to_ascii(s)
         if skipped:
             log.info("uinput can't type %d character(s) of that text; install wtype, "
-                     "or use a desktop with the RemoteDesktop portal (KDE, GNOME)", skipped)
+                     "or use a desktop with the RemoteDesktop portal (Plasma, GNOME)", skipped)
         self._type_us(typeable)
 
     def _type_us(self, s: str):
@@ -240,7 +240,7 @@ class UinputBackend(Backend):
             self._wtype_broken = True
             return False
         if r.returncode != 0:
-            # e.g. KDE: "Compositor does not support the virtual keyboard protocol"
+            # e.g. Plasma: "Compositor does not support the virtual keyboard protocol"
             log.warning("wtype failed: %s", r.stderr.decode(errors="replace").strip())
             self._wtype_broken = True
             return False

@@ -288,7 +288,7 @@ paused the icon is greyed with an orange pause sign, and the tooltip
 starts "Everything is paused". When the agent isn't running the icon greys
 out and the menu says so; it picks up again when the agent starts.
 
-It speaks the StatusNotifierItem protocol, so it shows on KDE Plasma, most
+It speaks the StatusNotifierItem protocol, so it shows on Plasma, most
 Wayland bars (waybar, and others with a tray), and on GNOME with the
 AppIndicator extension (Ubuntu has it already). It's a small separate
 process that talks to the agent the way the CLI does; the systemd service
@@ -411,20 +411,20 @@ config allows.
 
 | capability | how |
 |---|---|
-| **input** | The first that works: the desktop's **RemoteDesktop portal** (KDE, GNOME), then **uinput** (any compositor, e.g. niri, sway, Hyprland), then **xdotool** on X11 |
+| **input** | The first that works: the desktop's **RemoteDesktop portal** (Plasma, GNOME), then **uinput** (any compositor, e.g. niri, sway, Hyprland), then **xdotool** on X11 |
 | **media** | `playerctl` for players (MPRIS), `wpctl` for the default output's volume and mute |
-| **lock** | `loginctl lock-session` on desktops with their own lock screen (KDE, GNOME…), otherwise `gtklock`, `swaylock`, `hyprlock` or `waylock` |
+| **lock** | `loginctl lock-session` on desktops with their own lock screen (Plasma, GNOME…), otherwise `gtklock`, `swaylock`, `hyprlock` or `waylock` |
 | **screenshot** | The portal's Screenshot, then the desktop's own tool (`spectacle`, `gnome-screenshot`, `niri msg action screenshot-screen`, `grim`), then `import` on X11. Sent to the device that asked |
 | **clipboard** | `wl-paste --watch` / `wl-copy` on Wayland, `xclip` or `xsel` on X11. Text only, at most 256 KB, at most one change a second |
 
 It also publishes the battery level when the computer has one.
 
-### Input through the portal (KDE, GNOME)
+### Input through the portal (Plasma, GNOME)
 
 The first time the agent starts, the desktop asks you to **allow remote
 control**. Say yes. The agent asks for a permanent grant and keeps the restore
 token the desktop gives back, so later starts don't ask again. While it's
-allowed, KDE shows a remote-control icon in the system tray; ending the
+allowed, Plasma shows a remote-control icon in the system tray; ending the
 session there switches input off until the agent restarts. If you said no,
 `systemctl --user restart droplet-agent` asks again.
 
@@ -451,7 +451,7 @@ nothing else on the system can create virtual input devices.
 uinput sends key positions, not characters, so text is typed as on a US
 keyboard. Characters a US keyboard can't type are handed to `wtype` when it's
 installed (it types any Unicode on wlroots compositors and niri); without it,
-accents are dropped (é → e) and the rest is skipped. On KDE and GNOME the
+accents are dropped (é → e) and the rest is skipped. On Plasma and GNOME the
 portal types everything. The compositor also applies its own pointer
 acceleration to the virtual mouse.
 
@@ -589,7 +589,7 @@ give the hub's PIN with `--pin 1234`, if it has one.
 
 ### How it finds the hub
 
-Like KDE Connect, the agent talks to the hub directly on the home network,
+The agent talks to the hub directly on the home network,
 and uses Tailscale only when it isn't there ([docs/local-first.md](../docs/local-first.md)).
 Each time it connects it tries, in order:
 

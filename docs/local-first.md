@@ -1,6 +1,6 @@
 # Local-first: how native apps reach the hub
 
-droplet works like KDE Connect: on the home network, devices talk to the hub
+On the home network, devices talk to the hub
 directly. Tailscale is the extra that makes it work away from home. Browsers
 use whichever URL they were opened on. The **native apps** (Android,
 Windows, the Linux agent) pick the best route on their own, following this

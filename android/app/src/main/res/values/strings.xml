@@ -342,8 +342,8 @@
     <string name="bt_pair_intro">Make the phone visible, then on the other device:</string>
     <string name="bt_pair_windows_title">Windows</string>
     <string name="bt_pair_windows">Settings → Bluetooth &amp; devices → Add device → Bluetooth. Pick this phone and confirm the code on both.</string>
-    <string name="bt_pair_kde_title">Linux (KDE Plasma)</string>
-    <string name="bt_pair_kde">System Settings → Bluetooth → Add New Device (or the Bluetooth icon in the panel). Pick this phone and confirm the code.</string>
+    <string name="bt_pair_linux_title">Linux (Plasma)</string>
+    <string name="bt_pair_linux">System Settings → Bluetooth → Add New Device (or the Bluetooth icon in the panel). Pick this phone and confirm the code.</string>
     <string name="bt_pair_tv_title">Google TV</string>
     <string name="bt_pair_tv">Settings → Remotes &amp; Accessories → Pair remote or accessory. Pick this phone and confirm.</string>
     <string name="bt_pair_again">Paired before, for music or calls? Remove this phone on that device first, then pair again, so it learns the phone can be a keyboard.</string>

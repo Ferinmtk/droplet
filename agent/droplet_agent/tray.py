@@ -1,6 +1,6 @@
 """droplet in the system tray: `droplet-agent tray`.
 
-A StatusNotifierItem (the tray protocol KDE Plasma speaks, and GNOME with
+A StatusNotifierItem (the tray protocol Plasma speaks, and GNOME with
 the AppIndicator extension, and most Wayland bars) with its menu exported
 over com.canonical.dbusmenu, both served with jeepney, so no toolkit is
 needed. It's a separate process from the agent, started with the graphical

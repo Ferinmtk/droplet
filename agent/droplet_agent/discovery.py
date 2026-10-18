@@ -1,4 +1,4 @@
-"""Finding droplet hubs on the LAN over mDNS (DNS-SD), like KDE Connect does.
+"""Finding droplet hubs on the LAN over mDNS (DNS-SD).
 
 The hub announces `_droplet._tcp.local.` on its LAN HTTPS port, with TXT
 records (docs/local-first.md §1):
