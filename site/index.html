@@ -129,9 +129,40 @@ h1[data-k=note]{--hl:var(--peach);--hl-t:var(--peach-t)}
 .works a:hover{border-color:var(--line-2);color:var(--ink)}
 .works .i{width:15px;height:15px;color:#7f889b}
 
+/* works on everything */
+.every{padding-top:24px;overflow:hidden}
+.every .head{margin-bottom:8px}
+.every svg{width:100%;height:auto;max-width:1060px;margin:0 auto;overflow:visible}
+@media (max-width:640px){.every svg{width:118%;max-width:none;margin-left:-9%}}
+
+/* how it works, told as you scroll (wide screens) */
+.story{display:none}
+@media (min-width:960px){
+  #how .steps,#how .hotspot{display:none}
+  .story{display:grid;grid-template-columns:1.2fr 1fr;gap:64px;align-items:start}
+  .story-pic{position:sticky;top:calc(50vh - 230px)}
+  .story-pic .frame{border-radius:32px;padding:18px;background:var(--sb,#eef5ff);transition:background .6s ease;box-shadow:var(--shadow)}
+  .story-pic svg{width:100%;height:auto;display:block;transition:opacity .25s ease}
+  .story-pic svg.swap-out{opacity:0}
+  .story-steps{list-style:none;margin:0;padding:0}
+  .story-steps li{min-height:62vh;display:flex;flex-direction:column;justify-content:center;gap:12px;opacity:.28;transform:translateY(10px);transition:opacity .45s ease,transform .6s cubic-bezier(.2,.8,.2,1)}
+  .story-steps li.on{opacity:1;transform:none}
+  .story-steps li:first-child{min-height:48vh;justify-content:flex-start;padding-top:12vh}
+  .story-steps li:last-child{min-height:56vh}
+  .story-steps .n{width:40px;height:40px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:800}
+  .story-steps .n.w{background:var(--peach-d)}
+  .story-steps h3{font-size:clamp(26px,2.6vw,34px);letter-spacing:-.03em;font-weight:800;line-height:1.12}
+  .story-steps p{color:var(--muted);font-size:17px;line-height:1.62;max-width:28em}
+  .story-dots{display:flex;gap:8px;margin-top:16px;justify-content:center}
+  .story-dots i{width:8px;height:8px;border-radius:50%;background:var(--line-2);transition:width .4s,background .4s}
+  .story-dots i.on{width:26px;border-radius:4px;background:var(--btn)}
+}
+
 /* the picture */
 .art{position:relative;width:100%;max-width:600px;margin:0 auto;-webkit-tap-highlight-color:transparent}
 .art svg{width:100%;height:auto;overflow:visible;user-select:none;-webkit-user-select:none}
+.art{perspective:1400px}
+.art .scn{transform:rotateY(var(--ry,0deg)) rotateX(var(--rx,0deg));transition:transform .9s cubic-bezier(.2,.8,.2,1);transform-origin:50% 60%}
 
 /* ---------- sections ---------- */
 section{padding:64px 0;scroll-margin-top:60px}
@@ -359,10 +390,10 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
 .hero{position:relative;isolation:isolate}
 .hero-bg{position:absolute;inset:-68px 0 0;z-index:-1;overflow:hidden;pointer-events:none;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
 .hero-bg i{position:absolute;display:block;width:var(--s);height:var(--s);border-radius:50%;background:radial-gradient(closest-side,var(--c),rgba(255,255,255,0));opacity:.8}
-.hero-bg i:nth-child(1){--s:min(680px,125vw);--c:#d9ecff;right:-10%;top:-6%}
-.hero-bg i:nth-child(2){--s:min(520px,100vw);--c:#ebe3ff;right:24%;bottom:-22%;opacity:.65}
-.hero-bg i:nth-child(3){--s:min(480px,92vw);--c:#d5f5e6;left:-14%;bottom:-6%;opacity:.7}
-.hero-bg i:nth-child(4){--s:min(440px,84vw);--c:#ffe6d6;left:-10%;top:-12%;opacity:.55}
+.hero-bg i:nth-child(1){--s:min(680px,125vw);--c:#d6ebff;right:-10%;top:-6%}
+.hero-bg i:nth-child(2){--s:min(520px,100vw);--c:#d3f8f0;right:24%;bottom:-22%;opacity:.65}
+.hero-bg i:nth-child(3){--s:min(480px,92vw);--c:#dde9ff;left:-14%;bottom:-6%;opacity:.7}
+.hero-bg i:nth-child(4){--s:min(440px,84vw);--c:#e2fbf6;left:-10%;top:-12%;opacity:.55}
 .hw{display:inline-block}
 .top::after{content:"";position:absolute;inset:0;z-index:-1;box-shadow:0 12px 30px -20px rgba(29,36,51,.3);opacity:0;transition:opacity .3s;pointer-events:none}
 .top.scrolled::after{opacity:1}
@@ -383,6 +414,12 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
 .dg,.ok,.okr,.rg,.dp,.e-bg0,.bgc,.tw,.e-ph{transform-box:fill-box;transform-origin:center}
 
 @media (prefers-reduced-motion:no-preference){
+  @supports (animation-timeline:view()){
+    @keyframes sIn{from{transform:translateY(42px) scale(.95);opacity:.2}}
+    @keyframes sDrift{from{transform:translateY(24px)}to{transform:translateY(-24px)}}
+    .pic .scn,.ill .scn,.every svg{animation:sIn linear both;animation-timeline:view();animation-range:entry 0% cover 32%}
+    .lapf .lap,.show .ph{animation:sDrift linear both;animation-timeline:view()}
+  }
   /* hero entrance */
   @keyframes rise{from{opacity:0;transform:translateY(18px)}}
   @keyframes wIn{from{opacity:0;transform:translateY(.55em) rotate(3deg)}}
@@ -651,6 +688,18 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
   </div>
 </div>
 
+<!-- ============ EVERYWHERE ============ -->
+<section class="every" id="every" aria-labelledby="every-h">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="eyebrow">Works on everything</span>
+      <h2 id="every-h">One app for every device you own</h2>
+      <p>Android, iPhone, Windows, Mac and Linux, in any mix. Each one talks straight to the others over your Wi-Fi.</p>
+    </div>
+    <svg class="scn" data-scene="orbit" viewBox="0 0 1000 440" role="img" aria-label="An Android phone, an iPhone, a Windows laptop, a MacBook and a Linux computer circle the Droplet logo, passing droplets between them."></svg>
+  </div>
+</section>
+
 <!-- ============ FEATURES ============ -->
 <section id="features">
   <div class="wrap">
@@ -763,6 +812,16 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
       <span class="eyebrow m">How it works</span>
       <h2>Set up in about two minutes</h2>
       <p>There’s no Droplet server. Your devices find each other on your network and talk directly.</p>
+    </div>
+    <div class="story">
+      <div class="story-pic"><div class="frame"><svg class="scn" id="story-svg" data-scene="install" viewBox="0 0 300 220" role="img" aria-label="Droplet on an Android phone and a Windows laptop, following the steps on the right."></svg></div>
+        <div class="story-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div></div>
+      <ol class="story-steps">
+        <li class="on" data-s="install" data-bg="#eef5ff"><span class="n">1</span><h3>Install on two devices</h3><p>Your phone and your computer, say. Android, iPhone, Windows, Mac or Linux, in any mix.</p></li>
+        <li data-s="pair" data-bg="#effbf5"><span class="n">2</span><h3>Pair with a 4-digit code</h3><p>Both screens show the same four digits. If they match, tap <b>They match</b>. Your devices remember each other.</p></li>
+        <li data-s="send" data-bg="#f6f2ff"><span class="n">3</span><h3>Send</h3><p>Share from any app, drop a file on a device, or copy and paste. It’s there a moment later.</p></li>
+        <li data-s="hotspot" data-bg="#ffe6d6"><span class="n w">!</span><h3>No Wi-Fi around? Use your phone’s hotspot.</h3><p>Join it from your laptop and Droplet works straight over it. Your files stay on the hotspot, so they use none of your data bundle, even big videos.</p></li>
+      </ol>
     </div>
     <ol class="steps">
       <li class="card step rv">
@@ -1208,6 +1267,32 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
       if(!praf) praf=requestAnimationFrame(pstep);
     });
     hero.addEventListener('pointerleave',function(){tx=ty=0;if(!praf) praf=requestAnimationFrame(pstep)});
+  }
+
+  /* ---------- how it works: the picture follows the step you're reading ---------- */
+  var story=document.querySelector('.story');
+  if(story&&hasIO){
+    var ssvg=$('story-svg'), frame=story.querySelector('.frame'), dots=story.querySelectorAll('.story-dots i'), items=[].slice.call(story.querySelectorAll('.story-steps li'));
+    var setStep=function(li){
+      if(li.classList.contains('on')&&ssvg.getAttribute('data-scene')===li.getAttribute('data-s')) return;
+      items.forEach(function(x,i){x.classList.toggle('on',x===li);dots[i].classList.toggle('on',x===li)});
+      frame.style.setProperty('--sb',li.getAttribute('data-bg'));
+      if(still){ssvg.setAttribute('data-scene',li.getAttribute('data-s'));return}
+      ssvg.classList.add('swap-out');
+      setTimeout(function(){ssvg.setAttribute('data-scene',li.getAttribute('data-s'));ssvg.classList.remove('swap-out')},220);
+    };
+    var stio=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting)setStep(e.target)})},{rootMargin:'-45% 0px -45% 0px'});
+    items.forEach(function(li){stio.observe(li)});
+  }
+
+  /* ---------- the hero picture tilts a little towards the pointer ---------- */
+  var art=$('art');
+  if(art&&fine&&!still){
+    art.addEventListener('pointermove',function(e){
+      var r=art.getBoundingClientRect(), x=(e.clientX-r.left)/r.width-.5, y=(e.clientY-r.top)/r.height-.5;
+      art.style.setProperty('--ry',(x*7).toFixed(2)+'deg'); art.style.setProperty('--rx',(-y*5).toFixed(2)+'deg');
+    });
+    art.addEventListener('pointerleave',function(){art.style.setProperty('--ry','0deg');art.style.setProperty('--rx','0deg')});
   }
 
   /* ---------- the hero: the headline's word follows the picture ---------- */

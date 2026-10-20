@@ -548,8 +548,9 @@ function wWiki(w,h){
 }
 // The hero: Android phone and Windows laptop pass a photo, a PDF and a link, round and round.
 const HERO_WORDS=[[0,'photo'],[6.0,'pdf'],[10.6,'link']];
-function hero(t){
+function hero(t,el){
   geo(96,22,.86,86,300,.48,.46);
+  const li=eo(seg(el,.15,1.15)), pi=eo(seg(el,.45,1.6));
   const linkMode=t>=10.6&&t<17.6;
   const dragging=t>=6.4&&t<7.4;
   const ph=PHONE((w,h)=>{
@@ -566,7 +567,8 @@ function hero(t){
     (browserP>0?`<g transform="translate(300 180) scale(${browserP}) translate(-300 -180)">${w11Window(40,18,526,300,'Nairobi - Wikipedia',(ww,hh)=>wBrowser(ww,hh,'en.wikipedia.org/wiki/Nairobi',0,wWiki),{noicon:true})}</g>`:''),
     {over:(w,h)=>w11Toast(w,h,'Photo from My phone','IMG_2048.jpg · saved to Downloads',fade(t,4.2)-fade(t,6.0),{thumb:true})+
       w11Toast(w,h,'Link from My phone','en.wikipedia.org/wiki/Nairobi',fade(t,14.1)-fade(t,15.8))});
-  let s=lp+ph;
+  let s=`<g transform="translate(0 ${34*(1-li)})" opacity="${li}">${lp}</g><g transform="translate(${-50*(1-pi)} ${60*(1-pi)}) rotate(${-9*(1-pi)} 86 300)" opacity="${pi}">${ph}</g>`;
+  if(el<1.6)return s;
   s+=shareTaps(t,.8);
   s+=fly(t,3.25,1.0,G.ps(154,380),G.ls(222,116));
   if(t>=6.2&&t<7.5){const p=eio(seg(t,6.4,7.3)), x=lerp(140,443,p), y=lerp(116,205,p), [ox,oy]=G.ls(0,0);
@@ -610,8 +612,29 @@ function hotspotS(t){
 }
 
 
+// Works on everything: five systems circle the Droplet logo, droplets hop between them
+function orbit(t){
+  const cx=500, cy=214, rx=372, ry=128;
+  const devs=[['Android',miniAndroid],['iPhone',miniIphone],['Windows',miniWindows],['Mac',miniMac],['Linux',miniLinux]];
+  const pos=devs.map((d,i)=>{const a=Math.PI/2+i*2*Math.PI/5+t*.12;return [cx+Math.cos(a)*rx, cy+Math.sin(a)*ry, Math.sin(a)]});
+  FS=.55;
+  let back='', front='';
+  const order=pos.map((p,i)=>i).sort((a,b)=>pos[a][2]-pos[b][2]);
+  let s=`<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="#9FC5F5" stroke-width="2" stroke-dasharray="3 10" stroke-linecap="round"/>
+   <ellipse cx="${cx}" cy="${cy+6}" rx="230" ry="150" fill="url(#glow)" opacity=".6"/>`;
+  const dev=i=>{const [x,y,z]=pos[i], k=.78+.3*(z+1)/2;
+    return `<g transform="translate(${x} ${y}) scale(${k})" opacity="${.55+.45*(z+1)/2}"><ellipse cy="72" rx="64" ry="9" fill="#0E1A33" opacity=".08"/>${devs[i][1]()}
+      <text y="${devs[i][0]==='Linux'?88:84}" text-anchor="middle" font-size="19" font-weight="800" fill="#1D2433" font-family="Plus Jakarta Sans, sans-serif">${devs[i][0]}</text></g>`};
+  order.filter(i=>pos[i][2]<0).forEach(i=>s+=dev(i));
+  s+=`<g transform="translate(${cx} ${cy}) scale(${1+.03*Math.sin(t*2)}) translate(-62 -62)">${mark(0,0,124)}</g>`;
+  order.filter(i=>pos[i][2]>=0).forEach(i=>s+=dev(i));
+  const hops=[[0,2],[3,1],[4,0],[1,4],[2,3],[0,3],[4,2],[1,0]];
+  const k=Math.floor(t/1.1)%hops.length, t0=Math.floor(t/1.1)*1.1, [a,b]=hops[k];
+  s+=fly(t,t0+.05,.9,pos[a].slice(0,2),pos[b].slice(0,2),90);
+  return s;
+}
 // ---------- the engine: draws each picture while it's on screen ----------
-const SCENES={hero:{d:18,still:4.4,f:hero},install:{d:7,still:5,f:install},pair:{d:5,still:1.4,f:pair},send:{d:6,still:4.2,f:send},hotspot:{d:5,still:3,f:hotspotS}};
+const SCENES={hero:{d:18,still:4.4,f:hero},install:{d:7,still:5,f:install},pair:{d:5,still:1.4,f:pair},send:{d:6,still:4.2,f:send},hotspot:{d:5,still:3,f:hotspotS},orbit:{d:8.8,still:1.3,f:orbit}};
 // ---------- the phone as a remote ----------
 function aTabs(w,y,act){
   const tabs=['Touchpad','Keys','Media'], tw=(w-28)/3;
@@ -822,19 +845,23 @@ function start(){
   defs.style.cssText='position:absolute;width:0;height:0;overflow:hidden';
   defs.innerHTML=DEFS+OS_DEFS; document.body.prepend(defs);
   [].forEach.call(document.querySelectorAll('svg[data-scene]'),function(svg,i){
-    const sc=SCENES[svg.getAttribute('data-scene')]; if(!sc) return;
-    const pfx='s'+i+'_'; let word=null;
-    const draw=function(t){PFX=pfx;clipN=0;svg.innerHTML=sc.f(t);
-      if(sc===SCENES.hero&&window.dropletWord){let k=null;HERO_WORDS.forEach(function(w){if(t>=w[0])k=w[1]});if(k!==word){word=k;window.dropletWord(k)}}};
-    draw(sc.still);
-    if(reduce||!window.requestAnimationFrame) return;
-    let on=false, t0=0, last=0, run=false;
+    const pfx='s'+i+'_'; let word=null, cur=null, base=0, born=0;
+    // t: where this scene is in its loop; el: seconds since the picture first appeared (for intros)
+    const draw=function(now){
+      const name=svg.getAttribute('data-scene'), sc=SCENES[name]; if(!sc) return;
+      if(name!==cur){cur=name;base=now}
+      const t=reduce?sc.still:((now-base)/1000)%sc.d, el=reduce?99:(now-born)/1000;
+      PFX=pfx;clipN=0;svg.innerHTML=sc.f(t,el);
+      if(name==='hero'&&window.dropletWord){let k=null;HERO_WORDS.forEach(function(w){if(t>=w[0])k=w[1]});if(k!==word){word=k;window.dropletWord(k)}}
+    };
+    if(reduce||!window.requestAnimationFrame){draw(0);new MutationObserver(function(){draw(0)}).observe(svg,{attributes:true,attributeFilter:['data-scene']});return}
+    let on=false, last=0, run=false;
     const loop=function(now){
       if(!on||document.hidden){run=false;return}
-      if(now-last>=33){last=now;draw(((now-t0)/1000)%sc.d)}
+      if(now-last>=33){last=now;if(!born)born=now;draw(now)}
       requestAnimationFrame(loop);
     };
-    const go=function(v){on=v;if(on&&!run){run=true;if(!t0)t0=performance.now();requestAnimationFrame(loop)}};
+    const go=function(v){on=v;if(on&&!run){run=true;requestAnimationFrame(loop)}};
     if('IntersectionObserver' in window) new IntersectionObserver(function(es){go(es[0].isIntersecting)},{rootMargin:'60px 0px'}).observe(svg); else go(true);
     document.addEventListener('visibilitychange',function(){if(!document.hidden)go(on)});
   });
