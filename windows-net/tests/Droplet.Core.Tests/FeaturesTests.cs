@@ -549,7 +549,8 @@ public sealed class NameTests : FeaturePeers
         await a.Node.SendLinkAsync(Fp(b), "https://example.com");
         a.Node.SetPerms(Fp(b), paused: false);
         await a.Node.RenameAsync("a2");
-        await (await b.Node.DirectAsync(Fp(a)))!.SendAsync(new JsonObject { ["t"] = "text", ["id"] = "fromb00001", ["body"] = "hello" });
+        // sent the way the app sends, so a link replaced just after the rename doesn't lose it
+        await b.Node.WaitJobAsync(b.Node.SendText(Fp(a), "hello").Id, TimeSpan.FromSeconds(15));
         await Wait.For(() => a.Node.Chat.Recent().Any(m => m.Body == "hello"), 15, "b's message");
         // its notifications use the nickname (shown just after the message is saved)
         await Wait.For(() => a.Fakes.Notifications.Shown.Any(n => n.Title == "Brian's laptop"), 15, "the notification");
