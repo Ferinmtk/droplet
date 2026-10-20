@@ -213,7 +213,8 @@ def test_nicknames_show_here_and_are_never_sent(nodes):
         a.send_link(b.identity.fp, "https://example.com")
         a.set_perms(b.identity.fp, paused=False)
         a.rename("a2")
-        b.direct(a.identity.fp).send({"t": "text", "id": "fromb00001", "body": "hello"})
+        # sent the way the app sends, so a link replaced just after the rename doesn't lose it
+        b.send_text(a.identity.fp, "hello")
         assert wait_for(lambda: any(m["body"] == "hello" for m in a.chat_history()))
         # its notifications use the nickname (shown just after the message is saved)
         assert wait_for(lambda: a.desktop.shown and a.desktop.shown[-1][0] == "Brian's laptop")
