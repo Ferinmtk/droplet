@@ -1,6 +1,6 @@
 """Locking the screen.
 
-Desktops with their own lock screen (KDE, GNOME, Cinnamon, …) lock when
+Desktops with their own lock screen (Plasma, GNOME, Cinnamon, …) lock when
 logind asks, so `loginctl lock-session` is right there. Compositors like niri
 and sway have nothing listening for that, so a screen locker is started
 directly, in a way that outlives the agent (see env.spawn_detached).
@@ -23,7 +23,7 @@ from . import env
 log = logging.getLogger("droplet_agent.lock")
 
 # desktops whose session answers logind's Lock signal
-LOGIND_DESKTOPS = {"kde", "gnome", "cinnamon", "mate", "xfce", "budgie", "lxqt", "cosmic", "deepin", "pantheon"}
+LOGIND_DESKTOPS = {"plasma", "gnome", "cinnamon", "mate", "xfce", "budgie", "lxqt", "cosmic", "deepin", "pantheon"}
 
 # lockers, best first; each backgrounds itself or is fine being detached
 WAYLAND_LOCKERS = (

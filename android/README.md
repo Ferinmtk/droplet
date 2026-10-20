@@ -448,7 +448,7 @@ works with nothing installed: Windows, Linux, macOS, Google TV and Android TV.
 minutes), then on the other device:
 
 - **Windows:** Settings → Bluetooth & devices → Add device → Bluetooth.
-- **KDE Plasma:** System Settings → Bluetooth → Add New Device.
+- **Plasma (Linux):** System Settings → Bluetooth → Add New Device.
 - **Google TV:** Settings → Remotes & Accessories → Pair remote or accessory.
 
 It connects by itself once paired. Next time, **Reconnect to <name>**, or tap
@@ -515,7 +515,7 @@ connection state machine against a fake stack. They can't show:
 
 - whether MIUI/HyperOS on the Redmi Note 11E Pro offers `HID_DEVICE`
   (that is up to the firmware, and nothing here can tell in advance);
-- pairing and connecting with Windows, KDE and a Google TV, and how each
+- pairing and connecting with Windows, Linux and a Google TV, and how each
   treats the consumer and pan reports;
 - latency and how the pointer feels on each host.
 

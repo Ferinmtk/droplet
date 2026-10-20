@@ -379,7 +379,7 @@ def same_origin_writes():
 
 # --- who gets in --------------------------------------------------------------
 #
-# droplet is local-first, like KDE Connect: devices on the same Wi-Fi talk to
+# droplet is local-first: devices on the same Wi-Fi talk to
 # the hub directly. So the LAN can't be trusted by itself. A request is
 # trusted when it comes
 #   - from a process on the hub itself,

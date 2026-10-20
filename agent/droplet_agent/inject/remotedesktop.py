@@ -1,9 +1,9 @@
-"""Input through the xdg-desktop-portal RemoteDesktop interface (KDE, GNOME).
+"""Input through the xdg-desktop-portal RemoteDesktop interface (Plasma, GNOME).
 
 The first time, the desktop shows a dialog asking the user to allow remote
 control. We ask for a persistent grant (persist_mode 2) and keep the
 restore token it gives back, so later starts don't ask again. While a session
-runs, KDE shows an indicator in the system tray, and the user can end it
+runs, Plasma shows an indicator in the system tray, and the user can end it
 there; the agent then stops taking input until it's restarted.
 
 Text is typed as keysyms, which don't depend on the keyboard layout.

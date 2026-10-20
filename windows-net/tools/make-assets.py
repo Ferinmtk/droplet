@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Builds droplet for Windows' images from the web app's icon (static/icon-512.png).
+"""Builds droplet for Windows' images from the web app's icon (static/icon-512.png) and the
+tray mark (branding/droplet-tray-256.png); branding/make-icons.py draws both, then runs this.
 
     python3 windows-net/tools/make-assets.py      (needs Pillow)
 
 It writes, under windows-net/:
   src/Droplet.Windows/Assets/droplet.ico    the exe and window icon (the full tile)
   src/Droplet.Windows/Assets/droplet-256.png  the notification and window image
-  src/Droplet.Windows/Assets/tray*.ico      the tray: the drop alone, which reads better
-                                            at 16 px than the tile; aqua, grey (can't reach
-                                            anything) and amber (being controlled)
+  src/Droplet.Windows/Assets/tray*.ico      the tray: the drop and its signal alone, which
+                                            read better at 16 px than the tile; aqua, grey
+                                            (can't reach anything), amber (being controlled)
+                                            and grey with an orange pause badge (paused)
   packaging/Assets/*.png                    the MSIX visual assets, every scale
 
 The outputs are committed, so building doesn't need this step.
@@ -17,16 +19,17 @@ import io
 import os
 import struct
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = os.path.dirname(ROOT)
 SRC = os.path.join(REPO, "static", "icon-512.png")
+MARK = os.path.join(REPO, "branding", "droplet-tray-256.png")
 APP = os.path.join(ROOT, "src", "Droplet.Windows", "Assets")
 PKG = os.path.join(ROOT, "packaging", "Assets")
 
-TILE = (18, 43, 48)      # the icon's dark teal tile
 AMBER = (251, 191, 36)   # "someone is controlling this PC"
+ORANGE = (245, 158, 11)  # the pause badge
 
 
 def ico(images):
@@ -52,27 +55,18 @@ def resized(im, n):
     return im.resize((n, n), Image.LANCZOS)
 
 
-def drop_only(src):
-    """The drop cut out of its tile: alpha from how far each pixel is from the tile, colour un-mixed."""
-    w, h = src.size
-    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    s, o = src.load(), out.load()
-    for y in range(h):
-        if y > 374:  # the ripples below the drop stay out
-            break
-        for x in range(w):
-            r, g, b, _ = s[x, y]
-            a = min(1.0, max(0.0, (b - 70) / (230 - 70)))
-            if a <= 0:
-                continue
-            un = [min(255, max(0, round((c - (1 - a) * t) / a))) for c, t in zip((r, g, b), TILE)]
-            o[x, y] = (un[0], un[1], un[2], round(a * 255))
-    box = out.getbbox()
-    side = max(box[2] - box[0], box[3] - box[1]) + 8
-    cx, cy = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
-    sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    sq.paste(out.crop((cx - side // 2, cy - side // 2, cx - side // 2 + side, cy - side // 2 + side)), (0, 0))
-    return sq
+def paused(mark):
+    """Grey, with an orange pause badge in the corner (Pause everything is on)."""
+    out = recolour(mark, dim)
+    w = out.size[0]
+    d = ImageDraw.Draw(out)
+    r = w * 0.27
+    cx = cy = w - r - w * 0.01
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=ORANGE + (255,), outline=(16, 20, 29, 255), width=round(w * 0.04))
+    bw, bh, gap = r * 0.26, r * 0.95, r * 0.22
+    for x in (cx - gap - bw, cx + gap):
+        d.rounded_rectangle((x, cy - bh / 2, x + bw, cy + bh / 2), radius=bw / 3, fill=(255, 255, 255, 255))
+    return out
 
 
 def recolour(im, fn):
@@ -120,9 +114,10 @@ def main():
         f.write(ico([resized(src, n) for n in (16, 20, 24, 32, 40, 48, 64, 256)]))
     save_png(resized(src, 256), os.path.join(APP, "droplet-256.png"))
 
-    drop = drop_only(src)
+    drop = Image.open(MARK).convert("RGBA")
     tray = (16, 20, 24, 32, 40, 48, 64)
-    for name, im in (("tray", drop), ("tray-dim", recolour(drop, dim)), ("tray-live", recolour(drop, amber))):
+    for name, im in (("tray", drop), ("tray-dim", recolour(drop, dim)), ("tray-live", recolour(drop, amber)),
+                     ("tray-paused", paused(drop))):
         with open(os.path.join(APP, name + ".ico"), "wb") as f:
             f.write(ico([resized(im, n) for n in tray]))
 

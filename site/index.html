@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NOXERA Droplet: send files between your phone and computer (Android, iPhone, Windows, Mac, Linux)</title>
 <meta name="description" content="Send photos, files, links, messages and your clipboard between your phone and your computer, straight over your own Wi-Fi. Android, iPhone, Windows, Mac and Linux. Free, open source, no account, no cloud.">
-<meta name="theme-color" content="#fbfaf7">
+<meta name="theme-color" content="#ffffff">
 <meta name="color-scheme" content="light">
 <link rel="canonical" href="https://droplet.noxeratech.com/">
 <meta property="og:type" content="website">
@@ -30,7 +30,7 @@
 <script>document.documentElement.classList.add('js')</script>
 <style>
 :root{
-  --bg:#fbfaf7; --bg-2:#f5f2ec; --card:#fff; --ink:#1d2433; --muted:#5a6273; --faint:#646c7d; --line:#ebe7df; --line-2:#ddd8ce;
+  --bg:#ffffff; --bg-2:#f5f7fa; --card:#fff; --ink:#1d2433; --muted:#5a6273; --faint:#646c7d; --line:#e6e9ef; --line-2:#d6dbe4;
   --sky:#d9ecff; --sky-2:#eef5ff; --sky-d:#2f6fdb; --sky-t:#2459b8;
   --mint:#d5f5e6; --mint-d:#1f9e6a; --mint-t:#14694a;
   --lilac:#ebe3ff; --lilac-d:#7c5cd6; --lilac-t:#5a3db8;
@@ -63,13 +63,13 @@ b,strong{font-weight:700}
 main{overflow-x:clip}
 
 /* ---------- header ---------- */
-.top{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.82);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid transparent;transition:border-color .3s}
+.top{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid transparent;transition:border-color .3s}
 .top.scrolled{border-bottom-color:var(--line)}
 .top .wrap{display:flex;align-items:center;gap:24px;height:68px}
 .brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;margin-right:auto}
 .brand:hover{color:var(--ink)}
-.mark{width:36px;height:36px;border-radius:12px;background:var(--sky);display:grid;place-items:center;flex:none}
-.mark svg{width:18px;height:22px}
+.mark{width:36px;height:36px;border-radius:11px;background:#0E1A33;display:grid;place-items:center;flex:none}
+.mark svg{width:27px;height:27px}
 .brand b{font-size:21px;letter-spacing:-.02em;font-weight:800}
 .brand small{font-size:12px;font-weight:600;color:var(--faint);letter-spacing:.03em;align-self:flex-end;padding-bottom:5px;margin-left:-2px}
 .nav{display:none;gap:30px}
@@ -81,7 +81,7 @@ main{overflow-x:clip}
 .btn-p{background:var(--btn);color:#fff;box-shadow:0 8px 20px -8px rgba(47,111,219,.6)}
 .btn-p:hover{background:var(--btn-h);color:#fff}
 .btn-s{background:#fff;color:var(--ink);border-color:var(--line-2)}
-.btn-s:hover{color:var(--ink);border-color:#c9c3b7}
+.btn-s:hover{color:var(--ink);border-color:#bcc3cf}
 .top .btn{min-height:42px;padding:0 18px;font-size:14px}
 .btn .i{width:19px;height:19px}
 
@@ -94,7 +94,7 @@ main{overflow-x:clip}
 .pill i{width:7px;height:7px;border-radius:50%;background:var(--mint-d)}
 .hero h1{font-size:clamp(38px,10.4vw,62px);line-height:1.06;letter-spacing:-.04em;margin:16px 0 16px}
 @media (min-width:960px){.hero h1{font-size:clamp(46px,4.1vw,56px);margin:22px 0 20px}}
-@media (max-width:559px){.hero .art{width:auto;margin:0 calc(-1*var(--gut))}.hint{left:var(--gut)}}
+@media (max-width:559px){.hero .art{width:auto;margin:0 calc(-1*var(--gut))}}
 @media (min-width:560px) and (max-width:959px){.hero .art{max-width:560px;margin:8px auto 0}.hero .works{justify-content:center}}
 .swap{position:relative;display:inline-block;color:var(--hl-t,var(--sky-t));transition:color .4s}
 .swap::after{content:"";position:absolute;left:-4px;right:-4px;bottom:.08em;height:.3em;background:var(--hl,var(--sky));border-radius:8px;z-index:-1;transition:background .4s}
@@ -113,7 +113,7 @@ h1[data-k=note]{--hl:var(--peach);--hl-t:var(--peach-t)}
 .other{position:relative}
 .other summary{list-style:none;display:flex;align-items:center;gap:8px;min-height:54px;padding:0 22px;border-radius:999px;border:1.5px solid var(--line-2);background:#fff;color:var(--ink);font-weight:700;font-size:16px;cursor:pointer;user-select:none;-webkit-user-select:none}
 .other summary::-webkit-details-marker{display:none}
-.other summary:hover{border-color:#c9c3b7}
+.other summary:hover{border-color:#bcc3cf}
 .other summary .i{width:17px;height:17px;transition:transform .2s;color:var(--faint)}
 .other[open] summary .i{transform:rotate(180deg)}
 .other ul{position:absolute;z-index:20;top:calc(100% + 8px);left:0;min-width:260px;margin:0;padding:6px;list-style:none;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 50px -16px rgba(29,36,51,.3)}
@@ -129,22 +129,40 @@ h1[data-k=note]{--hl:var(--peach);--hl-t:var(--peach-t)}
 .works a:hover{border-color:var(--line-2);color:var(--ink)}
 .works .i{width:15px;height:15px;color:#7f889b}
 
-/* the demo */
+/* works on everything */
+.every{padding-top:24px;overflow:hidden}
+.every .head{margin-bottom:8px}
+.every svg{width:100%;height:auto;max-width:1060px;margin:0 auto;overflow:visible}
+@media (max-width:640px){.every svg{width:118%;max-width:none;margin-left:-9%}}
+
+/* how it works, told as you scroll (wide screens) */
+.story{display:none}
+@media (min-width:960px){
+  #how .steps,#how .hotspot{display:none}
+  .story{display:grid;grid-template-columns:1.2fr 1fr;gap:64px;align-items:start}
+  .story-pic{position:sticky;top:calc(50vh - 230px)}
+  .story-pic .frame{border-radius:32px;padding:18px;background:var(--sb,#eef5ff);transition:background .6s ease;box-shadow:var(--shadow)}
+  .story-pic svg{width:100%;height:auto;display:block;transition:opacity .25s ease}
+  .story-pic svg.swap-out{opacity:0}
+  .story-steps{list-style:none;margin:0;padding:0}
+  .story-steps li{min-height:62vh;display:flex;flex-direction:column;justify-content:center;gap:12px;opacity:.28;transform:translateY(10px);transition:opacity .45s ease,transform .6s cubic-bezier(.2,.8,.2,1)}
+  .story-steps li.on{opacity:1;transform:none}
+  .story-steps li:first-child{min-height:48vh;justify-content:flex-start;padding-top:12vh}
+  .story-steps li:last-child{min-height:56vh}
+  .story-steps .n{width:40px;height:40px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:800}
+  .story-steps .n.w{background:var(--peach-d)}
+  .story-steps h3{font-size:clamp(26px,2.6vw,34px);letter-spacing:-.03em;font-weight:800;line-height:1.12}
+  .story-steps p{color:var(--muted);font-size:17px;line-height:1.62;max-width:28em}
+  .story-dots{display:flex;gap:8px;margin-top:16px;justify-content:center}
+  .story-dots i{width:8px;height:8px;border-radius:50%;background:var(--line-2);transition:width .4s,background .4s}
+  .story-dots i.on{width:26px;border-radius:4px;background:var(--btn)}
+}
+
+/* the picture */
 .art{position:relative;width:100%;max-width:600px;margin:0 auto;-webkit-tap-highlight-color:transparent}
 .art svg{width:100%;height:auto;overflow:visible;user-select:none;-webkit-user-select:none}
-.art text{font-family:var(--font)}
-#card{cursor:grab;touch-action:none}
-#card.drag{cursor:grabbing}
-#send{cursor:pointer}
-#send:focus{outline:none}
-#send .ring{opacity:0}
-#send:focus-visible .ring{opacity:1}
-#send:hover .btnbg{fill:var(--btn-h)}
-.hint{position:absolute;left:0;top:2%;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 14px 7px 8px;font-size:13px;font-weight:700;color:var(--ink);box-shadow:var(--shadow);opacity:0;transform:translateY(6px);transition:opacity .4s,transform .4s;pointer-events:none;white-space:nowrap}
-.hint.up{opacity:1;transform:none}
-.hint i{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--peach);color:var(--peach-t);font-style:normal;font-size:14px}
-.hint .i{width:15px;height:15px}
-@media (min-width:960px){.hint{top:0;left:2%}}
+.art{perspective:1400px}
+.art .scn{transform:rotateY(var(--ry,0deg)) rotateX(var(--rx,0deg));transition:transform .9s cubic-bezier(.2,.8,.2,1);transform-origin:50% 60%}
 
 /* ---------- sections ---------- */
 section{padding:64px 0;scroll-margin-top:60px}
@@ -186,7 +204,7 @@ section{padding:64px 0;scroll-margin-top:60px}
 @media (min-width:1080px){.scene{gap:80px}}
 .pic{border-radius:32px;overflow:hidden}
 .pic svg{width:100%;height:auto}
-.pic text{font-family:var(--font)}
+.pic svg:not(.scn) text{font-family:var(--font)}
 .pic .sB{opacity:0}
 .scene .txt{max-width:31em}
 .scene h3{font-size:clamp(26px,3.1vw,34px);letter-spacing:-.03em;font-weight:800;line-height:1.12;margin:18px 0 12px}
@@ -221,20 +239,21 @@ section{padding:64px 0;scroll-margin-top:60px}
 
 /* how */
 .steps{list-style:none;margin:0;padding:0;display:grid;gap:14px;counter-reset:s}
-@media (min-width:760px){.steps{grid-template-columns:repeat(3,1fr);gap:16px}.step .ill{height:140px}}
-@media (min-width:960px){.steps{gap:20px}.step .ill{height:168px}}
+@media (min-width:760px){.steps{grid-template-columns:repeat(3,1fr);gap:16px}.step .ill{height:190px}}
+@media (min-width:960px){.steps{gap:20px}.step .ill{height:210px}}
 .step{padding:10px 10px 24px;counter-increment:s}
-.step .ill{border-radius:18px;height:168px;display:grid;place-items:center;margin-bottom:20px;overflow:hidden}
+.step .ill{border-radius:18px;height:210px;display:grid;place-items:center;margin-bottom:20px;overflow:hidden}
 .step .ill svg{width:100%;max-width:300px;height:100%}
 .step .t{display:flex;gap:12px;align-items:center;padding:0 14px;margin-bottom:8px}
 .step .t::before{content:counter(s);width:30px;height:30px;border-radius:50%;background:var(--ink);color:#fff;font-weight:800;font-size:14px;display:grid;place-items:center;flex:none}
 .step p{color:var(--muted);font-size:15px;line-height:1.55;padding:0 14px}
-.ill text{font-family:var(--font)}
-.hotspot{margin-top:16px;display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;padding:20px 22px;background:var(--peach);border-radius:var(--r)}
+.ill svg:not(.scn) text{font-family:var(--font)}
+.hotspot{margin-top:16px;display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;overflow:hidden;padding:20px 22px;background:var(--peach);border-radius:var(--r)}
 .hotspot .ic{background:#fff;color:var(--peach-d)}
 .hotspot h3{font-size:17px;margin-bottom:3px;color:#3a2416}
 .hotspot p{color:#5c3b26;font-size:15px;line-height:1.55}
-@media (min-width:860px){.hotspot{margin-top:20px;padding:24px 30px;gap:22px}}
+.hotspot .scn{grid-column:1/-1;width:100%;max-width:340px;height:auto;margin:4px auto -6px}
+@media (min-width:860px){.hotspot{margin-top:20px;padding:24px 30px;gap:22px;grid-template-columns:auto 1fr 300px}.hotspot .scn{grid-column:auto;margin:-10px 0 -18px}}
 
 /* share with people */
 .people{display:grid;gap:36px;align-items:center}
@@ -370,11 +389,11 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
    starts hidden also needs the js class, so without either the page is complete and still. */
 .hero{position:relative;isolation:isolate}
 .hero-bg{position:absolute;inset:-68px 0 0;z-index:-1;overflow:hidden;pointer-events:none;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
-.hero-bg i{position:absolute;display:block;width:var(--s);height:var(--s);border-radius:50%;background:radial-gradient(closest-side,var(--c),rgba(251,250,247,0));opacity:.8}
-.hero-bg i:nth-child(1){--s:min(680px,125vw);--c:#d9ecff;right:-10%;top:-6%}
-.hero-bg i:nth-child(2){--s:min(520px,100vw);--c:#ebe3ff;right:24%;bottom:-22%;opacity:.65}
-.hero-bg i:nth-child(3){--s:min(480px,92vw);--c:#d5f5e6;left:-14%;bottom:-6%;opacity:.7}
-.hero-bg i:nth-child(4){--s:min(440px,84vw);--c:#ffe6d6;left:-10%;top:-12%;opacity:.55}
+.hero-bg i{position:absolute;display:block;width:var(--s);height:var(--s);border-radius:50%;background:radial-gradient(closest-side,var(--c),rgba(255,255,255,0));opacity:.8}
+.hero-bg i:nth-child(1){--s:min(680px,125vw);--c:#d6ebff;right:-10%;top:-6%}
+.hero-bg i:nth-child(2){--s:min(520px,100vw);--c:#d3f8f0;right:24%;bottom:-22%;opacity:.65}
+.hero-bg i:nth-child(3){--s:min(480px,92vw);--c:#dde9ff;left:-14%;bottom:-6%;opacity:.7}
+.hero-bg i:nth-child(4){--s:min(440px,84vw);--c:#e2fbf6;left:-10%;top:-12%;opacity:.55}
 .hw{display:inline-block}
 .top::after{content:"";position:absolute;inset:0;z-index:-1;box-shadow:0 12px 30px -20px rgba(29,36,51,.3);opacity:0;transition:opacity .3s;pointer-events:none}
 .top.scrolled::after{opacity:1}
@@ -395,6 +414,12 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
 .dg,.ok,.okr,.rg,.dp,.e-bg0,.bgc,.tw,.e-ph{transform-box:fill-box;transform-origin:center}
 
 @media (prefers-reduced-motion:no-preference){
+  @supports (animation-timeline:view()){
+    @keyframes sIn{from{transform:translateY(42px) scale(.95);opacity:.2}}
+    @keyframes sDrift{from{transform:translateY(24px)}to{transform:translateY(-24px)}}
+    .pic .scn,.ill .scn,.every svg{animation:sIn linear both;animation-timeline:view();animation-range:entry 0% cover 32%}
+    .lapf .lap,.show .ph{animation:sDrift linear both;animation-timeline:view()}
+  }
   /* hero entrance */
   @keyframes rise{from{opacity:0;transform:translateY(18px)}}
   @keyframes wIn{from{opacity:0;transform:translateY(.55em) rotate(3deg)}}
@@ -608,7 +633,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
 <header class="top" id="top">
   <div class="wrap">
     <a class="brand" href="#main" aria-label="Droplet by NOXERA, home">
-      <span class="mark" aria-hidden="true"><svg viewBox="0 0 18 22"><path d="M9 1C9 1 1.5 9.5 1.5 14a7.5 7.5 0 0 0 15 0C16.5 9.5 9 1 9 1Z" fill="#2f6fdb"/><circle cx="6" cy="14.5" r="1.8" fill="#fff" opacity=".85"/></svg></span>
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 128 128"><defs><linearGradient id="m1d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7EF0DC"/><stop offset="1" stop-color="#3B7BFF"/></linearGradient></defs><path d="M90.85 40.70 Q98.85 62.82 100.54 86.29 A26.91 26.91 0 1 1 56.21 71.89 Q71.37 53.90 90.85 40.70Z" fill="url(#m1d)" stroke="url(#m1d)" stroke-width="3.67" stroke-linejoin="round"/><path d="M82.42 27.22 A15.90 15.90 0 0 1 105.59 34.75" fill="none" stroke="#7EF0DC" stroke-width="7.95" stroke-linecap="round" opacity="1.0"/><path d="M74.64 14.78 A30.57 30.57 0 0 1 119.19 29.25" fill="none" stroke="#7EF0DC" stroke-width="7.95" stroke-linecap="round" opacity="0.5"/><g stroke="#7EF0DC" stroke-width="6.11" stroke-linecap="round" opacity=".5"><line x1="15.52" y1="84.54" x2="32.64" y2="84.54"/><line x1="8.18" y1="101.67" x2="30.19" y2="101.67"/><line x1="17.96" y1="118.79" x2="35.08" y2="118.79"/></g></svg></span>
       <b>Droplet</b><small>by NOXERA</small>
     </a>
     <nav class="nav" aria-label="Main">
@@ -658,94 +683,22 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
     </div>
 
     <div class="art" id="art">
-      <svg id="demo" viewBox="0 0 600 480" role="group" aria-labelledby="demo-t">
-        <title id="demo-t">Try it: a phone sends things to a laptop. Each one turns into a droplet, flies over and lands in the laptop's Received tray.</title>
-        <defs>
-          <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe0ff"/><stop offset="1" stop-color="#e9f4ff"/></linearGradient>
-          <linearGradient id="g-hill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fd6ad"/><stop offset="1" stop-color="#4fbf8c"/></linearGradient>
-          <linearGradient id="g-drop" x1=".2" y1="0" x2=".8" y2="1"><stop offset="0" stop-color="#9fd0ff"/><stop offset=".55" stop-color="#4a8ff0"/><stop offset="1" stop-color="#2459b8"/></linearGradient>
-          <filter id="f-sh" x="-25%" y="-20%" width="150%" height="160%"><feDropShadow dx="0" dy="14" stdDeviation="15" flood-color="#1d2433" flood-opacity=".15"/></filter>
-          <filter id="f-sm" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#1d2433" flood-opacity=".14"/></filter>
-          <clipPath id="c-it"><rect width="120" height="90" rx="12"/></clipPath>
-          <symbol id="it-photo" viewBox="0 0 120 90"><g clip-path="url(#c-it)"><rect width="120" height="90" fill="url(#g-sky)"/><circle cx="88" cy="26" r="12" fill="#ffd27a"/><path d="M-4 90 28 50l24 22 24-30 48 48Z" fill="url(#g-hill)"/><path d="M-4 90Q40 64 124 82V90Z" fill="#3aa877"/></g></symbol>
-          <symbol id="it-link" viewBox="0 0 120 90"><g clip-path="url(#c-it)"><rect width="120" height="90" fill="#d5f5e6"/><path d="M-5 30 125 52M38-5 58 95M80-5 70 95" stroke="#fff" stroke-width="7"/><path d="M-5 70Q50 60 125 76" stroke="#fff" stroke-width="4"/><rect y="62" width="120" height="28" fill="#fff"/><rect x="34" y="70" width="60" height="5" rx="2.5" fill="#1d2433" opacity=".75"/><rect x="34" y="79" width="40" height="4" rx="2" fill="#9aa3b5"/><g transform="translate(12 69)" fill="none" stroke="#1f9e6a" stroke-width="2.4" stroke-linecap="round"><path d="M7 9.5l-1.6 1.6a3 3 0 0 1-4.3-4.3L3.4 4.6M9.6 6.4l1.6-1.6a3 3 0 0 0-4.3-4.3L4.7 2.1M4.8 8.2l3.4-3.4"/></g><path d="M64 14c-7 0-11 5-11 10 0 8 11 18 11 18s11-10 11-18c0-5-4-10-11-10Z" fill="#d9773c"/><circle cx="64" cy="24.5" r="4" fill="#fff"/></g></symbol>
-          <symbol id="it-pdf" viewBox="0 0 120 90"><g clip-path="url(#c-it)"><rect width="120" height="90" fill="#ebe3ff"/><path d="M38 10h32l14 14v58a4 4 0 0 1-4 4H38a4 4 0 0 1-4-4V14a4 4 0 0 1 4-4Z" fill="#fff"/><path d="M70 10v10a4 4 0 0 0 4 4h10" fill="#d8cdfb"/><rect x="42" y="34" width="34" height="4" rx="2" fill="#c8bdf2"/><rect x="42" y="43" width="30" height="4" rx="2" fill="#c8bdf2"/><rect x="42" y="52" width="34" height="4" rx="2" fill="#c8bdf2"/><rect x="42" y="61" width="22" height="4" rx="2" fill="#c8bdf2"/><rect x="24" y="64" width="34" height="17" rx="5" fill="#e0483e"/><text x="41" y="76.5" text-anchor="middle" font-size="11" font-weight="800" fill="#fff">PDF</text></g></symbol>
-          <symbol id="it-note" viewBox="0 0 120 90"><g clip-path="url(#c-it)"><rect width="120" height="90" fill="#ffe6d6"/><path d="M18 18h84a8 8 0 0 1 8 8v26a8 8 0 0 1-8 8H40l-12 10V60h-10a8 8 0 0 1-8-8V26a8 8 0 0 1 8-8Z" fill="#fff"/><text x="60" y="44" text-anchor="middle" font-size="14" font-weight="800" fill="#1d2433">See you at 6!</text><circle cx="98" cy="76" r="5" fill="#ffb27a"/><circle cx="84" cy="80" r="3" fill="#ffb27a" opacity=".6"/></g></symbol>
-        </defs>
-        <!-- soft background -->
-        <g class="pl" data-depth="4">
-        <circle class="e-bg0" cx="340" cy="230" r="220" fill="#eef5ff"/>
-        <circle class="bgc f1" style="--a:.5s" cx="528" cy="62" r="54" fill="#ebe3ff"/>
-        <circle class="bgc f2" style="--a:.65s" cx="70" cy="408" r="50" fill="#d5f5e6"/>
-        <circle class="bgc f2" style="--a:.8s" cx="130" cy="96" r="9" fill="#ffd4b8"/>
-        <circle class="bgc f1" style="--a:.9s" cx="580" cy="400" r="7" fill="#9fc5f5"/>
-        <path class="tw" d="M232 38l3 8 8 3-8 3-3 8-3-8-8-3 8-3z" fill="#ffb27a"/>
-        </g>
-
-        <!-- laptop -->
-        <g class="pl" data-depth="6"><g class="e-lap"><g id="lap-k">
-        <g filter="url(#f-sh)">
-          <rect x="196" y="64" width="372" height="244" rx="18" fill="#2a3245"/>
-          <path d="M158 308h448l-18 22a14 14 0 0 1-11 5H187a14 14 0 0 1-11-5Z" fill="#dfe3ea"/>
-        </g>
-        <rect x="350" y="308" width="64" height="7" rx="3.5" fill="#c7ccd6"/>
-        <rect x="208" y="76" width="348" height="220" rx="8" fill="#fff"/>
-        <path d="M208 84a8 8 0 0 1 8-8h332a8 8 0 0 1 8 8v20H208Z" fill="#f3f5f9"/>
-        <circle cx="224" cy="90" r="4" fill="#ffb4a8"/><circle cx="237" cy="90" r="4" fill="#ffd98a"/><circle cx="250" cy="90" r="4" fill="#9ce0bb"/>
-        <text x="382" y="94.5" text-anchor="middle" font-size="12" font-weight="700" fill="#5d6577">Droplet</text>
-        <text x="228" y="131" font-size="16" font-weight="800" fill="#1d2433">Received</text>
-        <text x="536" y="131" text-anchor="end" font-size="12" font-weight="600" fill="#8a93a6">from your phone</text>
-        <g fill="#f6f8fb" stroke="#c9d6ea" stroke-width="1.6" stroke-dasharray="5 4">
-          <rect x="228" y="142" width="96" height="72" rx="11"/><rect x="334" y="142" width="96" height="72" rx="11"/><rect x="440" y="142" width="96" height="72" rx="11"/>
-        </g>
-        <path id="arrow" d="M488 166v20m-8-8 8 8 8-8" stroke="#2f6fdb" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <g id="slots">
-          <g transform="translate(228 142)"><use href="#it-pdf" width="96" height="72"/></g>
-          <g transform="translate(334 142)"><use href="#it-note" width="96" height="72"/></g>
-        </g>
-        <g id="rip" fill="none" stroke="#2f6fdb" stroke-width="2.4" opacity="0"><circle id="rip1" cx="488" cy="178" r="0"/><circle id="rip2" cx="488" cy="178" r="0"/></g>
-        <g id="toast">
-          <rect x="228" y="228" width="308" height="46" rx="13" fill="#d5f5e6"/>
-          <circle cx="251" cy="251" r="10.5" fill="#1f9e6a"/><path d="M246 251.5l3.5 3.5 6-7" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-          <text id="toast-t" x="271" y="256" font-size="13.5" font-weight="700" fill="#14694a">Your phone is connected</text>
-        </g>
-        </g></g></g>
-
-        <!-- phone -->
-        <g class="pl" data-depth="10"><g class="e-ph"><g id="ph-k">
-        <g id="phone" transform="rotate(-7 108 306)">
-          <g filter="url(#f-sh)"><rect x="26" y="158" width="164" height="296" rx="28" fill="#2a3245"/></g>
-          <rect x="35" y="167" width="146" height="278" rx="21" fill="#fff"/>
-          <rect x="88" y="175" width="40" height="9" rx="4.5" fill="#2a3245"/>
-          <text x="48" y="208" font-size="14" font-weight="800" fill="#1d2433">Send to</text>
-          <rect x="46" y="216" width="124" height="40" rx="11" fill="#eef5ff"/>
-          <rect x="55" y="227" width="22" height="15" rx="3" fill="#2a3245"/><rect x="52" y="242" width="28" height="3" rx="1.5" fill="#2a3245"/>
-          <text x="85" y="234" font-size="11.5" font-weight="700" fill="#1d2433">My laptop</text>
-          <circle cx="88" cy="245.5" r="3" fill="#1f9e6a"/><text x="95" y="249" font-size="9.5" font-weight="600" fill="#5d6577">Connected</text>
-          <rect x="46" y="266" width="124" height="93" rx="12" fill="#f4f6fa"/>
-          <g id="card"><use id="card-use" href="#it-photo" x="46" y="266" width="124" height="93"/></g>
-          <text id="cap" x="48" y="377" font-size="10.5" font-weight="600" fill="#5d6577">IMG_2048.jpg · 3.1 MB</text>
-          <g id="send" role="button" tabindex="0" aria-label="Send the photo to the laptop">
-            <rect class="ring" x="41" y="383" width="134" height="44" rx="22" fill="none" stroke="#2f6fdb" stroke-width="3"/>
-            <rect class="btnbg" x="46" y="388" width="124" height="34" rx="17" fill="#2f6fdb"/>
-            <text id="send-t" x="108" y="409.5" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Send photo</text>
-          </g>
-          <rect x="84" y="434" width="48" height="4" rx="2" fill="#d5d9e2"/>
-        </g>
-        </g></g></g>
-
-        <!-- flight -->
-        <path id="trail" d="M0 0" stroke="#9fc5f5" stroke-width="3" fill="none" stroke-dasharray="2 9" stroke-linecap="round" opacity="0"/>
-        <g id="drop" opacity="0" transform="translate(-100 -100)" filter="url(#f-sm)">
-          <path d="M0-20C7-10 13-3 13 5A13 13 0 0 1-13 5C-13-3-7-10 0-20Z" fill="url(#g-drop)"/>
-          <ellipse cx="-4.5" cy="5" rx="3" ry="4.2" fill="#fff" opacity=".8"/>
-        </g>
-      </svg>
-      <p class="hint" id="hint" aria-hidden="true"><i>&#9757;&#65039;</i><span id="hint-t">Try it: tap Send, or drag the photo</span></p>
-      <p class="sr" id="demo-live" aria-live="polite"></p>
+      <svg class="scn" data-scene="hero" viewBox="0 0 640 480" role="img" aria-label="An Android phone shares a photo to a Windows laptop with Droplet; the laptop sends a PDF back, then the phone sends a link that opens in the laptop's browser."></svg>
     </div>
   </div>
 </div>
+
+<!-- ============ EVERYWHERE ============ -->
+<section class="every" id="every" aria-labelledby="every-h">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="eyebrow">Works on everything</span>
+      <h2 id="every-h">One app for every device you own</h2>
+      <p>Android, iPhone, Windows, Mac and Linux, in any mix. Each one talks straight to the others over your Wi-Fi.</p>
+    </div>
+    <svg class="scn" data-scene="orbit" viewBox="0 0 1000 440" role="img" aria-label="An Android phone, an iPhone, a Windows laptop, a MacBook and a Linux computer circle the Droplet logo, passing droplets between them."></svg>
+  </div>
+</section>
 
 <!-- ============ FEATURES ============ -->
 <section id="features">
@@ -783,59 +736,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
     <div class="tour">
 
       <article class="scene rv">
-        <div class="pic" style="background:#f6f2ff">
-          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
-            <defs><linearGradient id="g-al" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffc48f"/><stop offset=".5" stop-color="#f58fae"/><stop offset="1" stop-color="#8b6be0"/></linearGradient></defs>
-            <circle cx="300" cy="190" r="160" fill="#ebe3ff"/>
-            <circle cx="478" cy="44" r="22" fill="#ffe6d6"/>
-            <circle cx="250" cy="34" r="6" fill="#9fc5f5"/>
-            <path d="M232 112l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#ffb27a"/>
-            <ellipse cx="262" cy="350" rx="240" ry="9" fill="#e2d8fb"/>
-            <!-- table and laptop -->
-            <rect x="266" y="248" width="226" height="12" rx="6" fill="#c8bdf2"/>
-            <rect x="286" y="260" width="9" height="86" rx="4" fill="#b6a6ec"/><rect x="462" y="260" width="9" height="86" rx="4" fill="#b6a6ec"/>
-            <g filter="url(#f-sm)"><rect x="296" y="124" width="168" height="114" rx="11" fill="#2a3245"/><path d="M276 238h208l-9 10H285Z" fill="#dfe3ea"/></g>
-            <rect x="303" y="131" width="154" height="100" rx="5" fill="#fff"/>
-            <rect x="313" y="142" width="52" height="52" rx="8" fill="url(#g-al)"/>
-            <circle cx="339" cy="168" r="14" fill="#fff" opacity=".3"/><circle cx="339" cy="168" r="4.5" fill="#fff"/>
-            <rect x="375" y="149" width="66" height="7" rx="3.5" fill="#1d2433" opacity=".8"/>
-            <rect x="375" y="162" width="44" height="6" rx="3" fill="#a7afc0"/>
-            <rect x="376" y="179" width="2.6" height="10" rx="1.3" fill="#a7afc0"/><path d="M388 179l-8 5 8 5Z" fill="#a7afc0"/><rect x="394" y="178" width="3.4" height="12" rx="1.7" fill="#7c5cd6"/><rect x="401" y="178" width="3.4" height="12" rx="1.7" fill="#7c5cd6"/><path d="M411 179l8 5-8 5Z" fill="#a7afc0"/><rect x="419.4" y="179" width="2.6" height="10" rx="1.3" fill="#a7afc0"/>
-            <rect x="313" y="210" width="134" height="5" rx="2.5" fill="#ebe7df"/><rect x="313" y="210" width="80" height="5" rx="2.5" fill="#7c5cd6"/><circle cx="393" cy="212.5" r="5" fill="#7c5cd6"/>
-            <!-- notes -->
-            <g class="nt"><use href="#s-note" x="420" y="78" width="22" height="30" color="#7c5cd6"/></g>
-            <g class="nt n2"><use href="#s-notes" x="456" y="96" width="30" height="28" color="#d9773c"/></g>
-            <g class="nt n3"><use href="#s-note" x="384" y="70" width="18" height="24" color="#2f6fdb"/></g>
-            <g class="nt n4"><use href="#s-note" x="476" y="140" width="18" height="24" color="#1f9e6a"/></g>
-            <!-- armchair -->
-            <rect x="44" y="192" width="150" height="118" rx="44" fill="#ffd4b8"/>
-            <rect x="46" y="318" width="10" height="28" rx="4" fill="#d9a07c"/><rect x="182" y="318" width="10" height="28" rx="4" fill="#d9a07c"/>
-            <rect x="30" y="266" width="178" height="56" rx="24" fill="#ffbf99"/>
-            <rect x="20" y="248" width="40" height="74" rx="20" fill="#ffc9a6"/><rect x="178" y="248" width="40" height="74" rx="20" fill="#ffc9a6"/>
-            <!-- person -->
-            <circle cx="121" cy="160" r="29" fill="#2a1d18"/><circle cx="98" cy="170" r="14" fill="#2a1d18"/><circle cx="144" cy="170" r="14" fill="#2a1d18"/>
-            <rect x="113" y="192" width="16" height="16" rx="4" fill="#8a5a3c"/>
-            <circle cx="121" cy="178" r="25" fill="#8a5a3c"/>
-            <circle cx="113" cy="181" r="2.6" fill="#1d2433"/><circle cx="130" cy="181" r="2.6" fill="#1d2433"/>
-            <path d="M114 190q7 6 14 0" stroke="#1d2433" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-            <rect x="86" y="204" width="70" height="84" rx="30" fill="#2f6fdb"/>
-            <rect x="92" y="278" width="26" height="62" rx="13" fill="#2a3245"/><rect x="124" y="278" width="26" height="62" rx="13" fill="#2a3245"/>
-            <ellipse cx="103" cy="342" rx="17" ry="7" fill="#1d2433"/><ellipse cx="139" cy="342" rx="17" ry="7" fill="#1d2433"/>
-            <path d="M95 222q-14 36 14 46M147 222q14 36-14 46" stroke="#2f6fdb" stroke-width="16" fill="none" stroke-linecap="round"/>
-            <rect x="108" y="238" width="26" height="40" rx="5" fill="#2a3245"/><rect x="111" y="241" width="20" height="33" rx="3" fill="#cbb9ff"/>
-            <circle cx="109" cy="268" r="8" fill="#8a5a3c"/><circle cx="133" cy="268" r="8" fill="#8a5a3c"/>
-            <!-- what the phone shows -->
-            <path d="M138 240C176 222 204 176 196 122" stroke="#b9a6f0" stroke-width="3" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/>
-            <g filter="url(#f-sm)"><rect x="24" y="20" width="200" height="98" rx="20" fill="#fff"/></g>
-            <rect x="38" y="34" width="38" height="38" rx="8" fill="url(#g-al)"/><circle cx="57" cy="53" r="3.5" fill="#fff"/>
-            <rect x="86" y="39" width="92" height="7" rx="3.5" fill="#1d2433" opacity=".8"/><rect x="86" y="52" width="58" height="6" rx="3" fill="#a7afc0"/>
-            <rect x="86" y="64" width="124" height="4" rx="2" fill="#ebe7df"/><rect x="86" y="64" width="74" height="4" rx="2" fill="#7c5cd6"/>
-            <path d="M72 84v18M86 84l-12 9 12 9Z" fill="#5a6273" stroke="#5a6273" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-            <circle cx="124" cy="93" r="15" fill="#7c5cd6"/><rect x="118" y="86" width="4" height="14" rx="2" fill="#fff"/><rect x="126" y="86" width="4" height="14" rx="2" fill="#fff"/>
-            <path d="M176 84v18M162 84l12 9-12 9Z" fill="#5a6273" stroke="#5a6273" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-            <path d="M196 88h4l5-4v18l-5-4h-4Z" fill="#a7afc0"/>
-          </svg>
-        </div>
+        <div class="pic" style="background:#f6f2ff"><svg class="scn" data-scene="music" viewBox="0 0 520 380" role="img" aria-label="Droplet on an Android phone, Media tab: pause and skip the music playing on a Windows laptop."></svg></div>
         <div class="txt">
           <div class="ic b3"><svg aria-hidden="true"><use href="#i-music"/></svg></div>
           <h3>Your music, from across the room</h3>
@@ -848,62 +749,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
       </article>
 
       <article class="scene rv">
-        <div class="pic" style="background:var(--sky-2)">
-          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
-            <circle cx="262" cy="190" r="160" fill="#d9ecff"/>
-            <circle cx="40" cy="330" r="12" fill="#d5f5e6"/>
-            <circle cx="492" cy="320" r="7" fill="#ffd4b8"/>
-            <ellipse cx="262" cy="350" rx="240" ry="9" fill="#cfe3fb"/>
-            <!-- desk and monitor -->
-            <rect x="314" y="236" width="170" height="84" rx="14" fill="#fff"/>
-            <rect x="326" y="250" width="70" height="56" rx="8" fill="#eef5ff"/><rect x="402" y="250" width="70" height="56" rx="8" fill="#eef5ff"/>
-            <rect x="354" y="276" width="14" height="4" rx="2" fill="#9fc5f5"/><rect x="430" y="276" width="14" height="4" rx="2" fill="#9fc5f5"/>
-            <rect x="328" y="320" width="9" height="26" rx="4" fill="#c9d6ea"/><rect x="462" y="320" width="9" height="26" rx="4" fill="#c9d6ea"/>
-            <rect x="390" y="200" width="18" height="30" fill="#c7ccd6"/><rect x="364" y="226" width="70" height="10" rx="5" fill="#dfe3ea"/>
-            <g filter="url(#f-sm)"><rect x="300" y="64" width="198" height="138" rx="12" fill="#2a3245"/></g>
-            <rect x="308" y="72" width="182" height="122" rx="5" fill="#fff"/>
-            <path d="M308 77a5 5 0 0 1 5-5h172a5 5 0 0 1 5 5v9H308Z" fill="#f3f5f9"/>
-            <circle cx="318" cy="79" r="2.6" fill="#ffb4a8"/><circle cx="327" cy="79" r="2.6" fill="#ffd98a"/><circle cx="336" cy="79" r="2.6" fill="#9ce0bb"/>
-            <rect x="320" y="98" width="48" height="36" rx="6" fill="#d9ecff"/><rect x="376" y="98" width="48" height="36" rx="6" fill="#d5f5e6"/><rect x="432" y="98" width="48" height="36" rx="6" fill="#ffe6d6"/>
-            <rect x="320" y="142" width="40" height="5" rx="2.5" fill="#c9d6ea"/><rect x="376" y="142" width="34" height="5" rx="2.5" fill="#c9d6ea"/><rect x="432" y="142" width="38" height="5" rx="2.5" fill="#c9d6ea"/>
-            <rect x="320" y="160" width="160" height="22" rx="6" fill="#f4f6fa"/>
-            <path d="M372 150C392 124 420 118 446 120" stroke="#9fc5f5" stroke-width="3" fill="none" stroke-dasharray="2 7" stroke-linecap="round"/>
-            <g class="ck"><circle cx="451" cy="124" r="12" fill="none" stroke="#2f6fdb" stroke-width="2.4"/></g>
-            <g class="cur"><path d="M448 118v22l6-6 4 9 4-2-4-9h8Z" fill="#1d2433" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></g>
-            <!-- keys -->
-            <g class="bob"><g filter="url(#f-sm)"><rect x="244" y="44" width="34" height="34" rx="9" fill="#fff"/></g><text x="261" y="67" text-anchor="middle" font-size="16" font-weight="800" fill="#2f6fdb">A</text></g>
-            <g class="bob b2"><g filter="url(#f-sm)"><rect x="262" y="100" width="30" height="30" rx="8" fill="#fff"/></g><path d="M283 109v7h-12m4-4-4 4 4 4" stroke="#1f9e6a" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
-            <!-- couch -->
-            <rect x="22" y="196" width="246" height="96" rx="32" fill="#a8e6c9"/>
-            <rect x="34" y="320" width="10" height="26" rx="4" fill="#5fbf92"/><rect x="246" y="320" width="10" height="26" rx="4" fill="#5fbf92"/>
-            <rect x="14" y="262" width="262" height="62" rx="24" fill="#8fdcb8"/>
-            <rect x="196" y="214" width="56" height="54" rx="18" fill="#c4f0dc" transform="rotate(8 224 241)"/>
-            <!-- person -->
-            <path d="M88 190c-4-34 16-50 38-50s42 16 38 50c-2 14-10 20-10 20H98s-8-6-10-20Z" fill="#3a2418"/>
-            <rect x="118" y="198" width="16" height="16" rx="4" fill="#c98e62"/>
-            <circle cx="126" cy="180" r="24" fill="#c98e62"/>
-            <path d="M101 176c2-20 18-28 30-26 12 2 20 12 19 24-10-2-22-8-28-16-4 8-12 14-21 18Z" fill="#3a2418"/>
-            <circle cx="118" cy="184" r="2.6" fill="#1d2433"/><circle cx="134" cy="184" r="2.6" fill="#1d2433"/>
-            <path d="M119 193q7 5 14 0" stroke="#1d2433" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-            <rect x="92" y="208" width="68" height="84" rx="30" fill="#f2a25c"/>
-            <path d="M112 284v52" stroke="#2865c7" stroke-width="24" stroke-linecap="round"/>
-            <ellipse cx="116" cy="341" rx="17" ry="7" fill="#1d2433"/>
-            <path d="M136 282l42 6 4 46" stroke="#2f6fdb" stroke-width="24" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            <ellipse cx="188" cy="341" rx="17" ry="7" fill="#1d2433"/>
-            <path d="M100 226q-12 34 16 44M152 226q12 34-14 44" stroke="#f2a25c" stroke-width="16" fill="none" stroke-linecap="round"/>
-            <rect x="112" y="242" width="28" height="40" rx="5" fill="#2a3245"/><rect x="115" y="245" width="22" height="33" rx="3" fill="#bfe0ff"/>
-            <circle cx="115" cy="270" r="8" fill="#c98e62"/><circle cx="138" cy="270" r="8" fill="#c98e62"/>
-            <!-- what the phone shows -->
-            <path d="M142 244C184 230 214 186 206 138" stroke="#9fc5f5" stroke-width="3" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/>
-            <g filter="url(#f-sm)"><rect x="24" y="20" width="196" height="118" rx="20" fill="#fff"/></g>
-            <rect x="36" y="32" width="172" height="66" rx="12" fill="#eef5ff"/>
-            <path d="M66 84C84 80 98 66 120 60" stroke="#9fc5f5" stroke-width="3" fill="none" stroke-dasharray="2 7" stroke-linecap="round"/>
-            <circle cx="126" cy="58" r="12" fill="#2f6fdb" opacity=".18"/><circle cx="126" cy="58" r="6" fill="#2f6fdb"/>
-            <rect x="36" y="106" width="84" height="20" rx="8" fill="#eef0f4"/><rect x="124" y="106" width="84" height="20" rx="8" fill="#eef0f4"/>
-            <circle cx="214" cy="26" r="15" fill="#2f6fdb" stroke="#fff" stroke-width="3"/>
-            <path d="M209 21l10 9-5 4V18l5 4-10 9" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
+        <div class="pic" style="background:var(--sky-2)"><svg class="scn" data-scene="pad" viewBox="0 0 520 380" role="img" aria-label="The Android phone as a touchpad: a finger slides on it and the laptop pointer follows."></svg></div>
         <div class="txt">
           <div class="ic b1"><svg aria-hidden="true"><use href="#i-pad"/></svg></div>
           <h3>Your phone is the touchpad and keyboard</h3>
@@ -916,57 +762,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
       </article>
 
       <article class="scene rv">
-        <div class="pic" style="background:#fff4ec">
-          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
-            <circle cx="290" cy="186" r="160" fill="#ffe6d6"/>
-            <circle cx="40" cy="44" r="18" fill="#d9ecff"/>
-            <circle cx="500" cy="340" r="8" fill="#c8bdf2"/>
-            <ellipse cx="262" cy="350" rx="240" ry="9" fill="#fbdcc7"/>
-            <!-- the big screen -->
-            <rect x="222" y="32" width="282" height="12" rx="6" fill="#2a3245"/>
-            <g filter="url(#f-sh)"><rect x="232" y="44" width="262" height="168" rx="10" fill="#fff"/></g>
-            <g class="sA">
-              <rect x="254" y="66" width="122" height="12" rx="6" fill="#1d2433" opacity=".85"/>
-              <rect x="254" y="86" width="80" height="7" rx="3.5" fill="#a7afc0"/>
-              <rect x="268" y="150" width="26" height="42" rx="5" fill="#9fc5f5"/><rect x="304" y="132" width="26" height="60" rx="5" fill="#7fd6ad"/><rect x="340" y="140" width="26" height="52" rx="5" fill="#c8bdf2"/><rect x="376" y="112" width="26" height="80" rx="5" fill="#ffb27a"/>
-              <rect x="258" y="192" width="154" height="3" rx="1.5" fill="#ddd8ce"/>
-              <circle cx="448" cy="138" r="26" fill="#ffe6d6"/><path d="M448 112a26 26 0 0 1 26 26h-26Z" fill="#d9773c"/>
-            </g>
-            <g class="sB">
-              <rect x="254" y="66" width="104" height="12" rx="6" fill="#1d2433" opacity=".85"/>
-              <rect x="254" y="86" width="132" height="7" rx="3.5" fill="#a7afc0"/>
-              <rect x="254" y="112" width="104" height="72" rx="10" fill="#d9ecff"/><circle cx="290" cy="138" r="10" fill="#ffd27a"/><path d="M254 172l30-24 22 18 20-14 32 24v4a10 10 0 0 1-10 10h-84a10 10 0 0 1-10-10Z" fill="#7fd6ad"/>
-              <rect x="372" y="116" width="98" height="7" rx="3.5" fill="#c9d6ea"/><rect x="372" y="132" width="84" height="7" rx="3.5" fill="#c9d6ea"/><rect x="372" y="148" width="92" height="7" rx="3.5" fill="#c9d6ea"/><rect x="372" y="164" width="60" height="7" rx="3.5" fill="#c9d6ea"/>
-            </g>
-            <text x="480" y="203" text-anchor="end" font-size="10" font-weight="700" fill="#8a93a6">3 / 12</text>
-            <!-- presenter -->
-            <circle cx="120" cy="96" r="14" fill="#2a1d18"/>
-            <rect x="113" y="138" width="16" height="16" rx="4" fill="#5e3b2a"/>
-            <circle cx="121" cy="124" r="24" fill="#5e3b2a"/>
-            <path d="M97 122c0-18 12-26 24-26s25 8 24 26c-8-8-20-12-32-10-6 1-11 5-16 10Z" fill="#2a1d18"/>
-            <circle cx="122" cy="127" r="2.6" fill="#1d2433"/><circle cx="137" cy="127" r="2.6" fill="#1d2433"/>
-            <path d="M123 136q7 5 13 0" stroke="#1d2433" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-            <rect x="96" y="232" width="20" height="104" rx="10" fill="#2a3245"/><rect x="124" y="232" width="20" height="104" rx="10" fill="#2a3245"/>
-            <ellipse cx="102" cy="340" rx="16" ry="7" fill="#1d2433"/><ellipse cx="140" cy="340" rx="16" ry="7" fill="#1d2433"/>
-            <path d="M88 168a20 20 0 0 1 20-20h26a20 20 0 0 1 20 20v76H88Z" fill="#7c5cd6"/>
-            <path d="M94 168q-10 42 2 70" stroke="#7c5cd6" stroke-width="15" fill="none" stroke-linecap="round"/>
-            <circle cx="97" cy="242" r="7.5" fill="#5e3b2a"/>
-            <path d="M146 166q30 16 50 0" stroke="#7c5cd6" stroke-width="15" fill="none" stroke-linecap="round"/>
-            <g transform="rotate(-14 200 156)"><rect x="188" y="136" width="24" height="38" rx="5" fill="#2a3245"/><rect x="191" y="139" width="18" height="31" rx="3" fill="#ffd4b8"/></g>
-            <circle cx="196" cy="166" r="8" fill="#5e3b2a"/>
-            <!-- what the phone shows -->
-            <path d="M206 182C214 230 230 250 254 258" stroke="#ffb27a" stroke-width="3" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/>
-            <g filter="url(#f-sm)"><rect x="252" y="232" width="232" height="94" rx="20" fill="#fff"/></g>
-            <rect x="266" y="246" width="64" height="66" rx="14" fill="#f4f6fa"/>
-            <path d="M302 266l-10 13 10 13" stroke="#5a6273" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            <g class="nx"><rect x="338" y="246" width="132" height="66" rx="14" fill="#d9773c"/>
-            <text x="392" y="285" text-anchor="middle" font-size="17" font-weight="800" fill="#fff">Next</text>
-            <path d="M432 268l9 11-9 11" stroke="#fff" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
-            <g filter="url(#f-sm)"><rect x="410" y="214" width="66" height="26" rx="13" fill="#1d2433"/></g>
-            <circle cx="425" cy="227" r="4" fill="#ffb27a"/>
-            <text x="452" y="231.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">04:12</text>
-          </svg>
-        </div>
+        <div class="pic" style="background:#fff4ec"><svg class="scn" data-scene="slides" viewBox="0 0 520 380" role="img" aria-label="Droplet Remote on Android: a timer and a big Next button move the slides on the laptop."></svg></div>
         <div class="txt">
           <div class="ic b4"><svg aria-hidden="true"><use href="#i-slides"/></svg></div>
           <h3>A clicker for your slides</h3>
@@ -980,52 +776,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
       </article>
 
       <article class="scene rv">
-        <div class="pic" style="background:#effbf5">
-          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
-            <circle cx="262" cy="190" r="160" fill="#d5f5e6"/>
-            <circle cx="484" cy="50" r="20" fill="#ebe3ff"/>
-            <circle cx="36" cy="60" r="7" fill="#ffd4b8"/>
-            <path d="M232 70l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#9fc5f5"/>
-            <ellipse cx="262" cy="350" rx="240" ry="9" fill="#c6eedb"/>
-            <!-- side table and laptop -->
-            <rect x="28" y="232" width="190" height="12" rx="6" fill="#a8e6c9"/>
-            <rect x="48" y="244" width="9" height="102" rx="4" fill="#7fd6ad"/><rect x="190" y="244" width="9" height="102" rx="4" fill="#7fd6ad"/>
-            <g filter="url(#f-sm)"><rect x="50" y="110" width="150" height="112" rx="11" fill="#2a3245"/><path d="M32 222h186l-9 10H41Z" fill="#dfe3ea"/></g>
-            <rect x="57" y="117" width="136" height="98" rx="5" fill="#fff"/>
-            <rect x="66" y="128" width="118" height="44" rx="10" fill="#f4f6fa"/>
-            <rect x="76" y="137" width="15" height="26" rx="4" fill="#2a3245"/><rect x="78.5" y="140" width="10" height="19" rx="2" fill="#d5f5e6"/>
-            <rect x="98" y="140" width="56" height="6" rx="3" fill="#1d2433" opacity=".8"/><rect x="98" y="152" width="36" height="5" rx="2.5" fill="#a7afc0"/>
-            <rect x="66" y="180" width="118" height="26" rx="13" fill="#d9773c"/>
-            <path d="M100 198v-6a7 7 0 0 1 14 0v6l2 2.5h-18ZM105 203h4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            <text x="134" y="197.5" text-anchor="middle" font-size="11" font-weight="800" fill="#fff">Ring</text>
-            <g class="ck"><circle cx="170" cy="193" r="12" fill="none" stroke="#1d2433" stroke-width="2.2"/></g>
-            <path d="M168 188v20l5.5-5.5 3.6 8 3.6-1.8-3.6-8h7.4Z" fill="#1d2433" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
-            <!-- sofa -->
-            <rect x="262" y="148" width="238" height="108" rx="32" fill="#ffd4b8"/>
-            <rect x="282" y="168" width="96" height="74" rx="22" fill="#ffe2cf"/>
-            <rect x="272" y="320" width="10" height="26" rx="4" fill="#d9a07c"/><rect x="480" y="320" width="10" height="26" rx="4" fill="#d9a07c"/>
-            <!-- the phone, ringing -->
-            <g class="wv" fill="none" stroke="#1f9e6a" stroke-width="3.2" stroke-linecap="round">
-              <path class="w1" d="M386 150a40 40 0 0 1 0 50" transform="rotate(-14 410 196)"/>
-              <path class="w2" d="M398 134a62 62 0 0 1 0 82" transform="rotate(-14 410 196)"/>
-              <path class="w1" d="M484 150a40 40 0 0 0 0 50" transform="rotate(-14 410 196) translate(-12 0)"/>
-              <path class="w2" d="M472 134a62 62 0 0 0 0 82" transform="rotate(-14 410 196) translate(-12 0)"/>
-            </g>
-            <g transform="rotate(-14 424 230)"><g class="wig">
-              <rect x="400" y="168" width="52" height="96" rx="11" fill="#2a3245"/>
-              <rect x="404.5" y="172.5" width="43" height="87" rx="7" fill="#fff"/>
-              <circle cx="426" cy="196" r="11" fill="#ffe6d6"/>
-              <path d="M421 200v-4a5 5 0 0 1 10 0v4l1.5 2h-13ZM424.5 205h3" stroke="#d9773c" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-              <rect x="412" y="214" width="28" height="12" rx="6" fill="#e0483e"/>
-            </g></g>
-            <rect x="252" y="236" width="258" height="88" rx="28" fill="#ffbf99"/>
-            <rect x="244" y="214" width="44" height="110" rx="22" fill="#ffc9a6"/><rect x="474" y="214" width="44" height="110" rx="22" fill="#ffc9a6"/>
-            <path d="M300 262h150" stroke="#f4a97a" stroke-width="3" stroke-linecap="round"/>
-            <g fill="#1f9e6a"><circle cx="370" cy="118" r="4"/><circle cx="346" cy="132" r="3"/></g>
-            <g class="nt n3"><use href="#s-note" x="352" y="92" width="16" height="22" color="#d9773c"/></g>
-            <g class="nt"><use href="#s-note" x="470" y="102" width="18" height="24" color="#7c5cd6"/></g>
-          </svg>
-        </div>
+        <div class="pic" style="background:#effbf5"><svg class="scn" data-scene="ring" viewBox="0 0 520 380" role="img" aria-label="The laptop rings the phone; the phone shows Found me! with a Stop button."></svg></div>
         <div class="txt">
           <div class="ic b2"><svg aria-hidden="true"><use href="#i-ring"/></svg></div>
           <h3>Find your phone, even on silent</h3>
@@ -1038,52 +789,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
       </article>
 
       <article class="scene rv">
-        <div class="pic" style="background:#f6f2ff">
-          <svg viewBox="0 0 520 380" aria-hidden="true" focusable="false">
-            <defs><linearGradient id="g-tv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cbb9ff"/><stop offset="1" stop-color="#9fd0ff"/></linearGradient></defs>
-            <circle cx="300" cy="180" r="160" fill="#ebe3ff"/>
-            <circle cx="40" cy="40" r="16" fill="#d5f5e6"/>
-            <circle cx="500" cy="300" r="9" fill="#ffd4b8"/>
-            <ellipse cx="300" cy="350" rx="210" ry="9" fill="#e2d8fb"/>
-            <!-- cabinet, plant -->
-            <rect x="196" y="262" width="276" height="62" rx="14" fill="#fff"/>
-            <rect x="210" y="276" width="120" height="34" rx="8" fill="#f6f2ff"/><rect x="338" y="276" width="120" height="34" rx="8" fill="#f6f2ff"/>
-            <rect x="214" y="324" width="10" height="22" rx="4" fill="#c8bdf2"/><rect x="444" y="324" width="10" height="22" rx="4" fill="#c8bdf2"/>
-            <!-- TV -->
-            <rect x="320" y="238" width="28" height="24" fill="#c7ccd6"/><rect x="290" y="256" width="88" height="8" rx="4" fill="#dfe3ea"/>
-            <g filter="url(#f-sh)"><rect x="170" y="40" width="328" height="202" rx="14" fill="#2a3245"/></g>
-            <rect x="179" y="49" width="310" height="184" rx="6" fill="#1f2738"/>
-            <rect x="193" y="62" width="282" height="88" rx="10" fill="url(#g-tv)"/>
-            <circle cx="438" cy="88" r="12" fill="#fff4c7"/>
-            <path d="M193 140l50-40 34 26 30-22 58 44v2a10 10 0 0 1-10 10H203a10 10 0 0 1-10-10Z" fill="#7c5cd6" opacity=".55"/>
-            <rect x="207" y="80" width="88" height="10" rx="5" fill="#fff"/><rect x="207" y="96" width="56" height="7" rx="3.5" fill="#fff" opacity=".75"/>
-            <rect x="196" y="164" width="60" height="44" rx="9" fill="#ff8a7a"/><rect x="266" y="164" width="60" height="44" rx="9" fill="#7fd6ad"/><rect x="336" y="164" width="60" height="44" rx="9" fill="#9fc5f5"/><rect x="406" y="164" width="60" height="44" rx="9" fill="#ffd27a"/>
-            <path d="M220 178l14 8-14 8Z" fill="#fff"/><circle cx="296" cy="186" r="8" fill="#fff" opacity=".9"/><rect x="356" y="179" width="20" height="14" rx="3" fill="#fff" opacity=".9"/><path d="M426 192l10-14 10 14Z" fill="#fff" opacity=".9"/>
-            <g class="foc"><rect x="262" y="160" width="68" height="52" rx="12" fill="none" stroke="#fff" stroke-width="3"/></g>
-            <!-- Wi-Fi -->
-            <g class="wf" fill="none" stroke="#7c5cd6" stroke-width="3.2" stroke-linecap="round">
-              <path class="w1" d="M150 158a24 24 0 0 1 22 -22"/>
-              <path class="w2" d="M140 150a40 40 0 0 1 36 -38"/>
-            </g>
-            <!-- hand and phone -->
-            <rect x="34" y="350" width="112" height="40" rx="10" fill="#2f6fdb"/>
-            <path d="M36 380c-8-46-4-90 14-110l92-8c18 0 24 14 16 22 10 2 12 16 2 22 10 4 10 18-2 22 4 12-6 22-18 22v30Z" fill="#8a5a3c"/>
-            <g transform="rotate(8 96 260)">
-              <g filter="url(#f-sh)"><rect x="46" y="150" width="104" height="196" rx="22" fill="#2a3245"/></g>
-              <rect x="53" y="157" width="90" height="182" rx="16" fill="#fff"/>
-              <rect x="84" y="163" width="28" height="7" rx="3.5" fill="#2a3245"/>
-              <circle cx="72" cy="188" r="9" fill="#ffe6d6"/><path d="M72 183v5M68 185a6 6 0 1 0 8 0" stroke="#d9773c" stroke-width="2" fill="none" stroke-linecap="round"/>
-              <circle cx="124" cy="188" r="9" fill="#f4f6fa"/><path d="M119 189l5-5 5 5v5h-10Z" fill="#5a6273"/>
-              <circle cx="98" cy="240" r="36" fill="#f6f2ff"/>
-              <circle cx="98" cy="240" r="15" fill="#7c5cd6"/>
-              <path d="M98 211l-5 5h10ZM98 269l-5-5h10ZM69 240l5-5v10ZM127 240l-5-5v10Z" fill="#a08ae6"/>
-              <rect x="64" y="290" width="68" height="18" rx="9" fill="#f4f6fa"/>
-              <path d="M76 299h8M114 299h8M118 295v8" stroke="#5a6273" stroke-width="2.2" stroke-linecap="round"/>
-              <rect x="64" y="314" width="68" height="14" rx="7" fill="#f4f6fa"/>
-            </g>
-            <path d="M30 336c-8-22-4-48 12-62 8-6 18-2 18 8-2 14-8 34-14 54Z" fill="#9a6646"/>
-          </svg>
-        </div>
+        <div class="pic" style="background:#f6f2ff"><svg class="scn" data-scene="tv" viewBox="0 0 520 380" role="img" aria-label="The Android phone as a TV remote: arrow buttons move the selection on the TV."></svg></div>
         <div class="txt">
           <div class="ic b3"><svg aria-hidden="true"><use href="#i-tv"/></svg></div>
           <h3>And it’s the TV remote, too</h3>
@@ -1107,51 +813,29 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
       <h2>Set up in about two minutes</h2>
       <p>There’s no Droplet server. Your devices find each other on your network and talk directly.</p>
     </div>
+    <div class="story">
+      <div class="story-pic"><div class="frame"><svg class="scn" id="story-svg" data-scene="install" viewBox="0 0 300 220" role="img" aria-label="Droplet on an Android phone and a Windows laptop, following the steps on the right."></svg></div>
+        <div class="story-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div></div>
+      <ol class="story-steps">
+        <li class="on" data-s="install" data-bg="#eef5ff"><span class="n">1</span><h3>Install on two devices</h3><p>Your phone and your computer, say. Android, iPhone, Windows, Mac or Linux, in any mix.</p></li>
+        <li data-s="pair" data-bg="#effbf5"><span class="n">2</span><h3>Pair with a 4-digit code</h3><p>Both screens show the same four digits. If they match, tap <b>They match</b>. Your devices remember each other.</p></li>
+        <li data-s="send" data-bg="#f6f2ff"><span class="n">3</span><h3>Send</h3><p>Share from any app, drop a file on a device, or copy and paste. It’s there a moment later.</p></li>
+        <li data-s="hotspot" data-bg="#ffe6d6"><span class="n w">!</span><h3>No Wi-Fi around? Use your phone’s hotspot.</h3><p>Join it from your laptop and Droplet works straight over it. Your files stay on the hotspot, so they use none of your data bundle, even big videos.</p></li>
+      </ol>
+    </div>
     <ol class="steps">
       <li class="card step rv">
-        <div class="ill" style="background:var(--sky-2)">
-          <svg viewBox="0 0 300 168" aria-hidden="true">
-            <circle cx="150" cy="86" r="62" fill="#d9ecff"/>
-            <g filter="url(#f-sm)"><rect x="70" y="44" width="56" height="100" rx="12" fill="#2a3245"/><rect x="152" y="58" width="104" height="68" rx="9" fill="#2a3245"/><path d="M140 126h128l-6 8a6 6 0 0 1-5 2H151a6 6 0 0 1-5-2Z" fill="#dfe3ea"/></g>
-            <rect x="75" y="49" width="46" height="90" rx="8" fill="#fff"/><rect x="158" y="64" width="92" height="56" rx="4" fill="#fff"/>
-            <circle cx="98" cy="86" r="13" fill="#2f6fdb"/><path class="ar" d="M98 79v12m-5-5 5 5 5-5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="204" cy="90" r="13" fill="#2f6fdb"/><path class="ar a2" d="M204 83v12m-5-5 5 5 5-5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            <rect x="85" y="110" width="26" height="4" rx="2" fill="#c9d6ea"/><rect x="189" y="108" width="30" height="4" rx="2" fill="#c9d6ea"/>
-          </svg>
-        </div>
+        <div class="ill" style="background:#eef5ff"><svg class="scn" data-scene="install" viewBox="0 0 300 220" role="img" aria-label="An Android phone installs Droplet while a Windows laptop gets it from the Microsoft Store."></svg></div>
         <h3 class="t">Install on two devices</h3>
         <p>Your phone and your computer, say. Android, iPhone, Windows, Mac or Linux, in any mix.</p>
       </li>
       <li class="card step rv">
-        <div class="ill" style="background:#effbf5">
-          <svg viewBox="0 0 300 168" aria-hidden="true">
-            <circle cx="150" cy="84" r="62" fill="#d5f5e6"/>
-            <g filter="url(#f-sm)"><rect x="40" y="40" width="96" height="88" rx="16" fill="#fff"/><rect x="164" y="40" width="96" height="88" rx="16" fill="#fff"/></g>
-            <text x="88" y="70" text-anchor="middle" font-size="10" font-weight="700" fill="#5d6577">Phone</text><text x="212" y="70" text-anchor="middle" font-size="10" font-weight="700" fill="#5d6577">Computer</text>
-            <text class="dg" style="--i:0" x="60.25" y="102" text-anchor="middle" font-size="25" font-weight="800" fill="#1d2433">4</text><text class="dg" style="--i:1" x="78.75" y="102" text-anchor="middle" font-size="25" font-weight="800" fill="#1d2433">8</text><text class="dg" style="--i:2" x="97.25" y="102" text-anchor="middle" font-size="25" font-weight="800" fill="#1d2433">1</text><text class="dg" style="--i:3" x="115.75" y="102" text-anchor="middle" font-size="25" font-weight="800" fill="#1d2433">7</text>
-            <text class="dg" style="--i:0" x="184.25" y="102" text-anchor="middle" font-size="25" font-weight="800" fill="#1d2433">4</text><text class="dg" style="--i:1" x="202.75" y="102" text-anchor="middle" font-size="25" font-weight="800" fill="#1d2433">8</text><text class="dg" style="--i:2" x="221.25" y="102" text-anchor="middle" font-size="25" font-weight="800" fill="#1d2433">1</text><text class="dg" style="--i:3" x="239.75" y="102" text-anchor="middle" font-size="25" font-weight="800" fill="#1d2433">7</text>
-            <rect x="60" y="110" width="56" height="4" rx="2" fill="#d5f5e6"/><rect x="184" y="110" width="56" height="4" rx="2" fill="#d5f5e6"/>
-            <circle class="okr" cx="150" cy="84" r="17" fill="none" stroke="#1f9e6a" stroke-width="2.5" opacity="0"/>
-            <g class="ok"><circle cx="150" cy="84" r="17" fill="#1f9e6a" stroke="#fff" stroke-width="4"/><path d="M142.5 84.5l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
-          </svg>
-        </div>
+        <div class="ill" style="background:#effbf5"><svg class="scn" data-scene="pair" viewBox="0 0 300 220" role="img" aria-label="Both screens show the same code, 4817: the phone asks to check it, the laptop asks to accept."></svg></div>
         <h3 class="t">Pair with a 4-digit code</h3>
         <p>Both screens show the same four digits. If they match, tap <b>They match</b>. Your devices remember each other.</p>
       </li>
       <li class="card step rv">
-        <div class="ill" style="background:#f6f2ff">
-          <svg viewBox="0 0 300 168" aria-hidden="true">
-            <circle cx="150" cy="88" r="62" fill="#ebe3ff"/>
-            <g filter="url(#f-sm)"><rect x="52" y="62" width="50" height="90" rx="11" fill="#2a3245"/><rect x="172" y="70" width="96" height="62" rx="8" fill="#2a3245"/><path d="M160 132h120l-6 8a6 6 0 0 1-5 2H171a6 6 0 0 1-5-2Z" fill="#dfe3ea"/></g>
-            <rect x="57" y="67" width="40" height="80" rx="7" fill="#fff"/><rect x="178" y="76" width="84" height="50" rx="4" fill="#fff"/>
-            <use href="#it-photo" x="62" y="92" width="30" height="23"/>
-            <use href="#it-photo" x="205" y="88" width="30" height="23"/>
-            <path d="M78 58C100 10 190 6 220 70" stroke="#b9a6f0" stroke-width="3" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/>
-            <path class="dp" d="M152 22c4 5 7 9 7 13a7 7 0 0 1-14 0c0-4 3-8 7-13Z" fill="#7c5cd6"/>
-            <circle cx="220" cy="100" r="22" fill="none" stroke="#7c5cd6" stroke-width="2" opacity=".35"/>
-            <circle class="rg" cx="220" cy="100" r="22" fill="none" stroke="#7c5cd6" stroke-width="2" opacity="0"/>
-          </svg>
-        </div>
+        <div class="ill" style="background:#f6f2ff"><svg class="scn" data-scene="send" viewBox="0 0 300 220" role="img" aria-label="The phone shares a photo with Droplet and it arrives on the laptop."></svg></div>
         <h3 class="t">Send</h3>
         <p>Share from any app, drop a file on a device, or copy and paste. It’s there a moment later.</p>
       </li>
@@ -1159,6 +843,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
     <div class="hotspot rv">
       <div class="ic"><svg aria-hidden="true"><use href="#i-wifi"/></svg></div>
       <div><h3>No Wi-Fi around? Use your phone’s hotspot.</h3><p>Join it from your laptop and Droplet works straight over it. Your files stay on the hotspot, so they use none of your data bundle, even big videos.</p></div>
+      <svg class="scn" data-scene="hotspot" viewBox="0 0 300 220" role="img" aria-label="The phone turns on its hotspot and the laptop joins it."></svg>
     </div>
   </div>
 </section>
@@ -1357,7 +1042,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
   <div class="wrap">
     <div class="final rv">
       <div class="dots" aria-hidden="true"><i style="width:120px;height:120px;background:#fff;opacity:.35;left:-30px;top:-30px"></i><i style="width:16px;height:16px;background:#ffb27a;right:12%;top:22%"></i><i style="width:10px;height:10px;background:#1f9e6a;left:14%;bottom:24%;opacity:.6"></i><i style="width:160px;height:160px;background:#fff;opacity:.3;right:-50px;bottom:-60px"></i></div>
-      <span class="mark" style="margin:0 auto;width:52px;height:52px;border-radius:18px;background:#fff" aria-hidden="true"><svg viewBox="0 0 18 22" style="width:24px;height:30px"><path d="M9 1C9 1 1.5 9.5 1.5 14a7.5 7.5 0 0 0 15 0C16.5 9.5 9 1 9 1Z" fill="#2f6fdb"/><circle cx="6" cy="14.5" r="1.8" fill="#fff" opacity=".85"/></svg></span>
+      <span class="mark" style="margin:0 auto;width:52px;height:52px;border-radius:16px;background:#0E1A33" aria-hidden="true"><svg viewBox="0 0 128 128" style="width:36px;height:36px"><defs><linearGradient id="m2d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7EF0DC"/><stop offset="1" stop-color="#3B7BFF"/></linearGradient></defs><path d="M90.85 40.70 Q98.85 62.82 100.54 86.29 A26.91 26.91 0 1 1 56.21 71.89 Q71.37 53.90 90.85 40.70Z" fill="url(#m2d)" stroke="url(#m2d)" stroke-width="3.67" stroke-linejoin="round"/><path d="M82.42 27.22 A15.90 15.90 0 0 1 105.59 34.75" fill="none" stroke="#7EF0DC" stroke-width="7.95" stroke-linecap="round" opacity="1.0"/><path d="M74.64 14.78 A30.57 30.57 0 0 1 119.19 29.25" fill="none" stroke="#7EF0DC" stroke-width="7.95" stroke-linecap="round" opacity="0.5"/><g stroke="#7EF0DC" stroke-width="6.11" stroke-linecap="round" opacity=".5"><line x1="15.52" y1="84.54" x2="32.64" y2="84.54"/><line x1="8.18" y1="101.67" x2="30.19" y2="101.67"/><line x1="17.96" y1="118.79" x2="35.08" y2="118.79"/></g></svg></span>
       <h2>Your phone and computer, finally on speaking terms</h2>
       <p>Free, open source, and nothing in the middle.</p>
       <div class="cta-row">
@@ -1372,7 +1057,7 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
 <footer>
   <div class="wrap">
     <div>
-      <a class="brand" href="#main" aria-label="Droplet by NOXERA, back to top"><span class="mark" aria-hidden="true"><svg viewBox="0 0 18 22"><path d="M9 1C9 1 1.5 9.5 1.5 14a7.5 7.5 0 0 0 15 0C16.5 9.5 9 1 9 1Z" fill="#2f6fdb"/><circle cx="6" cy="14.5" r="1.8" fill="#fff" opacity=".85"/></svg></span><b>Droplet</b><small>by NOXERA</small></a>
+      <a class="brand" href="#main" aria-label="Droplet by NOXERA, back to top"><span class="mark" aria-hidden="true"><svg viewBox="0 0 128 128"><defs><linearGradient id="m3d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7EF0DC"/><stop offset="1" stop-color="#3B7BFF"/></linearGradient></defs><path d="M90.85 40.70 Q98.85 62.82 100.54 86.29 A26.91 26.91 0 1 1 56.21 71.89 Q71.37 53.90 90.85 40.70Z" fill="url(#m3d)" stroke="url(#m3d)" stroke-width="3.67" stroke-linejoin="round"/><path d="M82.42 27.22 A15.90 15.90 0 0 1 105.59 34.75" fill="none" stroke="#7EF0DC" stroke-width="7.95" stroke-linecap="round" opacity="1.0"/><path d="M74.64 14.78 A30.57 30.57 0 0 1 119.19 29.25" fill="none" stroke="#7EF0DC" stroke-width="7.95" stroke-linecap="round" opacity="0.5"/><g stroke="#7EF0DC" stroke-width="6.11" stroke-linecap="round" opacity=".5"><line x1="15.52" y1="84.54" x2="32.64" y2="84.54"/><line x1="8.18" y1="101.67" x2="30.19" y2="101.67"/><line x1="17.96" y1="118.79" x2="35.08" y2="118.79"/></g></svg></span><b>Droplet</b><small>by NOXERA</small></a>
       <p>Built in Nairobi · Free software under the <a href="https://github.com/Ferinmtk/droplet/blob/main/LICENSE">GPL-3.0</a></p>
     </div>
     <nav aria-label="Footer">
@@ -1584,157 +1269,42 @@ footer nav a:hover{color:var(--ink);text-decoration:underline}
     hero.addEventListener('pointerleave',function(){tx=ty=0;if(!praf) praf=requestAnimationFrame(pstep)});
   }
 
-  /* ---------- the hero: tap (or drag) to pass ---------- */
-  var svg=$('demo'); if(!svg||!window.requestAnimationFrame) return;
-  var NS='http://www.w3.org/2000/svg';
-  var ITEMS=[
-    {k:'photo',w:'photos',n:'photo',cap:'IMG_2048.jpg · 3.1 MB',t:'Photo received, full quality'},
-    {k:'link',w:'links',n:'link',cap:'A link you copied',t:'Link copied, ready to paste'},
-    {k:'pdf',w:'PDFs',n:'PDF',cap:'Lease.pdf · 240 KB',t:'Lease.pdf saved to Downloads'},
-    {k:'note',w:'notes',n:'note',cap:'A quick note',t:'New message from your phone'}
-  ];
-  var SX=[228,334,440], SY=142, CX=108, CY=312.5;     // slot x's; card centre (phone coords)
-  var cur=0, busy=false, queued=false, lastUser=0, userSent=0, inView=true;
-  var card=$('card'), cardUse=$('card-use'), cap=$('cap'), sendT=$('send-t'), send=$('send');
-  var drop=$('drop'), trail=$('trail'), rip=$('rip'), r1=$('rip1'), r2=$('rip2'), arrow=$('arrow');
-  var toast=$('toast'), toastT=$('toast-t'), slots=$('slots'), h1=$('h1'), word=$('word'), hint=$('hint'), hintT=$('hint-t'), say=$('demo-live');
-  var held=[].slice.call(slots.children);               // what the laptop shows, left to right
-  var lapK=$('lap-k'), phK=$('ph-k'), ghosts=[];
-  [5.5,3.8].forEach(function(r,i){var c=document.createElementNS(NS,'circle');c.setAttribute('r',r);c.setAttribute('fill',i?'#c9e2ff':'#9fd0ff');c.setAttribute('opacity',0);svg.insertBefore(c,drop);ghosts.push(c)});
-  function offs(el){  // how far a layer has drifted (parallax, float), in the picture's coordinates
-    try{var m=svg.getScreenCTM().inverse().multiply(el.getScreenCTM());return [m.e,m.f]}catch(_){return [0,0]}}
-  function bounce(el,d,dx,dy){return tw(d,function(p){var k=Math.sin(Math.PI*p);el.setAttribute('transform','translate('+(dx*k).toFixed(2)+' '+(dy*k).toFixed(2)+')')},ease.out)}
-  function splash(x,y){
-    var C=['#4a8ff0','#9fd0ff','#7fd6ad','#ffb27a','#c8bdf2','#4a8ff0','#ffd27a'];
-    C.forEach(function(col,i){
-      var c=document.createElementNS(NS,'circle'), a=-Math.PI*(.12+.76*i/(C.length-1))+(Math.random()-.5)*.25, v=26+Math.random()*22, r=2.2+Math.random()*2.2;
-      c.setAttribute('fill',col); svg.appendChild(c);
-      tw(620+Math.random()*200,function(p){c.setAttribute('cx',x+Math.cos(a)*v*p);c.setAttribute('cy',y+Math.sin(a)*v*p+34*p*p);c.setAttribute('r',r*(1-.6*p));c.setAttribute('opacity',1-p*p)},ease.out).then(function(){svg.removeChild(c)});
-    });
-  }
-  var A=-7*Math.PI/180, cosA=Math.cos(A), sinA=Math.sin(A);
-  function toWorld(x,y){  // the phone is rotate(-7 108 306)
-    return [108+(x-108)*cosA-(y-306)*sinA, 306+(x-108)*sinA+(y-306)*cosA]}
-  function toLocalDelta(dx,dy){return [dx*cosA+dy*sinA, -dx*sinA+dy*cosA]}
-  var ease={io:function(p){return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2},out:function(p){return 1-Math.pow(1-p,3)},
-    back:function(p){var c=1.7;return 1+(c+1)*Math.pow(p-1,3)+c*Math.pow(p-1,2)},lin:function(p){return p}};
-  function tw(d,f,e){return new Promise(function(res){var t0=performance.now();(function s(n){var p=Math.min(1,(n-t0)/d);f((e||ease.lin)(p));if(p<1)requestAnimationFrame(s);else res()})(t0)})}
-  function wait(ms){return new Promise(function(r){setTimeout(r,ms)})}
-  function cardAt(dx,dy,s,o){card.setAttribute('transform','translate('+dx+' '+dy+') translate('+CX+' '+CY+') scale('+s+') translate('+(-CX)+' '+(-CY)+')');card.setAttribute('opacity',o)}
-  function slotG(it,x){var g=document.createElementNS(NS,'g'),u=document.createElementNS(NS,'use');u.setAttribute('href','#it-'+it.k);u.setAttribute('width',96);u.setAttribute('height',72);g.appendChild(u);g.setAttribute('transform','translate('+x+' '+SY+')');return g}
-  function setWord(it){
-    if(reduce.matches){word.textContent=it.w;h1.setAttribute('data-k',it.k);return}
-    word.classList.add('out');
-    setTimeout(function(){word.textContent=it.w;h1.setAttribute('data-k',it.k);word.classList.remove('out');word.classList.add('in');word.getBoundingClientRect();word.classList.remove('in')},300);
-  }
-  function setToast(txt){
-    if(reduce.matches){toastT.textContent=txt;return Promise.resolve()}
-    return tw(160,function(p){toast.setAttribute('opacity',1-p)}).then(function(){toastT.textContent=txt;return tw(320,function(p){toast.setAttribute('opacity',p);toast.setAttribute('transform','translate(0 '+(6*(1-p))+')')},ease.out)});
-  }
-  function loadNext(){
-    var it=ITEMS[cur];
-    cardUse.setAttribute('href','#it-'+it.k); cap.textContent=it.cap; sendT.textContent='Send '+it.n;
-    send.setAttribute('aria-label','Send the '+it.n+' to the laptop');
-    if(hint&&!userSent) hintT.textContent='Try it: tap Send, or drag the '+it.n;
-  }
-  function placeArrow(){var i=Math.min(held.length,2);arrow.setAttribute('transform','translate('+(SX[i]-440)+' 0)');arrow.style.display=held.length>=3?'none':''}
-
-  function pass(from,user){
-    if(busy) return; busy=true;
-    var it=ITEMS[cur], from0=from||[0,0];
-    setWord(it);
-    var target=Math.min(held.length,2), shifting=held.length>=3;
-    var advanced=false, fin=function(){
-      if(!advanced){cur=(cur+1)%ITEMS.length; loadNext()}
-      if(user){say.textContent='The '+it.n+' landed on the laptop.'}
-      busy=false;
-      if(queued){queued=false;setTimeout(function(){userPass()},120)}
+  /* ---------- how it works: the picture follows the step you're reading ---------- */
+  var story=document.querySelector('.story');
+  if(story&&hasIO){
+    var ssvg=$('story-svg'), frame=story.querySelector('.frame'), dots=story.querySelectorAll('.story-dots i'), items=[].slice.call(story.querySelectorAll('.story-steps li'));
+    var setStep=function(li){
+      if(li.classList.contains('on')&&ssvg.getAttribute('data-scene')===li.getAttribute('data-s')) return;
+      items.forEach(function(x,i){x.classList.toggle('on',x===li);dots[i].classList.toggle('on',x===li)});
+      frame.style.setProperty('--sb',li.getAttribute('data-bg'));
+      if(still){ssvg.setAttribute('data-scene',li.getAttribute('data-s'));return}
+      ssvg.classList.add('swap-out');
+      setTimeout(function(){ssvg.setAttribute('data-scene',li.getAttribute('data-s'));ssvg.classList.remove('swap-out')},220);
     };
-    if(reduce.matches){
-      if(shifting){slots.removeChild(held.shift());held.forEach(function(g,i){g.setAttribute('transform','translate('+SX[i]+' '+SY+')')})}
-      var g0=slotG(it,SX[target]);slots.appendChild(g0);held.push(g0);placeArrow();
-      cardAt(0,0,1,1);setToast(it.t);fin();return;
-    }
-    // where the card is now, in the picture's coordinates
-    var po=offs(phK), lo=offs(lapK);
-    var c=toWorld(CX,CY); var sx=c[0]+from0[0]+po[0], sy=c[1]+from0[1]+po[1];
-    var exL=SX[target]+48, eyL=SY+36, ex=exL+lo[0], ey=eyL+lo[1], mx=(sx+ex)/2+40, my=-205;
-    function bz(t){var u=1-t;return [u*u*sx+2*u*t*mx+t*t*ex, u*u*sy+2*u*t*my+t*t*ey]}
-    trail.setAttribute('d','M'+sx+' '+sy+'Q'+mx+' '+my+' '+ex+' '+ey);
-    if(shifting){
-      var gone=held.shift();
-      tw(380,function(p){gone.setAttribute('opacity',1-p)},ease.out).then(function(){slots.removeChild(gone)});
-      held.forEach(function(g,i){tw(520,function(p){g.setAttribute('transform','translate('+(SX[i+1]+(SX[i]-SX[i+1])*p)+' '+SY+')')},ease.io)});
-      arrow.style.display='none';
-    }
-    // squeeze the card into a droplet
-    var fdx=from0[0], fdy=from0[1];
-    if(!from) tw(300,function(p){var k=1-.08*Math.sin(Math.PI*p);send.setAttribute('transform','translate(108 405) scale('+k+') translate(-108 -405)')});
-    wait(120).then(function(){bounce(phK,420,-4,5)});
-    tw(240,function(p){var l=toLocalDelta(fdx,fdy);cardAt(l[0],l[1],1+.06*p,1)},ease.out)
-    .then(function(){
-      drop.setAttribute('opacity',1);
-      return tw(240,function(p){var l=toLocalDelta(fdx,fdy);cardAt(l[0],l[1],1.06-.9*p,1-p);drop.setAttribute('transform','translate('+sx+' '+sy+') scale('+(.2+.8*p)+')')},ease.io);
-    })
-    .then(function(){
-      tw(220,function(p){trail.setAttribute('opacity',.9*p)});
-      return tw(860,function(p){
-        var a=bz(p), b=bz(Math.min(1,p+.02)), ang=Math.atan2(a[1]-b[1],a[0]-b[0])*180/Math.PI+90;
-        var s=1+.24*Math.sin(p*Math.PI);
-        drop.setAttribute('transform','translate('+a[0]+' '+a[1]+') rotate('+(p>.97?ang*(1-p)*30:ang)+') scale('+(1/s)+' '+s+')');
-        ghosts.forEach(function(g,i){var q=Math.max(0,p-.07*(i+1)), b2=bz(q);g.setAttribute('cx',b2[0]);g.setAttribute('cy',b2[1]);g.setAttribute('opacity',(i?.45:.6)*Math.sin(Math.PI*Math.min(1,q*1.15)))});
-      },ease.io);
-    })
-    .then(function(){
-      // splash
-      tw(200,function(p){drop.setAttribute('transform','translate('+ex+' '+(ey+4*p)+') scale('+(1+.5*p)+' '+(1-.6*p)+')');drop.setAttribute('opacity',1-p)});
-      tw(500,function(p){trail.setAttribute('opacity',.9*(1-p))});
-      ghosts.forEach(function(g){g.setAttribute('opacity',0)});
-      splash(ex,ey-2); bounce(lapK,380,0,3.5);
-      rip.setAttribute('opacity',1);r1.setAttribute('cx',exL);r1.setAttribute('cy',eyL);r2.setAttribute('cx',exL);r2.setAttribute('cy',eyL);
-      tw(700,function(p){r1.setAttribute('r',6+52*p);r1.setAttribute('opacity',1-p)},ease.out);
-      wait(140).then(function(){return tw(700,function(p){r2.setAttribute('r',4+38*p);r2.setAttribute('opacity',1-p)},ease.out)});
-      var g=slotG(it,SX[target]);g.setAttribute('opacity',0);slots.appendChild(g);held.push(g);
-      var X=SX[target];
-      setToast(it.t);
-      return tw(460,function(p){var s=.4+.6*p;g.setAttribute('opacity',Math.min(1,p*2.5));g.setAttribute('transform','translate('+(X+48*(1-s))+' '+(SY+36*(1-s))+') scale('+s+')')},ease.back);
-    })
-    .then(function(){
-      placeArrow();
-      cur=(cur+1)%ITEMS.length; loadNext(); advanced=true;
-      return tw(380,function(p){cardAt(0,0,.5+.5*p,p)},ease.back);
-    })
-    .then(fin);
+    var stio=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting)setStep(e.target)})},{rootMargin:'-45% 0px -45% 0px'});
+    items.forEach(function(li){stio.observe(li)});
   }
 
-  // tap Send, tap the item, or drag it towards the laptop
-  function user(){lastUser=Date.now()}
-  function userPass(from){
-    user(); if(busy){queued=true;return} userSent++;
-    pass(from,true);
-    if(userSent===1){hintT.textContent='That’s it. That’s Droplet.';hint.classList.add('up');setTimeout(function(){hint.classList.remove('up')},2600)}
-    else hint.classList.remove('up');
+  /* ---------- the hero picture tilts a little towards the pointer ---------- */
+  var art=$('art');
+  if(art&&fine&&!still){
+    art.addEventListener('pointermove',function(e){
+      var r=art.getBoundingClientRect(), x=(e.clientX-r.left)/r.width-.5, y=(e.clientY-r.top)/r.height-.5;
+      art.style.setProperty('--ry',(x*7).toFixed(2)+'deg'); art.style.setProperty('--rx',(-y*5).toFixed(2)+'deg');
+    });
+    art.addEventListener('pointerleave',function(){art.style.setProperty('--ry','0deg');art.style.setProperty('--rx','0deg')});
   }
-  send.addEventListener('click',function(){userPass()});
-  send.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();userPass()}});
-  var drag=null;
-  function pt(e){var m=svg.getScreenCTM();return m?[(e.clientX-m.e)/m.a,(e.clientY-m.f)/m.d]:[0,0]}
-  card.addEventListener('pointerdown',function(e){if(busy)return;user();drag={s:pt(e),d:[0,0],moved:false,id:e.pointerId};try{card.setPointerCapture(e.pointerId)}catch(_){};card.classList.add('drag')});
-  card.addEventListener('pointermove',function(e){if(!drag)return;var q=pt(e);drag.d=[q[0]-drag.s[0],q[1]-drag.s[1]];if(Math.abs(drag.d[0])+Math.abs(drag.d[1])>6)drag.moved=true;if(drag.moved){var l=toLocalDelta(drag.d[0],drag.d[1]);cardAt(l[0],l[1],1.04,1)}});
-  function up(){if(!drag)return;var d=drag.d,m=drag.moved;drag=null;card.classList.remove('drag');
-    if(!m||d[0]>50||d[1]<-50){userPass(m?d:null)}
-    else{var l=toLocalDelta(d[0],d[1]);tw(300,function(p){cardAt(l[0]*(1-p),l[1]*(1-p),1.04-.04*p,1)},ease.back)}}
-  card.addEventListener('pointerup',up);card.addEventListener('pointercancel',up);
 
-  // plays by itself until someone has a go
-  loadNext(); placeArrow();
-  if('IntersectionObserver' in window) new IntersectionObserver(function(es){inView=es[0].isIntersecting},{threshold:.3}).observe(svg);
-  setTimeout(function(){if(!userSent)hint.classList.add('up')},1200);
-  setInterval(function(){
-    if(reduce.matches||busy||!inView||document.hidden||Date.now()-lastUser<9000) return;
-    pass(null,false);
-  },4200);
+  /* ---------- the hero: the headline's word follows the picture ---------- */
+  var h1=$('h1'), word=$('word'), WORDS={photo:'photos',pdf:'PDFs',link:'links'};
+  window.dropletWord=function(k){
+    if(!WORDS[k]||h1.getAttribute('data-k')===k) return;
+    if(reduce.matches){word.textContent=WORDS[k];h1.setAttribute('data-k',k);return}
+    word.classList.add('out');
+    setTimeout(function(){word.textContent=WORDS[k];h1.setAttribute('data-k',k);word.classList.remove('out');word.classList.add('in');word.getBoundingClientRect();word.classList.remove('in')},300);
+  };
 })();
 </script>
+<script src="scenes.js" defer></script>
 </body>
 </html>

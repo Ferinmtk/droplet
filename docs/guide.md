@@ -123,7 +123,7 @@ menu.
 Open it from **Settings → Bluetooth mouse & keyboard** in the Android app, or
 pick **Bluetooth: <device>** in the presentation remote. The first time, tap
 **Make this phone visible** and pair from the computer or TV (the app shows
-the steps for Windows, KDE and Google TV). After that, it's one tap to
+the steps for Windows, Linux and Google TV). After that, it's one tap to
 reconnect.
 
 It types by key position with a US layout, so characters a US keyboard can't
@@ -153,7 +153,7 @@ No sudo: it installs into `~/.local/share/droplet-agent` and runs as a
 `systemd --user` service with your desktop. The agent comes from the latest
 GitHub release, checked against its `SHA256SUMS.txt`.
 
-- **Input.** On KDE and GNOME it goes through the desktop's remote-control
+- **Input.** On Plasma and GNOME it goes through the desktop's remote-control
   portal, which asks you once to allow it. On niri, sway and other
   compositors it needs `/dev/uinput`, which takes a one-time root step:
   `droplet-agent doctor` prints the exact commands.
@@ -162,7 +162,7 @@ GitHub release, checked against its `SHA256SUMS.txt`.
 - **Screenshots** use the portal, then niri, spectacle, gnome-screenshot or
   grim, whichever works. **Clipboard** uses wl-clipboard (xclip on X11).
 - **The window and the tray.** Droplet has its own window (your devices,
-  pairing, settings) and sits in the system tray (KDE Plasma, Wayland bars,
+  pairing, settings) and sits in the system tray (Plasma, Wayland bars,
   GNOME with the AppIndicator extension): send files, the clipboard or a
   ring to a device, and accept or decline pairing requests. The installer
   starts it with your desktop; on older installs, `droplet-agent tray --autostart`.
@@ -321,7 +321,7 @@ sudo loginctl enable-linger "$USER"
 
 ### Local-first: home Wi-Fi first, Tailscale when away
 
-droplet works like KDE Connect: on the home network, devices talk to the hub
+On the home network, devices talk to the hub
 directly. [Tailscale](#tailnet-real-https-from-anywhere) is the extra that
 makes it work from anywhere.
 
@@ -465,7 +465,7 @@ Once two or more devices are named:
 - **Send to** picks where drops go: the **Hub** (`received/`, as before) or
   a device. Items sent to a device wait in its **For this device** list,
   labelled with who sent them. If the device is off they stay on the hub
-  until it comes back, which KDE Connect can't do.
+  until it comes back.
 - **Chat.** With a device picked, the text box becomes a chat with it:
   bubbles, clickable links, tap a message to copy it. Unread counts show on
   the device buttons. Links shared from Android's share sheet to a device
@@ -521,8 +521,8 @@ can seek, and the hub's volume with a mute button. With more than one player
 open there's a picker. **Speaker ▾** switches the hub's audio output (speaker,
 HDMI, an AirPlay sink…).
 
-It uses `playerctl` (any MPRIS player: browsers, VLC, Spotify, and phones
-relayed by KDE Connect, shown as e.g. "Chrome on fedora") and `wpctl`
+It uses `playerctl` (any MPRIS player: browsers, VLC, Spotify, and players
+relayed from a phone, shown as e.g. "Chrome on fedora") and `wpctl`
 (PipeWire). Both talk over the session bus, so run droplet as the
 [`systemd --user` service](#run-as-a-service). Without either tool the card
 doesn't appear.
@@ -548,7 +548,7 @@ Copy on one device, paste on another.
   polled.
 
 The hub side uses `wl-paste`/`wl-copy` (wl-clipboard), so the hub needs a
-Wayland session (tested on KDE Plasma and niri). Text only, up to 1 MB.
+Wayland session (tested on Plasma and niri). Text only, up to 1 MB.
 Browsers only allow clipboard access over HTTPS, so use the tailnet URL. On
 the plain `http://` LAN address you get a box to paste into and a block of
 text to select instead.
@@ -562,7 +562,7 @@ clipboard until something replaces it, or until the droplet service restarts
 
 #### Hub commands
 
-Like KDE Connect's **Run command**: the hub's owner lists commands in a file,
+**Run a command**: the hub's owner lists commands in a file,
 and each gets a button. Tap one to see its output and exit code. Devices only
 say *which* command to run. What runs comes from the file on the hub, so a
 phone can't run anything that isn't listed.
@@ -639,7 +639,7 @@ Browsers always send `Origin` on cross-site posts. curl and the native apps
 don't send it and aren't affected.
 
 **Verified** on the T15 hub (niri): commands ran from slim over the tailnet,
-the media card read the KDE Connect player, the volume and all five outputs,
+the media card read a phone's relayed player, the volume and all five outputs,
 and the clipboard read works under niri. Also tested in desktop browsers
 against real `playerctl`/`wl-clipboard`, with no sound played and nothing
 changed on the hub. Not yet tried: ringing a real phone, and the hub's ring
@@ -667,7 +667,7 @@ tried on the Redmi itself (MIUI autostart and battery rules, real Doze).
 
 ### Remote control: drive your other devices
 
-Like KDE Connect's remote input and multimedia control, for every machine
+Remote input and multimedia control, for every machine
 you own. A device becomes controllable once a small **helper** runs on it:
 the [Linux and Mac agent](#linux-computers-droplet-agent), the
 [Windows app](#windows-app) or the [Android app](#android-app). The helper

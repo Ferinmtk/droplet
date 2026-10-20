@@ -33,8 +33,8 @@ Where the design changed while it was built, this document says so, and why.
 §9 is the exact wire protocol, for implementing a peer.
 
 Today everything goes through the hub, so if it's down, almost nothing
-works. KDE Connect has no hub: every device talks to every other one
-directly. The mesh brings that to droplet:
+works. The mesh fixes that: every device talks to every other one
+directly.
 
 - **Devices with the droplet app** (Android, Windows, Linux) talk **directly
   to each other**, at home over the Wi-Fi and away over Tailscale.
