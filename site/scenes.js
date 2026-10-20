@@ -485,8 +485,8 @@ function miniAndroid(){return `<rect x="-36" y="-66" width="72" height="132" rx=
   <circle cy="-55" r="2.6" fill="#000"/><rect x="-14" y="56" width="28" height="2" rx="1" fill="#fff" opacity=".7"/>${T(-25,-50,'10:24',6,'#fff')}${mark(-18,-18,36)}`}
 function miniIphone(){return `<rect x="-36" y="-66" width="72" height="132" rx="17" fill="#C9CDD3" stroke="#8E949C" stroke-width="2"/><rect x="-32" y="-62" width="64" height="124" rx="14" fill="url(#iw)"/>
   <rect x="-11" y="-58" width="22" height="7" rx="3.5" fill="#000"/><rect x="-14" y="56" width="28" height="2" rx="1" fill="#fff" opacity=".8"/>${mark(-18,-18,36)}`}
-function miniWindows(){return `<rect x="-72" y="-48" width="144" height="92" rx="8" fill="#1C1E22" stroke="#4A4E57" stroke-width="2"/>
-  <clipPath id="mwc"><rect x="-66" y="-42" width="132" height="80"/></clipPath><g clip-path="url(#mwc)"><g transform="translate(-66 -42)">${w11Wall(132,80)}</g>
+function miniWindows(){const id=(typeof PFX==='undefined'?'':PFX)+PFX+'mwc'+(clipN++);return `<rect x="-72" y="-48" width="144" height="92" rx="8" fill="#1C1E22" stroke="#4A4E57" stroke-width="2"/>
+  <clipPath id="${id}"><rect x="-66" y="-42" width="132" height="80"/></clipPath><g clip-path="url(#${id})"><g transform="translate(-66 -42)">${w11Wall(132,80)}</g>
   <rect x="-66" y="30" width="132" height="8" fill="#1C1C1C"/><g transform="translate(-4 32)"><rect width="3" height="3" fill="#4CC2FF"/><rect x="3.6" width="3" height="3" fill="#4CC2FF"/><rect y="3.6" width="3" height="3" fill="#4CC2FF"/><rect x="3.6" y="3.6" width="3" height="3" fill="#4CC2FF"/></g></g>
   ${mark(-16,-26,32)}<path d="M-84 44 H84 L78 54 H-78 Z" fill="url(#silver)"/>`}
 function miniMac(){return `<rect x="-72" y="-48" width="144" height="92" rx="8" fill="#16171A" stroke="#6D7178" stroke-width="2"/><rect x="-66" y="-42" width="132" height="80" fill="url(#macw)"/>
@@ -621,7 +621,7 @@ function aTabs(w,y,act){
   return s;
 }
 function aBtTop(w){
-  return aTop(w,'Mouse & keyboard')+`<circle cx="${w-58}" cy="77" r="5" fill="#22C38E"/>`+T(w-18,83,'Connected',13,D.dim,{a:'end'})+
+  return aTop(w,'Mouse & keyboard')+
   `<rect x="14" y="112" width="${w-28}" height="58" rx="16" fill="${D.card}" stroke="${D.line}"/>${T(30,135,'Connected to',12,D.dim)}${T(30,157,'My laptop',17,D.text,{w:700})}
   <rect x="${w-118}" y="126" width="92" height="30" rx="15" fill="none" stroke="${D.line2}" stroke-width="1.5"/>${T(w-72,146,'Disconnect',12,D.text,{a:'middle'})}`;
 }
@@ -674,22 +674,55 @@ function aTV(w,h,dir,okP){
    ${[['back',-1],['home',0],['menu',1]].map(([n,i])=>`<circle cx="${cx+i*78}" cy="500" r="26" fill="${D.card2}"/>`+(n==='back'?icon('back',cx+i*78-11,489,22,D.text):n==='home'?`<circle cx="${cx}" cy="500" r="9" fill="none" stroke="${D.text}" stroke-width="2.4"/>`:`<path d="M${cx+78-9} 494 h18 M${cx+78-9} 500 h18 M${cx+78-9} 506 h18" stroke="${D.text}" stroke-width="2.4"/>`)).join('')}`;
 }
 // computer side
-function wMusic(w,h,playing,track,prog){
-  const arts=[['#FF8A65','#8E24AA'],['#4FC3F7','#1A237E'],['#AED581','#00695C']], [a,b]=arts[track%3], gid=PFX+PFX+'mu'+(clipN++);
-  return `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>
-   <rect width="${w}" height="${h}" fill="#1C1C1C"/><rect x="20" y="20" width="150" height="150" rx="8" fill="url(#${gid})"/>
-   ${T(190,46,'NOW PLAYING',10,'#C8C8C8',{f:WF,ls:1})}<rect x="190" y="60" width="${150+track*12}" height="14" rx="7" fill="#E6E6E6"/><rect x="190" y="84" width="96" height="10" rx="5" fill="#777"/>
-   <rect x="190" y="130" width="${w-220}" height="4" rx="2" fill="#444"/><rect x="190" y="130" width="${(w-220)*prog}" height="4" rx="2" fill="#4CC2FF"/>
-   <g transform="translate(${190+(w-220)/2} 166)"><circle r="18" fill="#fff"/>${playing?'<rect x="-6" y="-7" width="4" height="14" fill="#000"/><rect x="2" y="-7" width="4" height="14" fill="#000"/>':'<path d="M-4 -8 L8 0 L-4 8z" fill="#000"/>'}
-   <path d="M-46 -6 L-56 0 L-46 6z M-58 -6 v12" fill="#ddd" stroke="#ddd" stroke-width="2"/><path d="M46 -6 L56 0 L46 6z M58 -6 v12" fill="#ddd" stroke="#ddd" stroke-width="2"/></g>
-   ${[0,1,2,3].map(i=>`<rect x="20" y="${196+i*26}" width="${w-40}" height="20" rx="4" fill="${i===track%4?'#2E3A44':'#242424'}"/>`).join('')}`;
+// Windows Media Player, playing a real album
+const ALBUM=['SKINNY','LUNCH','CHIHIRO','BIRDS OF A FEATHER','WILDFLOWER','THE GREATEST',"L'AMOUR DE MA VIE",'THE DINER','BITTERSUITE','BLUE'];
+function albumArt(x,y,s){
+  const g=PFX+PFX+'aa'+(clipN++), c=PFX+PFX+'ac'+(clipN++);
+  return `<defs><radialGradient id="${g}" cx=".35" cy=".3" r=".9"><stop offset="0" stop-color="#5FB4E8"/><stop offset=".45" stop-color="#14508A"/><stop offset="1" stop-color="#04162E"/></radialGradient></defs>
+   <clipPath id="${c}"><rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${s*.04}"/></clipPath><g clip-path="url(#${c})"><rect x="${x}" y="${y}" width="${s}" height="${s}" fill="url(#${g})"/>
+   ${[0,1,2,3].map(i=>`<path d="M${x} ${y+s*(.55+i*.1)} q${s*.25} ${-s*.05} ${s*.5} 0 t${s*.5} 0" fill="none" stroke="#9FD8FF" stroke-width="${s*.012}" opacity="${.35-i*.07}"/>`).join('')}</g>`;
 }
+function wMusic(w,h,playing,track,prog){
+  const cur=3+track, len=track?'4:21':'3:30', el=track?'0:02':'1:12';
+  let s=`<rect width="${w}" height="${h}" fill="#202020"/><rect width="120" height="${h}" fill="#1A1A1A"/>`;
+  ['Home','Music library','Video library','Play queue','Playlists'].forEach((n,i)=>{const y=18+i*24;
+    if(i===1)s+=`<rect x="6" y="${y-12}" width="108" height="20" rx="4" fill="#2D2D2D"/><rect x="6" y="${y-7}" width="3" height="10" rx="1.5" fill="#4CC2FF"/>`;
+    s+=T(18,y+2,n,9.5,i===1?'#fff':'#C8C8C8',{f:WF})});
+  s+=albumArt(136,14,74)+T(222,30,'Album',8,'#C8C8C8',{f:WF})+T(222,48,'HIT ME HARD AND SOFT',14,'#fff',{w:700,f:WF})+T(222,64,'Billie Eilish · 2024 · 10 songs',9,'#C8C8C8',{f:WF});
+  s+=`<rect x="222" y="72" width="60" height="16" rx="8" fill="#4CC2FF"/>${T(252,83,'Play all',8,'#000',{a:'middle',w:700,f:WF})}`;
+  for(let i=0;i<6;i++){const k=i+1, y=98+i*18, on=k===cur;
+    s+=`${on?`<rect x="130" y="${y}" width="${w-140}" height="16" rx="3" fill="#2E3A44"/>`:''}${T(140,y+11.5,String(k+1),8.5,on?'#4CC2FF':'#999',{f:WF})}${T(160,y+11.5,ALBUM[k],8.5,on?'#4CC2FF':'#E6E6E6',{w:on?700:400,f:WF})}${T(w-110,y+11.5,'Billie Eilish',8.5,'#999',{f:WF})}`;}
+  // now-playing bar
+  const by=h-46;
+  s+=`<rect y="${by}" width="${w}" height="46" fill="#2B2B2B"/>${albumArt(8,by+7,32)}${T(46,by+20,ALBUM[cur],9.5,'#fff',{w:700,f:WF})}${T(46,by+34,'Billie Eilish',8.5,'#C8C8C8',{f:WF})}
+   <g transform="translate(${w/2} ${by+16})"><circle r="10" fill="#fff"/>${playing?'<rect x="-4" y="-5" width="3" height="10" fill="#000"/><rect x="1" y="-5" width="3" height="10" fill="#000"/>':'<path d="M-3 -5 L5 0 L-3 5z" fill="#000"/>'}
+   <path d="M-26 -4 L-33 0 L-26 4z M-35 -4 v8" fill="#ddd" stroke="#ddd" stroke-width="1.5"/><path d="M26 -4 L33 0 L26 4z M35 -4 v8" fill="#ddd" stroke="#ddd" stroke-width="1.5"/></g>
+   ${T(w/2-110,by+38,el,8,'#C8C8C8',{a:'end',f:WF})}<rect x="${w/2-104}" y="${by+34}" width="208" height="3" rx="1.5" fill="#555"/><rect x="${w/2-104}" y="${by+34}" width="${208*prog}" height="3" rx="1.5" fill="#4CC2FF"/>${T(w/2+110,by+38,len,8,'#C8C8C8',{f:WF})}`;
+  return s;
+}
+// PowerPoint slide show, from the Droplet presentation
 function wSlide(w,h,n){
-  const bars=[[.5,.7,.4,.9],[.8,.3,.6,.5],[.4,.9,.7,.6]][n%3];
-  return `<rect width="${w}" height="${h}" fill="#fff"/><rect x="40" y="36" width="${w*.5}" height="22" rx="4" fill="#1D2433"/><rect x="40" y="68" width="${w*.32}" height="12" rx="6" fill="#B6BECC"/>
-   ${bars.map((v,i)=>`<rect x="${60+i*70}" y="${h-60-v*170}" width="44" height="${v*170}" rx="4" fill="${['#2F6FDB','#1F9E6A','#7C5CD6','#D9773C'][i]}"/>`).join('')}
-   <circle cx="${w-130}" cy="${h-150}" r="64" fill="#E9EEF7"/><path d="M${w-130} ${h-150} L${w-130} ${h-214} A64 64 0 0 1 ${w-75} ${h-118}Z" fill="#D9773C"/>
-   ${T(w-24,h-18,`${n+3} / 12`,13,'#5D6577',{a:'end',f:WF})}`;
+  const navy='#0E1A33', acc='#2F6FDB';
+  let s=`<rect width="${w}" height="${h}" fill="#fff"/><rect width="${w}" height="6" fill="${acc}"/>${mark(w-46,16,28)}`;
+  const title=(t)=>T(36,58,t,26,navy,{w:800,f:'font-family="Segoe UI, Inter, sans-serif"'});
+  if(n===0){
+    s+=title('Why Droplet?');
+    [['Sending a photo to your own laptop today:','email it, WhatsApp it to yourself, or find a cable.'],
+     ['With Droplet it takes one tap,','straight over your own Wi-Fi.'],
+     ['No account, no cloud,','and none of your data bundle.']].forEach(([a,b],i)=>{const y=104+i*62;
+       s+=`<circle cx="44" cy="${y-5}" r="5" fill="${acc}"/>`+T(60,y,a,15,navy,{w:700,f:WF})+T(60,y+20,b,13,'#4B5570',{f:WF})});
+  }else if(n===1){
+    s+=title('How it works');
+    [['1','Install','on two devices'],['2','Pair','with a 4-digit code'],['3','Send','photos, files, links']].forEach(([k,a,b],i)=>{const x=36+i*((w-72)/3);
+      s+=`<rect x="${x}" y="96" width="${(w-72)/3-16}" height="150" rx="12" fill="#F1F5FB"/><circle cx="${x+30}" cy="128" r="16" fill="${acc}"/>`+
+        T(x+30,134,k,16,'#fff',{a:'middle',w:800,f:WF})+T(x+18,182,a,18,navy,{w:800,f:WF})+T(x+18,204,b,12,'#4B5570',{f:WF})});
+  }else{
+    s+=title('Works on every device');
+    [['Android',miniAndroid],['iPhone',miniIphone],['Windows',miniWindows],['Mac',miniMac],['Linux',miniLinux]].forEach(([p,f],i)=>{const x=36+i*((w-72)/5), cw=(w-72)/5-12;
+      s+=`<rect x="${x}" y="100" width="${cw}" height="110" rx="12" fill="#F1F5FB"/><g transform="translate(${x+cw/2} 142) scale(.36)">${f()}</g>`+T(x+cw/2,194,p,13,navy,{a:'middle',w:700,f:WF})});
+    s+=T(36,246,'Free and open source · built in Nairobi',13,'#4B5570',{f:WF});
+  }
+  return s+T(w-16,h-12,`${n+3}`,10,'#8A93A6',{a:'end',f:WF});
 }
 function tvSet(x,y,w,inner){
   const h=w*.56, id=PFX+PFX+'tv'+(clipN++);
@@ -706,12 +739,12 @@ function tvHome(w,h,sel){
   for(let i=0;i<5;i++)s+=`<rect x="${14+i*((w-28-32)/5+8)}" y="${y+tw*.62+16}" width="${(w-28-32)/5}" height="${tw*.5}" rx="6" fill="#2A2E35"/>`;
   return s;
 }
-function remoteGeo(){geo(108,44,.6,96,205,.42,.3)}
+function remoteGeo(){geo(150,58,.55,82,205,.42,.3)}
 function rMusic(t){
   remoteGeo();
-  const playing=!(t>=1.2&&t<2.6), track=t>=3.8?1:0, prog=track?(t-3.8)*.05:.3+t*.03;
+  const playing=!(t>=1.2&&t<2.6), track=t>=3.8?1:0, prog=track?.01+(t-3.8)*.004:.34+(playing?t*.005:.006);
   const ph=PHONE((w,h)=>aBtMedia(w,h,{playing,press:{play:clickP(t,1.1)+clickP(t,2.5),next:clickP(t,3.7)},vol:.6}));
-  const lp=WIN((w,h)=>w11Window(30,16,w-60,h-62,'Media Player',(ww,hh)=>wMusic(ww,hh,playing,track,prog),{noicon:true}));
+  const lp=WIN((w,h)=>w11Window(14,10,w-28,h-50,'Media Player',(ww,hh)=>wMusic(ww,hh,playing,track,prog)));
   return lp+ph+tapG(t,154,341,1.1)+tapG(t,154,341,2.5)+tapG(t,258,341,3.7);
 }
 function rPad(t){
@@ -726,7 +759,7 @@ function rSlides(t){
   remoteGeo();
   const n=t<2?0:t<4?1:2, sec=252+Math.floor(t);
   const ph=PHONE((w,h)=>aRemote(w,h,{timer:`0${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`,press:clickP(t,1.9)+clickP(t,3.9)}));
-  const lp=WIN((w,h)=>{const sl=seg(t,2,2.3)*(t<3?1:0)+seg(t,4,4.3)*(t<5?1:0);return `<g transform="translate(${-sl*20} 0)" opacity="${1-sl*.0}">${wSlide(w,h,n)}</g>`},{tb:{},over:()=>''});
+  const lp=WIN(()=>'',{screen:(w,h)=>{const f=1-Math.min(seg(t,2,2.25)*(t<2.5?1:0)+seg(t,4,4.25)*(t<4.5?1:0),1)*0;const k=(t>=2&&t<2.25)||(t>=4&&t<4.25)?seg(t%2,0,.25):1;return `<g opacity="${k}">${wSlide(w,h,n)}</g>`}});
   return lp+ph+tapG(t,154,370,1.9)+tapG(t,154,370,3.9);
 }
 // the phone has slid under the sofa; the laptop on the coffee table rings it
