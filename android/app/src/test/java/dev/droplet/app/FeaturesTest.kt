@@ -478,7 +478,8 @@ class FeaturesTest {
         a.sendLink(b.fp, "https://example.com")
         a.setPerms(b.fp, paused = false)
         a.rename("a2")
-        b.direct(a.fp)!!.send(JSONObject().put("t", "text").put("id", "fromb00001").put("body", "hello"))
+        // sent the way the app sends, so a link replaced just after the rename doesn't lose it
+        b.sendText(a.fp, "hello")
         waitFor("its message, under the nickname") { a.h.texts.contains("Brian's laptop" to "hello") }
         // a restart keeps it
         assertEquals("Brian's laptop", TrustList(File(dirs.getValue(a), "trust.json"), a.fp).get(b.fp)!!.nickname)
