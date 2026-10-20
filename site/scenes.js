@@ -1,7 +1,7 @@
 /* Droplet website: the real-looking phones and computers in the pictures. */
 (function(){
 'use strict';
-let clipN=0, PFX='', FS=1;
+let clipN=0, PFX='', FS=1, PHOTO_BASE='photos/';
 const LOGO_INNER=`<path d="M81.60 40.15 Q88.14 58.24 89.52 77.43 A22.00 22.00 0 1 1 53.28 65.65 Q65.67 50.94 81.60 40.15Z" fill="url(#dg)" stroke="url(#dg)" stroke-width="3.00" stroke-linejoin="round"/><path d="M74.71 29.13 A13.00 13.00 0 0 1 93.65 35.28" fill="none" stroke="#7EF0DC" stroke-width="6.50" stroke-linecap="round" opacity="1.0"/><path d="M68.35 18.95 A25.00 25.00 0 0 1 104.78 30.79" fill="none" stroke="#7EF0DC" stroke-width="6.50" stroke-linecap="round" opacity="0.5"/><g stroke="#7EF0DC" stroke-width="5.00" stroke-linecap="round" opacity=".5"><line x1="20.00" y1="76.00" x2="34.00" y2="76.00"/><line x1="14.00" y1="90.00" x2="32.00" y2="90.00"/><line x1="22.00" y1="104.00" x2="36.00" y2="104.00"/></g>
 `;
 const C={navy:'#0E1A33',navy2:'#16264A',aqua:'#7EF0DC',blue:'#3B7BFF',ink:'#0E1A33',screen:'#F5F8FD',
@@ -71,7 +71,8 @@ function mark(x,y,s){
 function appBar(w,title='Droplet',top=56){
   return `${mark(22,top,40)}<text x="74" y="${top+29}" font-size="26" font-weight="800" fill="${C.ink}">${esc(title)}</text>`;
 }
-function photo(x,y,w,h,rx=16){
+function photo(x,y,w,h,rx=16,name='giraffe'){
+  if(typeof PHOTO_BASE!=='undefined'&&PHOTO_BASE){const id=PFX+PFX+'rp'+(clipN++);return `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}"/></clipPath><g clip-path="url(#${id})">${realPhoto(name,x,y,w,h)}</g>`}
   return `<g transform="translate(${x} ${y})"><clipPath id="${PFX}ph${clipN}"><rect width="${w}" height="${h}" rx="${rx}"/></clipPath>
   <g clip-path="url(#${PFX}ph${clipN++})"><rect width="${w}" height="${h}" fill="url(#sky)"/>
   <circle cx="${w*.74}" cy="${h*.3}" r="${h*.13}" fill="#FFC94D"/>
@@ -246,7 +247,7 @@ function aShare(w,h,p,o={}){
       <rect x="14" y="80" width="${w-28}" height="76" rx="18" fill="${o.sel?'#123A3A':'#2A2F32'}" stroke="${o.sel?D.acc:'#3A4044'}" stroke-width="2"/>
       ${icon('laptop',32,106,26,'#fff')}${T(72,113,'My laptop',18,'#fff',{w:700})}${T(72,135,'Connected on Wi-Fi',13,'#C4CBCF')}`;
   }else{
-    s+=`${photo(20,30,52,52,10)}${T(84,52,o.what??'Sharing 1 image',16,'#fff',{w:500})}${T(84,74,o.file??'IMG_2048.jpg',13,'#C4CBCF')}
+    s+=`${o.thumb??photo(20,30,52,52,10)}${T(84,52,o.what??'Sharing 1 image',16,'#fff',{w:500})}${T(84,74,o.file??'IMG_2048.jpg',13,'#C4CBCF')}
       <line x1="14" y1="100" x2="${w-14}" y2="100" stroke="#3A4044"/>`;
     const apps=[['Droplet'],['Messages','#1A73E8','msg'],['Bluetooth','#3B4A5A','bt'],['Copy','#3B4A5A','copy']];
     apps.forEach(([n,col,ic],i)=>{const cx=20+i*(w-40)/4+(w-40)/8;
@@ -267,7 +268,10 @@ function aPhotos(w,h,sel){
   return s;
 }
 // little photo variety for galleries
+const PHOTOS=['skyline','elephant','sunset','expressway','giraffe','lions','safari'];
+const realPhoto=(name,x,y,w,h)=>`<image href="${PHOTO_BASE}${name}.webp" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice"/>`;
 function photoV(x,y,w,h,i){
+  if(typeof PHOTO_BASE!=='undefined'&&PHOTO_BASE)return realPhoto(PHOTOS[i%7],x,y,w,h);
   const skies=[['#BFE3FF','#EAF6FF'],['#FFD9B0','#FFF1E0'],['#C9C2FF','#ECE9FF'],['#B5F0E0','#E9FFF8']];
   const [a,b]=skies[i%4], gid=PFX+'pv'+(clipN++), cid=PFX+'pc'+(clipN++);
   return `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>
@@ -515,22 +519,33 @@ function shareFlow(w,h,t,t0,o={}){
 function shareTaps(t,t0){
   return tapG(t,...PHOTO_TAP,t0)+tapG(t,...SHARE_TAP,t0+.7)+tapG(t,...DROPLET_TAP,t0+1.55)+tapG(t,...PICK_TAP,t0+2.05);
 }
-// Chrome-like browser on Android, showing a video page
+// Chrome on Android, on the Wikipedia article about Nairobi
+const SERIF='font-family="Linux Libertine, Georgia, Times, serif"';
 function aWeb(w,h){
-  return `<rect width="${w}" height="${h}" fill="#121212"/><rect y="44" width="${w}" height="58" fill="#1F1F1F"/>
-  <rect x="12" y="54" width="${w-64}" height="38" rx="19" fill="#2E2E2E"/>${icon('lock',24,64,16,'#C4CBCF')}${T(46,78,'youtube.com/watch?v=8Xg7…',14,'#E3E3E3')}
-  ${icon('share',w-42,61,24,'#E3E3E3')}
-  <rect y="104" width="${w}" height="${w*.56}" fill="#000"/><circle cx="${w/2}" cy="${104+w*.28}" r="26" fill="#fff" opacity=".85"/><path d="M${w/2-9} ${92+w*.28} l22 12 l-22 12z" fill="#000"/>
-  <rect x="16" y="${126+w*.56}" width="${w-60}" height="14" rx="7" fill="#3A3A3A"/><rect x="16" y="${150+w*.56}" width="${w-120}" height="12" rx="6" fill="#2E2E2E"/>
-  <circle cx="34" cy="${200+w*.56}" r="18" fill="#3A3A3A"/><rect x="62" y="${192+w*.56}" width="110" height="12" rx="6" fill="#2E2E2E"/>`;
+  const pw=w-32;
+  return `<rect width="${w}" height="${h}" fill="#fff"/><rect y="0" width="${w}" height="102" fill="#202124"/>
+  <rect x="12" y="54" width="${w-64}" height="38" rx="19" fill="#3C4043"/>${icon('lock',24,64,16,'#C4CBCF')}${T(46,78,'en.m.wikipedia.org/wiki/Nairobi',13.5,'#E8EAED')}
+  ${icon('share',w-42,61,24,'#E8EAED')}
+  <rect y="102" width="${w}" height="50" fill="#F8F9FA"/><path d="M18 120h20M18 127h20M18 134h20" stroke="#202122" stroke-width="2.4"/>
+  ${T(52,134,'WIKIPEDIA',15,'#202122',{f:SERIF,ls:2})}${icon('search',w-42,116,22,'#202122')}
+  ${T(16,196,'Nairobi',32,'#202122',{f:SERIF})}${T(16,218,'Capital and largest city of Kenya',13,'#54595D')}
+  <line x1="16" y1="230" x2="${w-16}" y2="230" stroke="#C8CCD1"/>
+  ${realPhoto('skyline',16,242,pw,pw*.56)}
+  ${T(16,268+pw*.56,'Nairobi is the capital and largest city',14,'#202122')}${T(16,288+pw*.56,'of Kenya. The name comes from the',14,'#202122')}
+  ${T(16,308+pw*.56,'Maasai phrase Enkare Nairobi, "place',14,'#202122')}${T(16,328+pw*.56,'of cool waters".',14,'#202122')}`;
 }
-function wVideo(w,h){
-  return `<rect width="${w}" height="${h}" fill="#0F0F0F"/><rect x="16" y="14" width="${w*.66}" height="${w*.66*.56}" rx="8" fill="#1E2A3A"/>
-  <circle cx="${16+w*.33}" cy="${14+w*.185}" r="20" fill="#fff" opacity=".9"/><path d="M${8+w*.33} ${2+w*.185} l20 12 l-20 12z" fill="#1E2A3A"/>
-  <rect x="16" y="${30+w*.37}" width="${w*.5}" height="10" rx="5" fill="#333"/>
-  ${[0,1,2].map(i=>`<rect x="${w*.7+12}" y="${14+i*52}" width="${w*.3-28}" height="44" rx="6" fill="#1E1E1E"/>`).join('')}`;
+// Wikipedia on the laptop's browser
+function wWiki(w,h){
+  const ib=w*.3;
+  return `<rect width="${w}" height="${h}" fill="#fff"/>${T(18,30,'WIKIPEDIA',12,'#202122',{f:SERIF,ls:2})}${T(18,42,'The Free Encyclopedia',7,'#54595D',{f:SERIF})}
+  <rect x="${w*.32}" y="16" width="${w*.36}" height="22" rx="2" fill="#fff" stroke="#A2A9B1"/>${T(w*.32+8,31,'Search Wikipedia',9,'#72777D',{f:WF})}
+  ${T(18,82,'Nairobi',24,'#202122',{f:SERIF})}<line x1="18" y1="90" x2="${w-18}" y2="90" stroke="#A2A9B1"/>
+  ${T(18,106,'From Wikipedia, the free encyclopedia',9,'#54595D',{f:WF})}
+  ${['Nairobi is the capital and largest city of Kenya. The name','comes from the Maasai phrase Enkare Nairobi, which means','"place of cool waters", a reference to the Nairobi River.'].map((l,i)=>T(18,128+i*15,l,10.5,'#202122',{f:WF})).join('')}
+  ${[0,1,2,3,4,5].map(i=>`<rect x="18" y="${178+i*13}" width="${(w-ib-60)*(i%3===2?.7:1)}" height="6" rx="3" fill="#D5D8DC"/>`).join('')}
+  <rect x="${w-ib-18}" y="100" width="${ib}" height="${h-110}" fill="#F8F9FA" stroke="#A2A9B1"/>${T(w-ib/2-18,118,'Nairobi',13,'#202122',{a:'middle',w:700,f:WF})}
+  ${realPhoto('skyline',w-ib-12,126,ib-12,(ib-12)*.62)}${T(w-ib/2-18,140+(ib-12)*.62,'Nairobi skyline',8,'#54595D',{a:'middle',f:WF})}`;
 }
-
 // The hero: Android phone and Windows laptop pass a photo, a PDF and a link, round and round.
 const HERO_WORDS=[[0,'photo'],[6.0,'pdf'],[10.6,'link']];
 function hero(t){
@@ -539,7 +554,7 @@ function hero(t){
   const dragging=t>=6.4&&t<7.4;
   const ph=PHONE((w,h)=>{
     let c;
-    if(linkMode) c=shareFlow(w,h,t,10.6,{base:aWeb(w,h),sheet:{what:'Sharing link',file:'youtube.com/watch?v=8Xg7…'}});
+    if(linkMode) c=shareFlow(w,h,t,10.6,{base:aWeb(w,h),sheet:{what:'Sharing link',file:'en.wikipedia.org/wiki/Nairobi',thumb:photo(20,30,52,52,10,'skyline')}});
     else c=shareFlow(w,h,t,.8);
     c+=aHeads(w,'droplet','Report.pdf','From My laptop · tap to open',fade(t,8.4)-fade(t,10.2));
     return c;
@@ -548,9 +563,9 @@ function hero(t){
   const lp=WIN((w,h)=>
     w11Window(8,8,300,h-56,'Downloads',(ww,hh)=>w11Explorer(ww,hh,[{kind:'pdf',name:'Report.pdf',p:dragging?.35:1},{kind:'photo',name:'IMG_2048.jpg',p:t<17.6?seg(t,4.2,4.65):0}]),{noicon:true})+
     w11Window(290,60,306,240,'droplet',(ww,hh)=>wDroplet(ww,hh,{device:true,hl:t>6.95&&t<7.45,drop:t>6.95&&t<7.45}))+
-    (browserP>0?`<g transform="translate(300 180) scale(${browserP}) translate(-300 -180)">${w11Window(40,18,526,300,'YouTube',(ww,hh)=>wBrowser(ww,hh,'youtube.com/watch?v=8Xg7E9shq0Q',0,wVideo),{noicon:true})}</g>`:''),
+    (browserP>0?`<g transform="translate(300 180) scale(${browserP}) translate(-300 -180)">${w11Window(40,18,526,300,'Nairobi - Wikipedia',(ww,hh)=>wBrowser(ww,hh,'en.wikipedia.org/wiki/Nairobi',0,wWiki),{noicon:true})}</g>`:''),
     {over:(w,h)=>w11Toast(w,h,'Photo from My phone','IMG_2048.jpg · saved to Downloads',fade(t,4.2)-fade(t,6.0),{thumb:true})+
-      w11Toast(w,h,'Link from My phone','Opening it in your browser',fade(t,14.1)-fade(t,15.8))});
+      w11Toast(w,h,'Link from My phone','en.wikipedia.org/wiki/Nairobi',fade(t,14.1)-fade(t,15.8))});
   let s=lp+ph;
   s+=shareTaps(t,.8);
   s+=fly(t,3.25,1.0,G.ps(154,380),G.ls(222,116));
@@ -714,28 +729,56 @@ function rSlides(t){
   const lp=WIN((w,h)=>{const sl=seg(t,2,2.3)*(t<3?1:0)+seg(t,4,4.3)*(t<5?1:0);return `<g transform="translate(${-sl*20} 0)" opacity="${1-sl*.0}">${wSlide(w,h,n)}</g>`},{tb:{},over:()=>''});
   return lp+ph+tapG(t,154,370,1.9)+tapG(t,154,370,3.9);
 }
+// the phone has slid under the sofa; the laptop on the coffee table rings it
 function rRing(t){
-  remoteGeo();
   const ringing=t>=1.6;
-  const shake=ringing?Math.sin(t*60)*4:0;
-  const lp=WIN((w,h)=>w11Window(30,16,w-60,h-62,'droplet',(ww,hh)=>wDroplet(ww,hh,{device:true,ringing})));
-  const ph=PHONE((w,h)=>ringing?aFound(w,h,t):`<rect width="${w}" height="${h}" fill="#000"/>`,{rot:-8+shake});
-  let s=lp+ph;
-  if(ringing)for(let k=0;k<3;k++){const q=((t-1.6)*.9+k/3)%1,[px,py]=G.ps(154,330);
-    s+=`<path d="M${px-80-q*30} ${py-50-q*14} a${70+q*30} ${70+q*30} 0 0 0 0 ${100+q*28}" fill="none" stroke="#FFB547" stroke-width="4" stroke-linecap="round" opacity="${(1-q)*.8}"/>
-     <path d="M${px+80+q*30} ${py-50-q*14} a${70+q*30} ${70+q*30} 0 0 1 0 ${100+q*28}" fill="none" stroke="#FFB547" stroke-width="4" stroke-linecap="round" opacity="${(1-q)*.8}"/>`;}
-  const bx=30+312, by=16+30+129;
-  if(t<1.7)s+=curG(lerp(bx+80,bx,eio(seg(t,.3,1))),lerp(by+60,by,eio(seg(t,.3,1))),clickP(t,1.2));
-  return s+fly(t,1.3,.6,G.ls(bx,by),G.ps(154,300),60);
+  let s=realPhoto('sofa',0,0,520,380);
+  // the laptop sits on the coffee table
+  geo(304,128,.27,0,0,.2,.25);
+  s+=WIN((w,h)=>w11Window(20,12,w-40,h-58,'droplet',(ww,hh)=>wDroplet(ww,hh,{device:true,ringing})));
+  // the phone, lying flat on the rug, half under the sofa
+  const cx=150, cy=284, sh=ringing?Math.sin(t*70)*1.2:0;
+  if(ringing){const q=.6+.4*Math.sin(t*10);
+    s+=`<ellipse cx="${cx}" cy="${cy+10}" rx="${64+q*10}" ry="${15+q*3}" fill="#7EF0DC" opacity="${.3*q}"/><ellipse cx="${cx}" cy="${cy-6}" rx="60" ry="10" fill="#7EF0DC" opacity="${.18*q}"/>`;}
+  s+=`<g transform="translate(${cx+sh} ${cy}) scale(1 .3) rotate(-18) scale(.21) translate(-165 -345)">${android(0,0,330,690,(w,h)=>ringing?aFound(w,h,t):`<rect width="${w}" height="${h}" fill="#000"/>`)}</g>`;
+  // the sofa's base in front of the phone's top half
+  const cid=PFX+PFX+'sf'+(clipN++);
+  s+=`<clipPath id="${cid}"><rect x="60" y="0" width="178" height="276"/></clipPath><g clip-path="url(#${cid})">${realPhoto('sofa',0,0,520,380)}</g>`;
+  if(ringing)for(let k=0;k<3;k++){const q=((t-1.6)*.9+k/3)%1;
+    s+=`<path d="M${cx-46-q*26} ${cy-20-q*10} a${40+q*24} ${30+q*16} 0 0 0 0 ${44+q*20}" fill="none" stroke="#FFB547" stroke-width="3.5" stroke-linecap="round" opacity="${(1-q)*.9}"/>
+     <path d="M${cx+46+q*26} ${cy-20-q*10} a${40+q*24} ${30+q*16} 0 0 1 0 ${44+q*20}" fill="none" stroke="#FFB547" stroke-width="3.5" stroke-linecap="round" opacity="${(1-q)*.9}"/>`;}
+  // click Ring on the laptop
+  const rb=[20+312, 12+30+129];
+  if(t<1.7)s+=curG(lerp(rb[0]+90,rb[0],eio(seg(t,.3,1))),lerp(rb[1]+60,rb[1],eio(seg(t,.3,1))),clickP(t,1.2));
+  return s+fly(t,1.3,.6,G.ls(rb[0],rb[1]),[cx,cy],50);
+}
+// a real TV on the wall; the phone in your hand moves the selection
+function tvHomeReal(w,h,sel){
+  let s=`<rect width="${w}" height="${h}" fill="#0F1114"/>${T(14,18,'For you',9,'#fff',{w:700,f:AF})}${T(64,18,'Movies',9,'#9AA0A6',{f:AF})}${T(104,18,'Shows',9,'#9AA0A6',{f:AF})}${T(w-14,18,'10:24',9,'#fff',{a:'end',f:AF})}`;
+  const id=PFX+PFX+'tvb'+(clipN++);
+  s+=`<clipPath id="${id}"><rect x="12" y="26" width="${w-24}" height="${h*.44}" rx="6"/></clipPath><g clip-path="url(#${id})">${realPhoto('safari',12,26,w-24,h*.44)}
+    <rect x="12" y="26" width="${w*.5}" height="${h*.44}" fill="url(#tvfade)"/></g>
+    ${T(24,26+h*.44-28,'Into the Maasai Mara',13,'#fff',{w:700,f:AF})}${T(24,26+h*.44-14,'Nature · Kenya',8,'#ddd',{f:AF})}`;
+  const tw=(w-24-4*6)/5, y=h*.44+40;
+  s+=T(14,y-6,'Kenya on camera',9,'#fff',{w:700,f:AF});
+  for(let i=0;i<5;i++){const x=12+i*(tw+6), cid=PFX+PFX+'tvt'+(clipN++);
+    s+=`<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${tw}" height="${tw*.6}" rx="4"/></clipPath><g clip-path="url(#${cid})">${realPhoto(PHOTOS[(i+1)%7],x,y,tw,tw*.6)}</g>`;
+    if(i===sel)s+=`<rect x="${x-2}" y="${y-2}" width="${tw+4}" height="${tw*.6+4}" rx="5" fill="none" stroke="#fff" stroke-width="2.5"/>`;}
+  return s;
 }
 function rTV(t){
-  geo(0,0,1,100,205,.42,.3);
+  geo(0,0,1,74,318,.4,.3);
   const seq=[[.8,'right'],[1.8,'right'],[2.8,'right'],[3.8,'left'],[4.8,'ok']];
-  let sel=1, dir=null, okP=0;
+  let sel=0, dir=null, okP=0;
   seq.forEach(([tt,d])=>{if(t>=tt){if(d==='right')sel++;else if(d==='left')sel--;} if(t>=tt&&t<tt+.3){if(d==='ok')okP=1;else dir=d}});
-  const ph=PHONE((w,h)=>aTV(w,h,dir,okP));
+  const ph=PHONE((w,h)=>aTV(w,h,dir,okP),{rot:-6});
   const map={up:[154,294],down:[154,426],left:[88,360],right:[220,360],ok:[154,360]};
-  return tvSet(200,46,300,(w,h)=>tvHome(w,h,sel))+ph+seq.map(([tt,d])=>tapG(t,...map[d],tt)).join('');
+  // the screen inside the TV's white frame, nearly square-on
+  const cid=PFX+PFX+'tvs'+(clipN++), W=258, H=206;
+  const scr=`<clipPath id="${cid}"><path d="M154 75 L412 68 L412 282 L154 274Z"/></clipPath><g clip-path="url(#${cid})">
+    <g transform="matrix(${258/W} ${-7/W} 0 ${206/H} 154 75)">${tvHomeReal(W,H,sel)}</g></g>`;
+  return `<defs><linearGradient id="tvfade" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".7"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient></defs>`+
+    realPhoto('tvroom',0,0,520,380)+scr+ph+seq.map(([tt,d])=>tapG(t,...map[d],tt)).join('');
 }
 Object.assign(SCENES,{music:{d:6,still:.5,f:rMusic},pad:{d:5,still:2,f:rPad},slides:{d:6,still:1,f:rSlides},ring:{d:6,still:3,f:rRing},tv:{d:6,still:2,f:rTV}});
 
