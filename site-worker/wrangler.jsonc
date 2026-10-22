@@ -1,0 +1,17 @@
+// The site and its visit counter, as one Cloudflare Worker. Deploy from this folder:
+//   npx wrangler deploy
+{
+  "name": "droplet",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "../site",
+    "binding": "ASSETS",
+    // these go to worker.js first; everything else is served straight from site/
+    "run_worker_first": ["/android", "/windows", "/store", "/linux.sh", "/mac.sh", "/hit", "/stats", "/stats/",
+      "/wa", "/status", "/in", "/fb", "/x", "/tt", "/ig"]
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "droplet-stats", "database_id": "3cb10498-362d-44bb-82d4-d19752d0b334" }],
+  "routes": [{ "pattern": "droplet.noxeratech.com", "custom_domain": true }]
+  // secrets (wrangler secret put): STATS_PASSWORD for /stats, STATS_SALT for the visitor codes
+}
