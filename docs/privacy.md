@@ -9,8 +9,19 @@ messages, clipboard text and rings, and so one can control another. It's free so
 ## What droplet collects
 
 Nothing. There's no droplet account, no droplet server, no analytics, no telemetry, no
-advertising and no crash reporting. The people who make droplet never receive anything
-from your devices.
+advertising and no crash reporting in the apps. The people who make droplet never receive
+anything from your devices.
+
+## The website
+
+droplet.noxeratech.com counts its visits and the clicks on its download links, so we can see
+how many people find droplet. For each one it keeps the time, the page or download, the
+country and city (from the network, not your location), the kind of device (Android,
+iPhone, Windows, Mac or Linux) and the site or app that linked to it, if your browser says.
+It keeps no IP address and sets no cookie for visitors. To count a person once a day, it
+keeps a code made from the date and your connection that changes every day, so a visit
+can't be linked to the next day's. These counts are kept for at most 400 days and only the
+people who make droplet can see them.
 
 ## Where your data goes
 

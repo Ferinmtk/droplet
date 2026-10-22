@@ -24,10 +24,34 @@ service worker. See `docs/iphone.md`. The landing page's iPhone tab links to it.
 
 After that every push to `main` republishes it.
 
+## Visits and downloads (/stats)
+
+`../site-worker/` makes the site a Cloudflare Worker: `worker.js` serves `site/`, counts each
+visit (the page sends `/hit` once) and each download-link click, and shows them at `/stats`
+behind a password. The counts go in a D1 database (`schema.sql`). What's kept is in
+`docs/privacy.md`, under The website. Set it up once:
+
+```
+cd site-worker
+npx wrangler d1 create droplet-stats          # put the id it prints in wrangler.jsonc
+npx wrangler d1 execute droplet-stats --remote --file schema.sql
+npx wrangler secret put STATS_PASSWORD        # the /stats password (any user name)
+npx wrangler secret put STATS_SALT            # a long random string; never change it mid-day
+npx wrangler deploy
+```
+
+Opening `/stats` also marks that browser as yours, so your own visits aren't counted.
+
+Share links say where a visitor came from (WhatsApp doesn't tell the browser): `/wa`
+(WhatsApp chats), `/status` (WhatsApp Status), `/in` (LinkedIn), `/fb` (Facebook), `/x`,
+`/tt` (TikTok) and `/ig` (Instagram). Each opens the page with `?utm_source=`, which the page
+reports and then removes from the address bar.
+
 ## The short links
 
-`_redirects` sends `/android` and `/windows` to the **latest** GitHub release, so the
-buttons never need editing:
+`worker.js` sends `/android`, `/windows`, `/store`, `/linux.sh` and `/mac.sh` (counting the
+click first), and `_redirects` the rest. Downloads go to the **latest** GitHub release, so
+the buttons never need editing:
 
 | Link | Goes to |
 |---|---|
