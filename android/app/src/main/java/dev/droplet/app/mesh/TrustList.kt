@@ -15,6 +15,10 @@ import java.net.InetAddress
  *   fetch, kept while the hub is down.
  * - "paired": paired directly by the owner; survives roster changes and
  *   goes only when unpaired.
+ * - "browser": the iPhone web app, paired over WebRTC (docs/iphone.md). A
+ *   bare public key ([Entry.key], base64 SPKI) instead of a certificate
+ *   ([Entry.certPem] is empty): it never takes part in TLS, and is never
+ *   dialled; it connects when it's open.
  */
 class TrustList(private val file: File, private val ownFp: String) {
     data class Entry(
@@ -42,8 +46,12 @@ class TrustList(private val file: File, private val ownFp: String) {
          * Only on this phone: never sent (docs/mesh.md §9.11). Empty for none.
          */
         val nickname: String = "",
+        /** A browser's public key (base64 SPKI); empty for every other peer. */
+        val key: String = "",
     ) {
-        fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("fp", fp).put("cert_pem", certPem)
+        fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("fp", fp)
+            .put("cert_pem", if (source == SOURCE_BROWSER) JSONObject.NULL else certPem)
+            .apply { if (source == SOURCE_BROWSER) put("key", key) }
             .put("source", source).put("lan", JSONArray(lan)).put("port", port ?: JSONObject.NULL)
             .put("tailnet_ip", tailnetIp ?: JSONObject.NULL).put("os", os).put("caps", JSONArray(caps))
             .put("hub", hub).put("added", added)
@@ -58,6 +66,9 @@ class TrustList(private val file: File, private val ownFp: String) {
         val label: String get() = nickname.ifEmpty { name }
 
         val isOther: Boolean get() = relation == Perms.OTHER_DEVICE
+
+        /** The iPhone web app: never dialled, never a TLS peer. */
+        val isBrowser: Boolean get() = source == SOURCE_BROWSER
     }
 
     /** Called (outside the lock) when the set of trusted certificates changed. */
@@ -75,6 +86,15 @@ class TrustList(private val file: File, private val ownFp: String) {
         for (fp in raw.keys()) {
             val e = raw.optJSONObject(fp) ?: continue
             try {
+                if (e.optString("source") == SOURCE_BROWSER) {
+                    val b = makeBrowserEntry(name = e.optString("name"), key = e.opt("key") as? String, os = e.optString("os"),
+                        fp = fp, relation = e.opt("relation") as? String, allow = e.optJSONObject("allow"),
+                        paused = e.opt("paused") == true)
+                        .copy(added = e.optLong("added").takeIf { it > 0 } ?: (System.currentTimeMillis() / 1000),
+                            nickname = cleanNickname(e.opt("nickname")))
+                    if (b.fp != ownFp) peers[b.fp] = b
+                    continue
+                }
                 val entry = makeEntry(
                     peerId = e.optString("id"), name = e.optString("name"), certPem = e.optString("cert_pem"),
                     source = e.optString("source"), lan = strings(e.optJSONArray("lan")), port = e.opt("port"),
@@ -109,6 +129,9 @@ class TrustList(private val file: File, private val ownFp: String) {
 
     fun isTrusted(fp: String): Boolean = get(fp) != null
 
+    /** Trusted as a TLS peer: anything but a browser (whose fingerprint is of a key, not a certificate). */
+    fun isTlsPeer(fp: String): Boolean = get(fp)?.let { !it.isBrowser } ?: false
+
     fun all(): List<Entry> = synchronized(lock) { peers.values.sortedWith(compareBy({ it.name.lowercase() }, { it.fp })) }
 
     /** Peers matching a name (any case), an id, or a fingerprint prefix of 8+ hex. */
@@ -135,6 +158,17 @@ class TrustList(private val file: File, private val ownFp: String) {
                 lan = cleanAddresses(entry.lan + old.lan), tailnetIp = entry.tailnetIp ?: old.tailnetIp,
                 port = entry.port ?: old.port, nickname = entry.nickname.ifEmpty { old.nickname })
             changed(true)
+        }
+    }
+
+    /** Trusts a browser peer paired over WebRTC. Not a TLS peer, so the server's trust doesn't change. */
+    fun addBrowser(entry: Entry) {
+        require(entry.source == SOURCE_BROWSER)
+        synchronized(lock) {
+            val old = peers[entry.fp]
+            require(old == null || old.isBrowser) { "that key belongs to another peer" }
+            peers[entry.fp] = if (old == null) entry else entry.copy(nickname = entry.nickname.ifEmpty { old.nickname })
+            changed(false)
         }
     }
 
@@ -177,8 +211,8 @@ class TrustList(private val file: File, private val ownFp: String) {
     }
 
     /**
-     * A peer says it has a new name (`rename`). A peer paired directly names
-     * itself; the hub names the peers its roster brings, so those are left to
+     * A peer says it has a new name (`rename`). A peer paired directly (or a
+     * browser) names itself; the hub names the peers its roster brings, so those are left to
      * the next roster. An invalid name is ignored. Returns the entry if the
      * name changed.
      */
@@ -190,7 +224,7 @@ class TrustList(private val file: File, private val ownFp: String) {
         }
         return synchronized(lock) {
             val e = peers[fp]
-            if (e == null || e.source != SOURCE_PAIRED || e.name == clean) return@synchronized null
+            if (e == null || e.source == SOURCE_ROSTER || e.name == clean) return@synchronized null
             val n = e.copy(name = clean)
             peers[fp] = n
             save()
@@ -258,6 +292,7 @@ class TrustList(private val file: File, private val ownFp: String) {
     companion object {
         const val SOURCE_ROSTER = "roster"
         const val SOURCE_PAIRED = "paired"
+        const val SOURCE_BROWSER = "browser"
         val PEER_ID = Regex("^[0-9a-f]{8,64}$")
         val FINGERPRINT = Regex("^[0-9a-f]{64}$")
         private const val MAX_LAN = 6
@@ -285,6 +320,39 @@ class TrustList(private val file: File, private val ownFp: String) {
                 allow = Perms.cleanAllow(allow, Perms.cleanRelation(relation)),
                 paused = paused,
             )
+        }
+
+        /**
+         * A checked entry for a browser peer (the iPhone web app, docs/iphone.md): a bare
+         * P-256 public key, no certificate. Its fingerprint is the SHA-256 of the key's
+         * SubjectPublicKeyInfo, and its id the first 16 hex of that. Throws IllegalArgumentException.
+         */
+        fun makeBrowserEntry(name: String?, key: String?, os: String? = "ios", fp: String? = null, relation: String? = null,
+                             allow: Any? = null, paused: Boolean = false): Entry {
+            val spki = p256Spki(key)
+            val real = MeshIdentity.sha256Hex(spki)
+            if (fp != null) require(fp.replace(":", "").trim().lowercase() == real) { "the fingerprint doesn't match the key" }
+            return Entry(
+                id = real.take(16), name = cleanName(name, "iPhone"), fp = real, certPem = "", source = SOURCE_BROWSER,
+                os = cleanName(os).take(20), relation = Perms.cleanRelation(relation),
+                allow = Perms.cleanAllow(allow, Perms.cleanRelation(relation)), paused = paused,
+                key = android.util.Base64.encodeToString(spki, android.util.Base64.NO_WRAP),
+            )
+        }
+
+        private val P256_ORDER = java.math.BigInteger("FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16)
+
+        /** A browser's public key (base64 of its SubjectPublicKeyInfo DER), checked to be EC P-256. */
+        fun p256Spki(key: Any?): ByteArray {
+            require(key is String && Regex("^[A-Za-z0-9+/]+={0,2}$").matches(key) && key.length % 4 == 0 && key.length <= 400) { "bad key" }
+            val spki = android.util.Base64.decode(key, android.util.Base64.NO_WRAP)
+            val pub = try {
+                java.security.KeyFactory.getInstance("EC").generatePublic(java.security.spec.X509EncodedKeySpec(spki))
+            } catch (e: Exception) {
+                throw IllegalArgumentException("not an EC public key")
+            } as java.security.interfaces.ECPublicKey
+            require(pub.params.order == P256_ORDER) { "not a P-256 key" }
+            return spki
         }
 
         /** A device's name, as the hub allows it (its clean_name). */

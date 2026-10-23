@@ -45,7 +45,7 @@ function size(n) {
 const when = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 // what this iPhone calls a computer: its nickname here (never sent), else its own name
-const shown = (p) => (p && (p.nickname || p.name)) || "the computer";
+const shown = (p) => (p && (p.nickname || p.name)) || "the other device";
 
 function eta(s) {
   if (s < 60) return `${Math.max(1, Math.round(s))} s left`;
@@ -98,7 +98,7 @@ function stateText(fp) {
   const rec = currentPeers.get(fp);
   if (rec && rec.paused) return "Paused: nothing is shared with it";
   const r = remoteOf(fp);
-  if (s === "connected" && r && r.paused) return `Paused by ${(rec && rec.name) || "the computer"}`;
+  if (s === "connected" && r && r.paused) return `Paused by ${(rec && rec.name) || "the other device"}`;
   if (s === "connected") return "Connected";
   if (s === "connecting") return "Connecting…";
   if (s && s !== "offline") return s;
@@ -121,7 +121,7 @@ async function connectPeer(peer) {
     await s.auth();
   } catch (e) {
     s.close();
-    if (e.unpaired) { setStatus(peer.fp, "This computer doesn't know this iPhone any more: pair again."); return; }
+    if (e.unpaired) { setStatus(peer.fp, "That device doesn't know this iPhone any more: pair again."); return; }
     setStatus(peer.fp, "offline");
     scheduleRetry(peer);
     return;
@@ -143,7 +143,7 @@ function attach(peer, s) {
     if (current && current.fp === peer.fp) renderPeerState();
   });
   s.addEventListener("refused-file", (e) => {
-    if (current && current.fp === peer.fp) transferRow(`in-${e.detail.id}`, `↓ ${e.detail.name || "a file"}`, 0, e.detail.size || 0, "Not taken: you paused this computer");
+    if (current && current.fp === peer.fp) transferRow(`in-${e.detail.id}`, `↓ ${e.detail.name || "a file"}`, 0, e.detail.size || 0, "Not taken: you paused this device");
   });
   if (s.hello && s.hello.name && s.hello.name !== peer.name) { peer.name = s.hello.name; db.peers.put(peer); }
   if (s.address && peer.addresses[0] !== s.address) {
@@ -386,7 +386,7 @@ async function startPairView() {
   $("pair-error").hidden = true;
   $("pair-link").value = "";
   $("my-name").value = myName;
-  $("scan-status").textContent = "Point the camera at the QR code on the computer.";
+  $("scan-status").textContent = "Point the camera at the QR code on the other device.";
   show("pair");
   if (scanning) scanning.stop();
   scanning = scan($("video"));
@@ -429,7 +429,7 @@ async function pairWith(text) {
     const code = await s.pair(qr.token);
     $("pair-with").textContent = `Pairing with ${s.hello.name || qr.name}`;
     $("pair-code").textContent = code;
-    $("pair-detail").textContent = "Check the computer shows the same four digits, and accept it there.";
+    $("pair-detail").textContent = "Check the other device shows the same four digits, and accept it there.";
     $("pair-match").hidden = false;
     const answer = s.answer();
     const ok = await user;
@@ -441,7 +441,7 @@ async function pairWith(text) {
       s.close();
       $("pair-code-step").hidden = true;
       $("pair-scan").hidden = false;
-      pairError(state === "denied" ? "The computer refused." : `Not paired: the request was ${state}.`);
+      pairError(state === "denied" ? "The other device refused." : `Not paired: the request was ${state}.`);
       return;
     }
     peer.name = s.hello.name || qr.name;
@@ -642,7 +642,7 @@ let naming = null;   // { kind: "me" } | { kind: "nick", peer }
 function openNameSheet(kind, peer) {
   naming = { kind, peer };
   $("name-title").textContent = kind === "me" ? "Rename this iPhone" : `What do you call ${peer.name}?`;
-  $("name-help").textContent = kind === "me" ? "Your computers show this name. Those connected now see it at once."
+  $("name-help").textContent = kind === "me" ? "Your devices show this name. Those connected now see it at once."
     : `Shown here instead of “${peer.name}”. Only on this iPhone: it's never sent. Leave it empty for its own name.`;
   $("name-input").value = kind === "me" ? myName : peer.nickname || "";
   $("name-input").placeholder = kind === "me" ? "iPhone" : peer.name;

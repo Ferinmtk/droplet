@@ -65,5 +65,5 @@ export function parsePairing(text) {
   if (!d || d.v !== 1 || !d.f || !Array.isArray(d.a) || !d.p) throw new Error("That isn't a droplet pairing code.");
   const fp = hex(b64urlDecode(d.f));
   if (fp.length !== 64) throw new Error("That pairing code is damaged.");
-  return { name: String(d.n || "computer"), id: String(d.i || ""), fp, addresses: d.a.map(String), port: Number(d.p), token: String(d.t || "") };
+  return { name: String(d.n || "device"), id: String(d.i || ""), fp, addresses: d.a.map(String), port: Number(d.p), token: String(d.t || "") };
 }

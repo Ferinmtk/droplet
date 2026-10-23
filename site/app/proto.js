@@ -83,7 +83,7 @@ export class Session extends EventTarget {
     };
     this.hello = await this._expect("server-hello", 8000);
     // DTLS already pinned this; the computer says it too
-    if (this.hello.fp !== this.peer.fp) { this.close(); throw new Error("That isn't the computer you paired with."); }
+    if (this.hello.fp !== this.peer.fp) { this.close(); throw new Error("That isn't the device you paired with."); }
     return this;
   }
 
@@ -93,7 +93,7 @@ export class Session extends EventTarget {
     this._send({ t: "auth", v: 1, key: this.id.spki, name: this.myName, sig, features: FEATURES });
     const m = await this._expect(["welcome", "auth-failed"], 10000);
     if (m.t !== "welcome") {
-      const err = new Error(m.paired ? "The computer didn't accept this device's proof." : "This computer doesn't know this device any more: pair again.");
+      const err = new Error(m.paired ? "The other device didn't accept this iPhone's proof." : "That device doesn't know this iPhone any more: pair again.");
       err.unpaired = !m.paired;
       this.close();
       throw err;
@@ -121,9 +121,9 @@ export class Session extends EventTarget {
   }
 
   _check(cap) {
-    if (this.paused) throw Object.assign(new Error("You paused sharing with this computer. Resume to send."), { paused: true });
+    if (this.paused) throw Object.assign(new Error("You paused sharing with this device. Resume to send."), { paused: true });
     const why = this.refuses(cap);
-    const name = (this.hello && this.hello.name) || "The computer";
+    const name = (this.hello && this.hello.name) || "The other device";
     if (why === "paused") throw Object.assign(new Error(`${name} paused sharing with this iPhone.`), { paused: true });
     if (why === "denied") throw new Error(`${name} doesn't allow ${NOUNS[cap] || cap} from this iPhone.`);
   }
@@ -146,11 +146,11 @@ export class Session extends EventTarget {
     const nI = randomHex(32);
     this._send({ t: "pair", v: 1, key: this.id.spki, name: this.myName, os: "ios", token, commit: await commitment(nI) });
     const m = await this._expect(["pair-nonce", "pair-failed"], 10000);
-    if (m.t === "pair-failed") throw new Error(m.error || "The computer refused.");
+    if (m.t === "pair-failed") throw new Error(m.error || "The other device refused.");
     const sig = await sign(this.id, pairTranscript(this.id.fp, this.peer.fp, nI, m.nonce));
     this._send({ t: "pair-confirm", nonce: nI, sig });
     const s = await this._expect(["pair-state", "pair-failed"], 10000);
-    if (s.t === "pair-failed") throw new Error(s.error || "The computer refused.");
+    if (s.t === "pair-failed") throw new Error(s.error || "The other device refused.");
     return pairCode(this.id.fp, this.peer.fp, nI, m.nonce);
   }
 
@@ -312,7 +312,7 @@ export class Session extends EventTarget {
       this._next.push(w);
       if (timeout) setTimeout(() => {
         const i = this._next.indexOf(w);
-        if (i >= 0) { this._next.splice(i, 1); reject(new Error("The computer didn't answer.")); }
+        if (i >= 0) { this._next.splice(i, 1); reject(new Error("The other device didn't answer.")); }
       }, timeout);
     });
   }
@@ -380,7 +380,7 @@ export class Session extends EventTarget {
           this.emit("file-cancelled", { id: f.id, name: f.name, here: false });
         }
         if (this._sending === m.id) {
-          const who = (this.hello && this.hello.name) || "The computer";
+          const who = (this.hello && this.hello.name) || "The other device";
           this._stop.set(m.id, `${who} cancelled it`);
           const r = this._wait.get(m.id);
           if (r) { this._wait.delete(m.id); r({ ok: false, error: `${who} cancelled it`, cancelled: true }); }

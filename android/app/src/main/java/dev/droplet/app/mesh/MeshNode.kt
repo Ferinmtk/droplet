@@ -4,6 +4,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -54,6 +55,14 @@ interface MeshHost {
     fun onRing(entry: TrustList.Entry)
     fun onRingStop(entry: TrustList.Entry)
     fun onClip(entry: TrustList.Entry, text: String)
+    /**
+     * An iPhone's "Send clipboard" (a tap there): put [text] on the clipboard even with
+     * automatic clipboard sync off. Null if it was, else why not.
+     */
+    fun applyClip(entry: TrustList.Entry, text: String): String? {
+        onClip(entry, text)
+        return null
+    }
     fun onNotify(entry: TrustList.Entry, msg: JSONObject)
     fun onNotifyRemoved(entry: TrustList.Entry, key: String)
     /** input, media, cmd, rpc from a peer; [reply] answers over the mesh. */
@@ -131,6 +140,10 @@ class MeshNode(
     val outbox = Outbox(File(dir, "outbox.json"))
     val chat = Chat(File(dir, "chat.jsonl"))
     private val incomingDir = File(dir, "incoming")
+    /** Where files from an iPhone are written while they come. */
+    internal val incomingFolder: File get() = incomingDir
+    /** The iPhone link (docs/iphone.md), when it's running: set by the app once its transport listens. */
+    @Volatile var iphone: IphoneBridge? = null
     private val sendingDir = File(dir, "sending")
     private val links = ConcurrentHashMap<String, MutableList<Link>>()
     val peerState = ConcurrentHashMap<String, MutableMap<String, Any?>>()
@@ -558,7 +571,7 @@ class MeshNode(
 
     // --- trust ------------------------------------------------------------------
 
-    override fun trusted(fp: String): Boolean = trust.isTrusted(fp)
+    override fun trusted(fp: String): Boolean = trust.isTlsPeer(fp)
 
     private fun trustChanged() {
         for ((fp, list) in links) if (!trust.isTrusted(fp)) list.toList().forEach { it.close(1008, "not trusted any more") }
@@ -712,6 +725,115 @@ class MeshNode(
                 open.countDown()
                 finished()
             }
+        }
+    }
+
+    /**
+     * An iPhone's data channel (docs/iphone.md), once the app has proved who it is. Never
+     * dialled: it's open while the app is. Files go over the channel itself.
+     */
+    inner class BrowserLink(val conn: IphoneConn) : Link(conn.fp!!, conn.address, false) {
+        @Volatile private var gone = false
+        override val closed get() = gone || conn.closed
+
+        init {
+            kind = "webrtc"
+            keep = true
+            hello = JSONObject().put("name", conn.name).put("os", "ios").put("features", JSONArray(conn.features))
+            ready.countDown()
+        }
+
+        override fun sendText(text: String): Boolean {
+            if (closed || text.toByteArray(Charsets.UTF_8).size > Iphone.MAX_FRAME) return false
+            return runCatching { conn.channel.sendText(text) }.getOrDefault(false)
+        }
+
+        override fun close(code: Int, reason: String) {
+            conn.close()
+            ended()
+        }
+
+        internal fun ended() {
+            gone = true
+            finished()
+        }
+
+        /** A frame from the app, already parsed, on the bridge's delivery thread. */
+        fun received(msg: JSONObject) {
+            lastUsed = System.currentTimeMillis()
+            spy?.invoke("in", fp, msg)
+            try {
+                onMessage(this, msg)
+            } catch (e: Exception) {
+                host.log("iphone: handling ${msg.optString("t")} from $address: $e")
+            }
+        }
+
+        /** Called by the delivery thread: "ok", "refused: …", "paused: …", "cancelled…", or why it stopped. */
+        fun sendFile(job: JSONObject): String {
+            val id = job.getString("id")
+            val source = job.getString("source")
+            // the offer is only how a cancel here reaches this send (cancelOut ends it)
+            val token = MeshFiles.Offer(id, fp, job.getString("name"), job.getLong("size"), job.getString("mime"),
+                open = { from -> host.openSource(source, from) }, check = { fileChanged(job) })
+            offers.add(token)
+            try {
+                return conn.sendFile(id, job.getString("name"), job.getLong("size"), job.getString("mime"),
+                    open = { host.openSource(source, 0) },
+                    stop = {
+                        token.result?.takeIf { (ok, err) -> !ok && err.startsWith("cancelled") }?.second
+                            ?: if (stopped) "stopping" else if (!trust.isTrusted(fp)) "refused: not trusted any more" else null
+                    },
+                    progress = { n ->
+                        lastUsed = System.currentTimeMillis()
+                        transfers.progress(id, n)
+                        tellTransfer(id)
+                    })
+            } finally {
+                offers.remove(id)
+            }
+        }
+    }
+
+    /** An iPhone proved who it is: it's a link now, and what waited for it goes. */
+    internal fun addBrowserLink(conn: IphoneConn): BrowserLink {
+        val link = BrowserLink(conn)
+        addLink(link)
+        trust.learn(link.fp, os = "ios")
+        kick()
+        host.onChanged()
+        return link
+    }
+
+    internal fun browserClosed(link: BrowserLink) {
+        if (link.closed && link.isReady) host.log("iphone: ${link.hello?.optString("name")} disconnected")
+        link.ended()
+    }
+
+    internal fun alreadyReceived(fp: String, fid: String): Boolean = completed.has(fp, fid) != null
+
+    /** A file from an iPhone, kept at [where]. */
+    internal fun browserReceived(entry: TrustList.Entry, fid: String, name: String, where: String) {
+        completed.add(entry.fp, fid, where)
+        host.log("iphone: saved $name from ${entry.name} to $where")
+    }
+
+    /** An iPhone's file on its way here: its start, progress and end, for the transfer list. */
+    internal fun browserTransfer(fp: String, peer: String, fid: String, dir: String?, name: String?, size: Long?,
+                                 done: Long?, state: String?, error: String?) {
+        val label = trust.get(fp)?.label ?: peer
+        if (dir == "in" && state == Transfers.ACTIVE) {
+            transfers.start(fid, "in", fp, label, name ?: "", size ?: 0, route = "webrtc")
+            tellTransfer(fid, force = true)
+            return
+        }
+        if (done != null && (state == null || state == Transfers.ACTIVE)) {
+            transfers.progress(fid, done)
+            tellTransfer(fid)
+        }
+        if (state == Transfers.DONE || state == Transfers.FAILED || state == Transfers.CANCELLED) {
+            transfers.finish(fid, state, if (state == Transfers.CANCELLED && error == null) "$label cancelled it" else error)
+            tellTransfer(fid, force = true)
         }
     }
 
@@ -883,7 +1005,7 @@ class MeshNode(
             "ring-stop" -> host.onRingStop(current)
             "notify" -> host.onNotify(current, msg)
             "notify-removed" -> (msg.opt("key") as? String)?.let { host.onNotifyRemoved(current, it) }
-            "unpair" -> if (current.source == TrustList.SOURCE_PAIRED) {
+            "unpair" -> if (current.source == TrustList.SOURCE_PAIRED || current.isBrowser) {
                 host.log("mesh: ${current.name} unpaired from this phone")
                 trust.remove(link.fp)
             } else {
@@ -893,7 +1015,8 @@ class MeshNode(
                 val kind = msg.optString("kind").take(20)
                 if (kind.isNotEmpty()) peerState.getOrPut(link.fp) { ConcurrentHashMap() }[kind] = msg.opt("data")
             }
-            "clip" -> (msg.opt("text") as? String)?.let { if (it.isNotEmpty()) host.onClip(current, it) }
+            "clip" -> if (link is BrowserLink) clipFromIphone(link, current, msg)
+                else (msg.opt("text") as? String)?.let { if (it.isNotEmpty()) host.onClip(current, it) }
             "input", "media", "cmd", "rpc" -> {
                 val out = JSONObject(msg.toString())
                 out.remove("to")
@@ -903,6 +1026,22 @@ class MeshNode(
             }
             // hello, welcome, pong, rpc-result and anything newer: nothing to do
         }
+    }
+
+    /**
+     * The iPhone's "Send clipboard": always a tap there (a browser can't watch its clipboard),
+     * so it's applied even with automatic clipboard sync off, and answered (docs/iphone.md §3.4).
+     */
+    private fun clipFromIphone(link: Link, entry: TrustList.Entry, msg: JSONObject) {
+        val text = msg.opt("text") as? String ?: return
+        val cid = (msg.opt("id") as? String)?.takeIf { Regex("^[0-9A-Za-z_-]{8,64}$").matches(it) }
+        val error = when {
+            text.isEmpty() -> "no text"
+            else -> runCatching { host.applyClip(entry, text) }.getOrElse { it.message ?: "couldn't set the clipboard" }
+        }
+        if (cid == null) return
+        link.send(if (error == null) JSONObject().put("t", "ack").put("id", cid)
+            else JSONObject().put("t", "nack").put("id", cid).put("error", error))
     }
 
     private fun recvText(link: Link, entry: TrustList.Entry, msg: JSONObject) {
@@ -1086,6 +1225,10 @@ class MeshNode(
         jobs.firstOrNull()?.let { job ->
             cancelOut(job, Transfers.CANCELLED_HERE, tell = true)
             return CancelResult(job.getString("id"), "out", job.optString("name").ifEmpty { null }, job.optString("peer"))
+        }
+        if (iphone?.cancelReceive(id) == true) {
+            val t = transfers.get(id)
+            return CancelResult(id, "in", t?.name, t?.peer)
         }
         throw IllegalArgumentException("no transfer with that id is going on (it may have finished already)")
     }
@@ -1500,6 +1643,7 @@ class MeshNode(
     }
 
     private fun directFile(link: Link, job: JSONObject): String {
+        if (link is BrowserLink) return link.sendFile(job)
         val source = job.getString("source")
         val offer = MeshFiles.Offer(job.getString("id"), link.fp, job.getString("name"), job.getLong("size"),
             job.getString("mime"), open = { from -> host.openSource(source, from) }, check = { fileChanged(job) })
@@ -1641,7 +1785,11 @@ class MeshNode(
     fun pairAnswer(rid: String, accept: Boolean, relation: String = Perms.OWN_DEVICE): MeshPairing.Request {
         if (accept) require(relation in Perms.RELATIONS) { "relation must be \"own\" or \"other\"" }
         val r = incoming.answer(rid, accept) ?: throw IllegalArgumentException("no such pairing request waiting (it may have expired)")
-        if (accept) {
+        if (accept && r.browser) {
+            trust.addBrowser(TrustList.makeBrowserEntry(name = r.name, key = Base64.encodeToString(r.der!!, Base64.NO_WRAP),
+                os = r.os.ifEmpty { "ios" }, relation = relation))
+            host.log("iphone: paired with ${r.name} (${r.fp}), ${describeRelation(relation)}")
+        } else if (accept) {
             trust.addPaired(TrustList.makeEntry(peerId = r.id, name = r.name, certPem = MeshIdentity.toPem(r.der!!),
                 source = TrustList.SOURCE_PAIRED, os = r.os, relation = relation))
             accepted[r.fp] = System.nanoTime()
@@ -1655,10 +1803,10 @@ class MeshNode(
     /** Unpairs a directly paired peer, telling it when it's reachable. Returns whether it was told. */
     fun unpair(fp: String): Boolean {
         val e = entry(fp)
-        require(e.source == TrustList.SOURCE_PAIRED) {
+        require(e.source == TrustList.SOURCE_PAIRED || e.isBrowser) {
             "${e.name} is trusted because your hub lists it. Remove it on the hub, and every device stops trusting it."
         }
-        val told = direct(fp)?.send(JSONObject().put("t", "unpair")) ?: false
+        val told = (if (e.isBrowser) openLink(fp) else direct(fp))?.send(JSONObject().put("t", "unpair")) ?: false
         if (told) Thread.sleep(200)   // let it leave before the link is closed
         trust.remove(fp)
         host.log("mesh: unpaired ${e.name}")

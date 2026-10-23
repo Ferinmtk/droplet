@@ -57,6 +57,7 @@ class PeersActivity : AppCompatActivity() {
         b.root.padForSystemBars(keyboard = false)
         b.back.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         b.pairAddress.setOnClickListener { askAddress() }
+        b.pairIphone.setOnClickListener { showIphoneQr() }
         b.shareLink.setOnClickListener { shareDownloadLink() }
         b.done.setOnClickListener { finish() }
         b.doneAnother.setOnClickListener { show(Panel.LIST) }
@@ -73,7 +74,7 @@ class PeersActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { Mesh.state.collect { render() } }
                 launch { Mesh.changes.collect { render() } }
-                launch { Mesh.pairRequests.collect { if (panel == Panel.LIST) answer(it.request) else render() } }
+                launch { Mesh.pairRequests.collect { qrDialog?.dismiss(); if (panel == Panel.LIST) answer(it.request) else render() } }
                 // on a phone's hotspot nothing announces itself: ask the gateway who it is, while this is open
                 launch {
                     while (true) {
@@ -189,6 +190,43 @@ class PeersActivity : AppCompatActivity() {
     private fun pair(s: Seen) {
         val address = s.addresses.firstOrNull() ?: return
         startPair(s.name, address, s.port, s.fp, s.os)
+    }
+
+    /** The QR code the iPhone's droplet app scans (docs/iphone.md §2). */
+    private var qrDialog: androidx.appcompat.app.AlertDialog? = null
+
+    private fun showIphoneQr() {
+        val bridge = Mesh.node?.iphone
+        if (bridge == null) {
+            say(getString(R.string.pair_iphone_off, Mesh.iphoneProblem ?: getString(R.string.mesh_off_now)))
+            return
+        }
+        val link = bridge.qrLink()
+        if (link == null) {
+            say(getString(R.string.pair_iphone_none))
+            return
+        }
+        val size = (260 * resources.displayMetrics.density).toInt()
+        val image = ImageView(this).apply {
+            setImageBitmap(QrCode.bitmap(link, size))
+            contentDescription = getString(R.string.pair_iphone_title)
+            setBackgroundColor(Color.WHITE)
+            val pad = (12 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+        }
+        val box = FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(image, FrameLayout.LayoutParams(size + pad, size + pad, android.view.Gravity.CENTER_HORIZONTAL))
+        }
+        qrDialog?.dismiss()
+        qrDialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.pair_iphone_title)
+            .setMessage(R.string.pair_iphone_help)
+            .setView(box)
+            .setNegativeButton(R.string.pair_iphone_close, null)
+            .setOnDismissListener { qrDialog = null }
+            .show()
     }
 
     private fun askAddress() {

@@ -43,6 +43,19 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # the iPhone link's transport is Go (android/iphonelink), bound with gomobile into an
+      # .aar by the build (iphonelinkAar); the runner's NDK compiles it
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: android/iphonelink/go.mod
+          cache-dependency-path: android/iphonelink/go.sum
+
+      - name: Install gomobile
+        working-directory: android/iphonelink
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind   # go.mod's version (tools.go)
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
       # the mesh interop tests talk to real `droplet-agent run --dry-run` processes
       - uses: actions/setup-python@v5
         with:

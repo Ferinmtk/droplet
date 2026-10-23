@@ -100,7 +100,21 @@ kotlin {
     }
 }
 
+// The iPhone link's transport (docs/iphone.md): Go (Pion) in ../iphonelink, bound with
+// gomobile into libs/iphonelink.aar. Rebuilt when its Go code changes.
+val iphonelinkAar = tasks.register<Exec>("iphonelinkAar") {
+    val dir = rootProject.file("iphonelink")
+    inputs.files(fileTree(dir) { include("*.go", "go.mod", "go.sum", "build-aar.sh") })
+    outputs.file(file("libs/iphonelink.aar"))
+    commandLine("sh", File(dir, "build-aar.sh").path)
+    // a machine without Go builds with the .aar it was given
+    onlyIf { !file("libs/iphonelink.aar").isFile || runCatching { ProcessBuilder("go", "version").start().waitFor() == 0 }.getOrDefault(false) }
+}
+tasks.named("preBuild") { dependsOn(iphonelinkAar) }
+
 dependencies {
+    implementation(files("libs/iphonelink.aar"))
+    implementation("com.google.zxing:core:3.5.3")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
