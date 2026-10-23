@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>droplet</title>
-<meta name="description" content="droplet on your iPhone: messages, files and the clipboard straight to your own computers, with no server in between.">
+<meta name="description" content="droplet on your iPhone: messages, files and the clipboard straight to your own computers and phones, with no server in between.">
 <meta name="theme-color" content="#061419">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -27,23 +27,23 @@
       <div id="home-clips"></div>
       <div id="devices"></div>
       <div id="empty" class="empty" hidden>
-        <h2>Pair with a computer</h2>
-        <p>On a computer running droplet, open <b>Pair</b> and choose <b>Pair an iPhone</b> (or run <code>droplet-agent pair --qr</code>). Then tap below and scan the code it shows.</p>
+        <h2>Pair a device</h2>
+        <p>On a computer or an Android phone running droplet, open <b>Pair</b> and choose <b>Pair an iPhone</b> (on Linux or a Mac you can also run <code>droplet-agent pair --qr</code>). Then tap below and scan the code it shows.</p>
       </div>
-      <button id="pair-start" class="btn primary wide">Pair a computer</button>
+      <button id="pair-start" class="btn primary wide">Pair a device</button>
       <div class="me-row"><span>This iPhone: <b id="me-name"></b></span><button id="rename-me" class="chip">Rename</button></div>
       <p class="fine" id="install-hint" hidden>Tip: tap <b>Share</b> → <b>Add to Home Screen</b> to keep droplet as an app. It works from there, with no website in between.</p>
-      <p class="fine">Straight to your own computers over your Wi-Fi: no account, no server. Keep droplet open while you send.</p>
+      <p class="fine">Straight to your own devices over your Wi-Fi: no account, no server. Keep droplet open while you send.</p>
     </main>
   </section>
 
   <!-- pairing -->
   <section id="pair" class="view" hidden>
-    <header class="bar"><button class="back" data-go="home" aria-label="Back">‹</button><h1>Pair a computer</h1></header>
+    <header class="bar"><button class="back" data-go="home" aria-label="Back">‹</button><h1>Pair a device</h1></header>
     <main class="scroll">
       <div id="pair-scan">
         <div class="camera"><video id="video" playsinline muted></video><div class="frame"></div></div>
-        <p class="status" id="scan-status">Point the camera at the QR code on the computer.</p>
+        <p class="status" id="scan-status">Point the camera at the QR code on the other device.</p>
         <label class="field">This iPhone's name<input id="my-name" maxlength="40" autocomplete="off"></label>
         <details>
           <summary>No camera? Paste the pairing link</summary>
@@ -53,7 +53,7 @@
       <div id="pair-code-step" hidden>
         <p class="status" id="pair-with"></p>
         <div class="code" id="pair-code"></div>
-        <p class="status" id="pair-detail">Check the computer shows the same four digits, and accept it there.</p>
+        <p class="status" id="pair-detail">Check the other device shows the same four digits, and accept it there.</p>
         <div class="row center">
           <button id="pair-cancel" class="btn">Cancel</button>
           <button id="pair-match" class="btn primary">They match</button>
@@ -85,7 +85,7 @@
         <button id="send-link" class="chip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Send a link</span></button>
       </div>
       <div id="link-form" class="link-form" hidden>
-        <p class="fine">It opens on the computer if it's yours; on someone else's it waits there with an Open button.</p>
+        <p class="fine">It opens on the other device if it's yours; on someone else's it waits there with an Open button.</p>
         <div class="row"><input id="link-url" type="url" inputmode="url" placeholder="https://" autocomplete="off" autocapitalize="off" spellcheck="false"><button id="link-paste" class="btn">Paste</button></div>
         <p id="link-why" class="note" hidden></p>
         <div class="row end"><button id="link-cancel" class="btn">Cancel</button><button id="link-go" class="btn primary">Send link</button></div>
@@ -101,9 +101,9 @@
   <div id="sheet" class="sheet" hidden>
     <div class="sheet-body">
       <button id="nickname" class="btn wide">Nickname…</button>
-      <button id="pause-toggle" class="btn wide">Pause sharing with this computer</button>
-      <p class="fine">Pause stops everything both ways, the clipboard and messages too, until you resume. The computer is told.</p>
-      <button id="unpair" class="btn danger wide">Unpair this computer</button>
+      <button id="pause-toggle" class="btn wide">Pause sharing with this device</button>
+      <p class="fine">Pause stops everything both ways, the clipboard and messages too, until you resume. The other device is told.</p>
+      <button id="unpair" class="btn danger wide">Unpair this device</button>
       <button id="sheet-close" class="btn wide">Cancel</button>
     </div>
   </div>

@@ -15,6 +15,7 @@ import android.provider.OpenableColumns
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import dev.droplet.app.mesh.IphoneBridge
 import dev.droplet.app.mesh.MeshHost
 import dev.droplet.app.mesh.MeshIdentity
 import dev.droplet.app.mesh.MeshNode
@@ -94,6 +95,10 @@ object Mesh {
 
     @Volatile var node: MeshNode? = null
         private set
+    /** Why the iPhone link isn't running, when it isn't (null while it is, or while the mesh is off). */
+    @Volatile var iphoneProblem: String? = null
+        private set
+    private var iphoneStop: (() -> Unit)? = null
     private val holders = mutableSetOf<String>()
     private var generation = 0
 
@@ -110,6 +115,9 @@ object Mesh {
     /** Where a received file goes; by default Downloads/droplet through MediaStore. */
     @VisibleForTesting @Volatile var saver: (Context, File, String, String) -> Saved = MeshDownloads::save
     @VisibleForTesting @Volatile var log: (String) -> Unit = { android.util.Log.i("droplet-mesh", it) }
+    /** Starts the iPhone link's transport (the Go library); tests have no native code, and leave it off. */
+    @VisibleForTesting @Volatile var iphoneTransport: ((MeshNode, IphoneBridge) -> () -> Unit)? =
+        { n, b -> IphoneTransport.start(n, b) { log(it) } }
 
     class Saved(val uri: Uri?, val where: String)
 
@@ -195,6 +203,7 @@ object Mesh {
                 node = n
                 n.chat.onAdded = { bump() }
                 watchWifi(true)
+                startIphone(n)
             }
             publish()
             if (Live.state.value.connected) syncRoster()
@@ -202,10 +211,29 @@ object Mesh {
         }
     }
 
+    /** The iPhone link (docs/iphone.md): on whenever the mesh is. Never stops the mesh if it can't start. */
+    private fun startIphone(n: MeshNode) {
+        val start = iphoneTransport ?: return
+        val bridge = IphoneBridge(n, host)
+        try {
+            iphoneStop = start(n, bridge)
+            n.iphone = bridge
+            iphoneProblem = null
+        } catch (e: Throwable) {
+            bridge.close()
+            iphoneProblem = e.message ?: e.javaClass.simpleName
+            log("iphone: the iPhone link couldn't start: $iphoneProblem")
+        }
+    }
+
     @Synchronized
     private fun stop() {
         generation++
         watchWifi(false)
+        runCatching { iphoneStop?.invoke() }
+        iphoneStop = null
+        node?.iphone?.close()
+        node?.iphone = null
         node?.close()
         node = null
         Presence.release("mesh")
@@ -658,6 +686,12 @@ object Mesh {
 
         override fun onClip(entry: TrustList.Entry, text: String) {
             if (Prefs.capClipboard) ClipBridge.apply(app, text)
+        }
+
+        // a tap on the iPhone: applied even with automatic clipboard sync off (docs/iphone.md §3.4)
+        override fun applyClip(entry: TrustList.Entry, text: String): String? {
+            ClipBridge.apply(app, text)
+            return null
         }
 
         override fun onNotify(entry: TrustList.Entry, msg: JSONObject) {

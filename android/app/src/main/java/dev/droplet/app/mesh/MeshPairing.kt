@@ -67,18 +67,46 @@ object MeshPairing {
         false
     }
 
+    /**
+     * ECDSA P-256 / SHA-256 by a bare public key (a browser's, base64-decoded SPKI). The
+     * signature may be DER, or the raw 64-byte r‖s that WebCrypto makes.
+     */
+    fun verifyKey(spki: ByteArray, signature: ByteArray, data: ByteArray): Boolean = try {
+        val key = java.security.KeyFactory.getInstance("EC").generatePublic(java.security.spec.X509EncodedKeySpec(spki))
+        val der = if (signature.size == 64) rawToDer(signature) else signature
+        Signature.getInstance("SHA256withECDSA").run {
+            initVerify(key)
+            update(data)
+            verify(der)
+        }
+    } catch (e: Exception) {
+        false
+    }
+
+    /** r‖s (32 bytes each) as an ASN.1 SEQUENCE of two INTEGERs. */
+    fun rawToDer(raw: ByteArray): ByteArray {
+        fun int(b: ByteArray): ByteArray {
+            val v = BigInteger(1, b).toByteArray()      // minimal, with a 0 first if the top bit is set
+            return byteArrayOf(0x02, v.size.toByte()) + v
+        }
+        val body = int(raw.copyOfRange(0, 32)) + int(raw.copyOfRange(32, 64))
+        return byteArrayOf(0x30, body.size.toByte()) + body
+    }
+
     class PairError(message: String) : Exception(message)
 
     /** A confirmed incoming request, waiting for the owner. */
     data class Request(val request: String, val id: String, val name: String, val os: String, val fp: String,
-                       val code: String, val created: Long, val state: String, val der: ByteArray? = null)
+                       val code: String, val created: Long, val state: String, val der: ByteArray? = null,
+                       /** The iPhone web app: [der] is its public key (SPKI), not a certificate. */
+                       val browser: Boolean = false)
 
     // --- the responder -------------------------------------------------------------
 
     /** Pairing requests other devices make to this phone. */
     class Incoming(private val ownFp: String, private val clock: () -> Long = System::currentTimeMillis) {
         private class R(val request: String, val created: Long, val id: String, val name: String, val os: String,
-                        val fp: String, val der: ByteArray, val commit: String, val nonceR: String) {
+                        val fp: String, val der: ByteArray, val commit: String, val nonceR: String, val browser: Boolean) {
             var state = "new"
             var code: String? = null
         }
@@ -103,18 +131,34 @@ object MeshPairing {
             }
         }
 
-        /** Step 1: `POST /mesh/pair`. Returns (status, body). */
+        /**
+         * Step 1: `POST /mesh/pair`. Returns (status, body).
+         *
+         * [browser]: the iPhone web app over WebRTC (docs/iphone.md §3.2). It has a bare
+         * P-256 key (`key`, base64 SPKI) instead of a certificate; its fingerprint, the
+         * `fpI` of the transcript, is the key's SHA-256, and its id the first 16 hex of that.
+         */
         @Synchronized
-        fun open(body: JSONObject?, myId: String, myName: String): Pair<Int, JSONObject> {
+        fun open(body: JSONObject?, myId: String, myName: String, browser: Boolean = false): Pair<Int, JSONObject> {
             body ?: return 400 to err("expected a JSON object")
-            val peerId = body.opt("id") as? String
+            var peerId = body.opt("id") as? String
             val commit = body.opt("commit") as? String
-            if (peerId == null || !TrustList.PEER_ID.matches(peerId)) return 400 to err("bad id")
             if (commit == null || !NONCE.matches(commit)) return 400 to err("bad commit")
-            val der = try {
-                MeshIdentity.pemToDer(body.opt("cert") as? String)
-            } catch (e: IllegalArgumentException) {
-                return 400 to err("bad certificate: ${e.message}")
+            val der: ByteArray
+            if (browser) {
+                der = try {
+                    TrustList.p256Spki(body.opt("key"))
+                } catch (e: IllegalArgumentException) {
+                    return 400 to err("bad key: ${e.message}")
+                }
+                peerId = MeshIdentity.sha256Hex(der).take(16)
+            } else {
+                if (peerId == null || !TrustList.PEER_ID.matches(peerId)) return 400 to err("bad id")
+                der = try {
+                    MeshIdentity.pemToDer(body.opt("cert") as? String)
+                } catch (e: IllegalArgumentException) {
+                    return 400 to err("bad certificate: ${e.message}")
+                }
             }
             val fp = MeshIdentity.sha256Hex(der)
             if (fp == ownFp) return 409 to err("that's this device")
@@ -130,7 +174,7 @@ object MeshPairing {
             val nonceR = newNonce()
             val name = TrustList.cleanName(body.opt("name") as? String, peerId)
             val os = ((body.opt("os") as? String) ?: "").filter { it.isLetterOrDigit() }.take(20)
-            reqs[rid] = R(rid, now, peerId, name, os, fp, der, commit, nonceR)
+            reqs[rid] = R(rid, now, peerId, name, os, fp, der, commit, nonceR, browser)
             return 200 to JSONObject().put("v", 1).put("request", rid).put("nonce", nonceR).put("id", myId)
                 .put("name", myName).put("os", "android").put("fp", ownFp)
         }
@@ -148,7 +192,8 @@ object MeshPairing {
                     MessageDigest.isEqual(commitment(nonceI).toByteArray(), r.commit.toByteArray())
                 if (ok) {
                     val raw = sig?.let { runCatching { decodeStrict(it) }.getOrNull() } ?: ByteArray(0)
-                    ok = verify(r.der, raw, transcript(r.fp, ownFp, nonceI!!, r.nonceR))
+                    val data = transcript(r.fp, ownFp, nonceI!!, r.nonceR)
+                    ok = if (r.browser) verifyKey(r.der, raw, data) else verify(r.der, raw, data)
                 }
                 if (!ok) {
                     reqs.remove(rid)
@@ -201,7 +246,7 @@ object MeshPairing {
         }
 
         private fun public(r: R) = Request(r.request, r.id, r.name, r.os, r.fp, r.code ?: "", r.created,
-            if (r.state == "new") WAITING else r.state)
+            if (r.state == "new") WAITING else r.state, browser = r.browser)
 
         private fun err(m: String) = JSONObject().put("error", m)
 

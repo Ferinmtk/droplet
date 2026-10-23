@@ -3,7 +3,7 @@
 **Status: first slice, experimental; on by default in the Linux and Mac
 agent.** The agent and the web app (`site/app/`) work end to end in WebKit and Chromium on Linux
 (`agent/tests/e2e_iphone.mjs`). Not yet confirmed on a real iPhone (§7).
-The Windows and Android apps don't take part yet.
+The Android app takes part too (§4.1); the Windows app doesn't yet.
 
 An iPhone has no droplet app: an App Store app needs an Apple developer
 account and a Mac, and droplet depends on neither. A browser can't open a
@@ -24,7 +24,7 @@ and it's what this uses.
 - **Pairing** is a QR code on the computer, scanned in the web app, then the
   same 4-digit code check as everywhere else in droplet.
 
-Limits, by design: an iPhone pairs with computers, not with another iPhone
+Limits, by design: an iPhone pairs with computers and Android phones, not with another iPhone
 (neither can listen); the QR code is scanned again if the computer's
 address changes; the app works while it's open (iOS suspends web apps in
 the background, so no notifications yet); and it isn't a share-sheet
@@ -397,6 +397,36 @@ from the app in about 0.6–1 s, a 2 MB file to the app in about 0.15 s. The
 SCTP stack is pure Python, so expect a few MB/s from the phone, which is
 the slower direction (the computer acknowledges every chunk in Python).
 
+## 4.1 An Android phone's side
+
+The Android app listens for iPhones too, so an iPhone and an Android phone can
+share with no computer. The transport is Go, with [Pion](https://github.com/pion/webrtc)
+(`android/iphonelink`), bound into the app with gomobile; the protocol on
+the channel (§3) is Kotlin (`mesh/Iphone.kt`), and a connected iPhone is a
+link in the app's mesh node like any other (`MeshNode.BrowserLink`).
+
+- **The same UDP port and certificate.** Pion runs as an ICE-lite peer on
+  UDP 1739 (or the next free of the ten after it), with the mesh certificate
+  as its DTLS certificate. The key stays in the Android Keystore: Pion asks
+  the app to sign each handshake's digest (`NONEwithECDSA`). One socket
+  serves every iPhone: a browser is known by the ufrag it chose for this
+  side, then by its address (`mux.go`). IPv4 only, as the QR code is.
+- **Pairing**: Pair a device → **Pair an iPhone** shows the QR code (ZXing
+  draws it); the request then shows on the same screen as any other, with the
+  4-digit code, and "your device or someone else's?".
+- **Files** from the iPhone land in Downloads/droplet, like any other; files
+  to it go over the channel (the outbox holds them until the app is open).
+- **The clipboard** from the iPhone (a tap there) is applied even with
+  automatic clipboard sync off, as on a computer.
+- **Testing.** `android/iphonelink/test_browser.mjs` runs the web app's own
+  `rtc.js` in WebKit and Chromium against the Go transport (`cmd/echo`): the
+  fingerprint pinning, the browser's DTLS fingerprint, 240 KB frames, 2 MB of
+  file frames, and several iPhones at once (about 30 MB/s on a laptop, both
+  engines). `IphoneTest` runs the protocol against a real node with a fake
+  app: pairing with the same code, the challenge bound to the DTLS session,
+  messages and files both ways, the clipboard and unpairing.
+- **Size.** The transport adds about 7.5 MB to the APK (64- and 32-bit ARM).
+
 ## 5. Can Safari do it? (the feasibility question)
 
 **Yes in WebKit, as far as Linux can show it.** The risk was that WebKit
@@ -473,10 +503,8 @@ the test reads.
 
 ## 8. Next
 
-- The iPhone link in the **Windows** app (.NET has no WebRTC: SIPSorcery's
-  data channels, or the same design over a small native library) and the
-  **Android** app (Android phones don't need it, but an Android tablet
-  could serve an iPhone).
+- The iPhone link in the **Windows** app (.NET has no WebRTC: the same Go
+  transport as Android's, built as a DLL, or SIPSorcery's data channels).
 - Resuming a broken transfer; notifications (web push needs a server, so
   probably not).
 - An "iPhone" button on the landing page once a real iPhone has confirmed §7.
