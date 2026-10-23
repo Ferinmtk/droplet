@@ -743,7 +743,7 @@ function wSlide(w,h,n){
     s+=title('Works on every device');
     [['Android',miniAndroid],['iPhone',miniIphone],['Windows',miniWindows],['Mac',miniMac],['Linux',miniLinux]].forEach(([p,f],i)=>{const x=36+i*((w-72)/5), cw=(w-72)/5-12;
       s+=`<rect x="${x}" y="100" width="${cw}" height="110" rx="12" fill="#F1F5FB"/><g transform="translate(${x+cw/2} 142) scale(.36)">${f()}</g>`+T(x+cw/2,194,p,13,navy,{a:'middle',w:700,f:WF})});
-    s+=T(36,246,'Free and open source',13,'#4B5570',{f:WF});
+    s+=T(36,246,'Free and open source · built by Noxera Technologies',13,'#4B5570',{f:WF});
   }
   return s+T(w-16,h-12,`${n+3}`,10,'#8A93A6',{a:'end',f:WF});
 }
