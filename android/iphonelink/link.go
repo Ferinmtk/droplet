@@ -73,7 +73,8 @@ type Server struct {
 // Listen opens the first free UDP port of port..port+tries-1 (port 0: any) for browsers.
 // certDER is the mesh certificate (EC P-256); signer signs with its key.
 func Listen(port, tries int, certDER []byte, signer Signer, cb Callbacks) (*Server, error) {
-	cert, err := x509.ParseCertificate(certDER)
+	// Java's array is only ours during this call, and the certificate keeps pointing at what it parsed
+	cert, err := x509.ParseCertificate(append([]byte(nil), certDER...))
 	if err != nil {
 		return nil, fmt.Errorf("the certificate: %w", err)
 	}
