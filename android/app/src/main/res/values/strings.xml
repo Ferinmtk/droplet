@@ -660,6 +660,12 @@
 
     <!-- pairing (PeersActivity) -->
     <string name="pair_title">Pair a device</string>
+    <string name="pair_iphone">Pair an iPhone</string>
+    <string name="pair_iphone_title">Pair an iPhone</string>
+    <string name="pair_iphone_close">Close</string>
+    <string name="pair_iphone_help">On the iPhone, open the droplet app (droplet.noxeratech.com/app), tap Pair, and scan this code. Both screens then show the same four digits. The code works for 10 minutes, on this Wi-Fi.</string>
+    <string name="pair_iphone_none">This phone has no network an iPhone could reach. Join a Wi-Fi, or turn on this phone\'s hotspot and join it on the iPhone.</string>
+    <string name="pair_iphone_off">The iPhone link isn\'t running on this phone: %1$s</string>
     <string name="pair_intro">Other droplet devices see this phone as %1$s. Open droplet on the other device, on this same Wi-Fi, then pick it below (or pick this phone there).</string>
     <string name="pair_asking">Asking to pair with this phone</string>
     <string name="pair_asking_sub">%1$s · asking now</string>

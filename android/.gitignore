@@ -18,5 +18,7 @@ local.properties
 signing.properties
 
 # build products
+/app/libs/iphonelink*.aar
+/app/libs/iphonelink-sources.jar
 *.apk
 *.aab

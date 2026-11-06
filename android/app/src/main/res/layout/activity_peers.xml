@@ -141,6 +141,14 @@
                 android:layout_marginTop="16dp"
                 android:text="@string/pair_by_address" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/pair_iphone"
+                style="@style/Droplet.Teal.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/pair_iphone" />
+
             <TextView
                 style="@style/Droplet.Teal.Body"
                 android:layout_width="match_parent"
